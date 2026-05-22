@@ -1,0 +1,37 @@
+{
+  "theme_color": "#4f46e5",
+  "background_color": "#020617",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
+  "name": "Resilient CRM Dashboard",
+  "short_name": "CRM PWA",
+  "description": "Dashboard CRM offline-first con sincronización automática a HubSpot y IndexedDB",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
