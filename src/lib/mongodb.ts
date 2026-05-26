@@ -1,9 +1,12 @@
 import mongoose from 'mongoose'
 
-const MONGODB_URI = process.env.MONGODB_URI
+const MONGODB_URI = 
+  process.env.MONGODB_URI || 
+  process.env.prod_MONGODB_URI || 
+  process.env.prod_MONGODB_URI_URL
 
 if (!MONGODB_URI) {
-  throw new Error('Por favor define la variable de entorno MONGODB_URI dentro de .env.local')
+  throw new Error('Por favor define la variable de entorno MONGODB_URI, prod_MONGODB_URI o prod_MONGODB_URI_URL')
 }
 
 // Extensión segura del objeto global en Node.js para TypeScript
