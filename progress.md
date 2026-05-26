@@ -45,5 +45,14 @@
 - Limpieza y purga automática de IndexedDB en navegador y de colecciones en MongoDB.
 
 ---
-*Última actualización: 2026-05-22*
+
+## Hito de Despliegue (26 de mayo de 2026)
+*   **Configuración en Producción:** Creación y despliegue del proyecto en **Vercel** vinculado a la cuenta existente de **MongoDB Atlas**.
+*   **Soporte de Variables:** Soporte para las variables de entorno `prod_MONGODB_URI` y `prod_MONGODB_URI_URL` en la conexión de producción ([src/lib/mongodb.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/mongodb.ts)).
+*   **Tareas Pendientes (Próximos Pasos):**
+    1. Subir los cambios actuales al repositorio de GitHub y verificar el despliegue final en Vercel.
+    2. Configurar los Webhooks en HubSpot apuntando al dominio de producción.
+
+---
+*Última actualización: 2026-05-26*
 
