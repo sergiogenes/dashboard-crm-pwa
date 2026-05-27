@@ -40,7 +40,7 @@ const pwaConfig = withPWA({
     },
     {
       urlPattern: /\/api\/auth\/session/,
-      handler: 'StaleWhileRevalidate',
+      handler: 'NetworkFirst',
       options: {
         cacheName: 'auth-session',
         expiration: {

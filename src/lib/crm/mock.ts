@@ -59,4 +59,8 @@ export class MockCRMProvider implements ICRMProvider {
     // Retornar todas las empresas en memoria
     return Array.from(this.companies.values())
   }
+
+  async fetchOwnerIdByEmail(email: string): Promise<string | undefined> {
+    return 'mock_owner_id'
+  }
 }
