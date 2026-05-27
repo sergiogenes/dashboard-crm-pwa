@@ -65,9 +65,7 @@
 *   **Estabilización del Estado Online en Tests:** Añadida una espera de 1 segundo tras restaurar la conexión a Internet en Playwright (`setOffline(false)`) para que la pila de red virtual se inicialice completamente antes de disparar peticiones, evitando fallos inmediatos por desconexión temporal.
 
 *   **Tareas Pendientes (Próximos Pasos):**
-    1. Subir los últimos cambios a GitHub y verificar el despliegue automático en Vercel.
+    1. Subir los últimos cambios de enrutamiento y sincronización a GitHub y verificar el despliegue automático en Vercel.
     2. Configurar los Webhooks en HubSpot apuntando al dominio de producción.
-
----
 *Última actualización: 2026-05-27*
 
