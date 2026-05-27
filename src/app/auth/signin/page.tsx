@@ -14,6 +14,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [crmOwnerId, setCrmOwnerId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -90,7 +91,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
           return
         }
 
-        const regResult = await registerUser({ name, email, password })
+        const regResult = await registerUser({ name, email, password, crmOwnerId: crmOwnerId || undefined })
 
         if (!regResult.success) {
           setError(regResult.error || 'Ocurrió un error al registrarse')
@@ -148,26 +149,48 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
 
             <form className="space-y-6" onSubmit={handleSubmit}>
               {!isLogin && (
-                <div>
-                  <label htmlFor="name" className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Nombre Completo
-                  </label>
-                  <div className="relative mt-1">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                      <User className="h-5 w-5 text-slate-500" />
+                <>
+                  <div>
+                    <label htmlFor="name" className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Nombre Completo
+                    </label>
+                    <div className="relative mt-1">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                        <User className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <input
+                        id="name"
+                        name="name"
+                        type="text"
+                        required={!isLogin}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Juan Pérez"
+                        className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
                     </div>
-                    <input
-                      id="name"
-                      name="name"
-                      type="text"
-                      required={!isLogin}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Juan Pérez"
-                      className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
                   </div>
-                </div>
+
+                  <div>
+                    <label htmlFor="crmOwnerId" className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      HubSpot Owner ID (Opcional)
+                    </label>
+                    <div className="relative mt-1">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                        <Activity className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <input
+                        id="crmOwnerId"
+                        name="crmOwnerId"
+                        type="text"
+                        value={crmOwnerId}
+                        onChange={(e) => setCrmOwnerId(e.target.value)}
+                        placeholder="12345678"
+                        className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </>
               )}
 
               <div>

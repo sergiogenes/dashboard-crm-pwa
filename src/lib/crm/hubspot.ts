@@ -71,6 +71,7 @@ export class HubSpotProvider implements ICRMProvider {
             lastname: lead.lastName,
             email: lead.email,
             phone: lead.phone || '',
+            ...(lead.ownerId ? { hubspot_owner_id: lead.ownerId } : {}),
           },
         }),
       })
@@ -105,6 +106,7 @@ export class HubSpotProvider implements ICRMProvider {
             firstname: lead.firstName,
             lastname: lead.lastName,
             phone: lead.phone || '',
+            ...(lead.ownerId ? { hubspot_owner_id: lead.ownerId } : {}),
           },
         }),
       })
@@ -120,6 +122,7 @@ export class HubSpotProvider implements ICRMProvider {
           lastname: lead.lastName,
           email: lead.email,
           phone: lead.phone || '',
+          ...(lead.ownerId ? { hubspot_owner_id: lead.ownerId } : {}),
         },
       }),
     })
@@ -222,5 +225,51 @@ export class HubSpotProvider implements ICRMProvider {
     } catch {
       return false
     }
+  }
+
+  async fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]> {
+    // Buscar contactos en HubSpot asignados a este ownerId
+    const searchResult = await this.request<HubSpotSearchResponse<any>>('/contacts/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        filterGroups: [
+          {
+            filters: [
+              {
+                propertyName: 'hubspot_owner_id',
+                operator: 'EQ',
+                value: ownerId,
+              },
+            ],
+          },
+        ],
+        properties: ['firstname', 'lastname', 'email', 'phone', 'hubspot_owner_id'],
+        limit: 100, // Límite estándar para sincronización
+      }),
+    })
+
+    return searchResult.results.map((item: any) => ({
+      crmId: item.id,
+      firstName: item.properties.firstname || '',
+      lastName: item.properties.lastname || '',
+      email: item.properties.email || '',
+      phone: item.properties.phone || undefined,
+      ownerId: item.properties.hubspot_owner_id || undefined,
+    }))
+  }
+
+  async fetchAllCompanies(): Promise<CRMCompany[]> {
+    // Listar las empresas registradas en HubSpot (límite 100 para pruebas y escalabilidad estándar)
+    const result = await this.request<any>('/companies?limit=100&properties=name,domain', {
+      method: 'GET',
+    })
+
+    const results = result.results || []
+
+    return results.map((item: any) => ({
+      crmId: item.id,
+      name: item.properties.name || '',
+      domain: item.properties.domain || undefined,
+    }))
   }
 }

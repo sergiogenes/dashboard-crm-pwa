@@ -51,7 +51,7 @@ export default function CompanyFormModal({
       const existing = await localDb.companies
         .where('name')
         .equalsIgnoreCase(name.trim())
-        .filter((c) => c.userId === userId && c.deleted !== true)
+        .filter((c) => c.deleted !== true)
         .first()
 
       if (

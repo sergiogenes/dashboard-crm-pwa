@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Company from '@/models/Company'
 import Lead from '@/models/Lead'
+import User from '@/models/User'
 import { LocalLead, LocalCompany } from '@/lib/db'
 
 async function getUserIdOrThrow(): Promise<string> {
@@ -32,20 +33,19 @@ export async function pushClientChanges(
     if (clientComp.id) {
       if (clientComp.deleted) {
         await Company.findOneAndUpdate(
-          { _id: clientComp.id, userId },
+          { _id: clientComp.id },
           { deleted: true, crmSynced: false }
         )
       } else {
         await Company.findOneAndUpdate(
-          { _id: clientComp.id, userId },
+          { _id: clientComp.id },
           { name: clientComp.name, domain: clientComp.domain, crmSynced: false }
         )
       }
     } else if (clientComp.tempId) {
-      // Evitar duplicados por nombre en MongoDB para el mismo usuario
+      // Evitar duplicados por nombre en MongoDB a nivel global
       let existingComp = await Company.findOne({
         name: clientComp.name,
-        userId,
         deleted: false,
       })
 
@@ -154,11 +154,88 @@ export async function pullServerUpdates(lastSyncTime: number) {
   const userId = await getUserIdOrThrow()
   await dbConnect()
 
+  // Si es la primera sincronización (dispositivo nuevo o caché vacía), importamos activamente desde HubSpot
+  if (lastSyncTime === 0) {
+    const user = await User.findById(userId)
+    if (user?.crmOwnerId) {
+      try {
+        const { CRMProviderFactory } = await import('@/lib/crm/factory')
+        const crm = CRMProviderFactory.getProvider()
+        const isCrmOnline = await crm.checkHealth()
+
+        if (isCrmOnline) {
+          // 1. Importar empresas de HubSpot a MongoDB
+          const crmCompanies = await crm.fetchAllCompanies()
+          for (const crmComp of crmCompanies) {
+            if (crmComp.crmId) {
+              await Company.findOneAndUpdate(
+                {
+                  $or: [
+                    { crmId: crmComp.crmId },
+                    { name: crmComp.name, deleted: false }
+                  ]
+                },
+                {
+                  $setOnInsert: {
+                    name: crmComp.name,
+                    domain: crmComp.domain,
+                    userId: userId,
+                    crmSynced: true,
+                    crmLastSyncAt: new Date(),
+                    deleted: false
+                  },
+                  $set: {
+                    crmId: crmComp.crmId,
+                    crmSynced: true
+                  }
+                },
+                { upsert: true, new: true }
+              )
+            }
+          }
+
+          // 2. Importar contactos (Leads) de HubSpot a MongoDB asignados a este propietario
+          const crmLeads = await crm.fetchLeadsByOwner(user.crmOwnerId)
+          for (const crmLead of crmLeads) {
+            if (crmLead.crmId) {
+              await Lead.findOneAndUpdate(
+                {
+                  $or: [
+                    { crmId: crmLead.crmId },
+                    { email: crmLead.email, userId, deleted: false }
+                  ]
+                },
+                {
+                  $setOnInsert: {
+                    firstName: crmLead.firstName,
+                    lastName: crmLead.lastName,
+                    email: crmLead.email,
+                    phone: crmLead.phone,
+                    userId: userId,
+                    crmSynced: true,
+                    crmLastSyncAt: new Date(),
+                    deleted: false
+                  },
+                  $set: {
+                    crmId: crmLead.crmId,
+                    crmSynced: true
+                  }
+                },
+                { upsert: true, new: true }
+              )
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Sync Action] Error en importación inicial de HubSpot:', err)
+      }
+    }
+  }
+
   const sinceDate = new Date(lastSyncTime)
 
   // Obtener todas las empresas y leads actualizados desde la fecha dada
   const updatedCompanies = await Company.find({
-    userId,
     updatedAt: { $gt: sinceDate },
   })
 
