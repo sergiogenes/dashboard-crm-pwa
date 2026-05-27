@@ -272,4 +272,21 @@ export class HubSpotProvider implements ICRMProvider {
       domain: item.properties.domain || undefined,
     }))
   }
+
+  async fetchOwnerIdByEmail(email: string): Promise<string | undefined> {
+    try {
+      const encodedEmail = encodeURIComponent(email)
+      const result = await this.request<any>(`/owners?email=${encodedEmail}`, {
+        method: 'GET',
+      })
+      const results = result.results || []
+      if (results.length > 0 && results[0]) {
+        return results[0].id // ID de asignación del propietario
+      }
+      return undefined
+    } catch (err) {
+      console.error('[HubSpot Provider] Error al buscar propietario por email:', err)
+      return undefined
+    }
+  }
 }
