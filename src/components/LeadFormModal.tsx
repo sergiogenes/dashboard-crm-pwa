@@ -30,7 +30,7 @@ export default function LeadFormModal({
   const companies = useLiveQuery(
     async () => {
       // Filtrar sólo las que no están eliminadas soft-deleted
-      return await localDb.companies.filter((c) => c.deleted !== true && c.userId === userId).toArray()
+      return await localDb.companies.filter((c) => c.deleted !== true).toArray()
     },
     [userId],
     []

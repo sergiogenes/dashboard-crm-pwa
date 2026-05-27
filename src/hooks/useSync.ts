@@ -37,7 +37,7 @@ export function useSync(userId: string | undefined) {
     try {
       // 1. Obtener datos locales modificados de Dexie
       const unsyncedCompanies = await localDb.companies
-        .filter(c => c.synced === false && c.userId === userId)
+        .filter(c => c.synced === false)
         .toArray()
 
       const unsyncedLeads = await localDb.leads
@@ -143,7 +143,6 @@ export function useSync(userId: string | undefined) {
             existingLocal = await localDb.companies
               .where('name')
               .equals(serverComp.name)
-              .filter(c => c.userId === serverComp.userId)
               .first()
           }
 

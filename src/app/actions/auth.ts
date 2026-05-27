@@ -12,9 +12,10 @@ export async function registerUser(formData: {
   name: string
   email: string
   password: string
+  crmOwnerId?: string
 }) {
   try {
-    const { name, email, password } = formData
+    const { name, email, password, crmOwnerId } = formData
 
     if (!email || !password) {
       return { success: false, error: 'El email y la contraseña son requeridos' }
@@ -37,6 +38,7 @@ export async function registerUser(formData: {
       name,
       email: email.toLowerCase(),
       passwordHash,
+      crmOwnerId: crmOwnerId || undefined,
     })
 
     await newUser.save()
@@ -47,6 +49,7 @@ export async function registerUser(formData: {
         id: newUser._id.toString(),
         name: newUser.name,
         email: newUser.email,
+        crmOwnerId: newUser.crmOwnerId,
       },
     }
   } catch (error: any) {

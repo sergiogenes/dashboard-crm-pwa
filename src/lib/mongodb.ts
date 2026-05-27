@@ -33,9 +33,14 @@ async function dbConnect(): Promise<typeof mongoose> {
   }
 
   if (!cached.promise) {
+    const baseUri = MONGODB_URI!.split('?')[0]
+    const uriParts = baseUri.split('/')
+    const dbNameFromUri = uriParts[3] || null
+
     const opts = {
       bufferCommands: false,
       serverSelectionTimeoutMS: 5000,
+      dbName: dbNameFromUri || 'dashboard-pwa',
     }
 
     cached.promise = mongoose.connect(MONGODB_URI!, opts).then((mongooseInstance) => {

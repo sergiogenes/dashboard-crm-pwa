@@ -5,6 +5,7 @@ export interface LocalUser {
   email: string
   name?: string
   image?: string
+  crmOwnerId?: string
   createdAt: number
 }
 
