@@ -33,13 +33,16 @@ export class HubSpotProvider implements ICRMProvider {
 
   private getHeaders(): HeadersInit {
     return {
-      'Authorization': `Bearer ${this.token}`,
+      Authorization: `Bearer ${this.token}`,
       'Content-Type': 'application/json',
     }
   }
 
   private async request<T>(endpoint: string, options: RequestInit): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`
+    const isObjects = !endpoint.startsWith('/owners')
+    const url = isObjects
+      ? `${this.baseUrl}${endpoint}`
+      : `https://api.hubapi.com/crm/v3${endpoint}`
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -79,7 +82,9 @@ export class HubSpotProvider implements ICRMProvider {
     }
 
     // Si no tiene crmId, buscamos duplicados por email usando el endpoint de búsqueda
-    const searchResult = await this.request<HubSpotSearchResponse<HubSpotContactResponse>>('/contacts/search', {
+    const searchResult = await this.request<
+      HubSpotSearchResponse<HubSpotContactResponse>
+    >('/contacts/search', {
       method: 'POST',
       body: JSON.stringify({
         filterGroups: [
@@ -133,21 +138,26 @@ export class HubSpotProvider implements ICRMProvider {
   async upsertCompany(company: CRMCompany): Promise<string> {
     // Si ya tiene crmId, actualizamos directamente
     if (company.crmId) {
-      await this.request<HubSpotCompanyResponse>(`/companies/${company.crmId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          properties: {
-            name: company.name,
-            domain: company.domain || '',
-          },
-        }),
-      })
+      await this.request<HubSpotCompanyResponse>(
+        `/companies/${company.crmId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            properties: {
+              name: company.name,
+              domain: company.domain || '',
+            },
+          }),
+        },
+      )
       return company.crmId
     }
 
     // Si no tiene crmId pero tiene dominio, buscamos duplicados
     if (company.domain) {
-      const searchResult = await this.request<HubSpotSearchResponse<HubSpotCompanyResponse>>('/companies/search', {
+      const searchResult = await this.request<
+        HubSpotSearchResponse<HubSpotCompanyResponse>
+      >('/companies/search', {
         method: 'POST',
         body: JSON.stringify({
           filterGroups: [
@@ -180,26 +190,32 @@ export class HubSpotProvider implements ICRMProvider {
     }
 
     // Si no existe, creamos la empresa
-    const newCompany = await this.request<HubSpotCompanyResponse>('/companies', {
-      method: 'POST',
-      body: JSON.stringify({
-        properties: {
-          name: company.name,
-          domain: company.domain || '',
-        },
-      }),
-    })
+    const newCompany = await this.request<HubSpotCompanyResponse>(
+      '/companies',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          properties: {
+            name: company.name,
+            domain: company.domain || '',
+          },
+        }),
+      },
+    )
 
     return newCompany.id
   }
 
-  async associateLeadWithCompany(leadCrmId: string, companyCrmId: string): Promise<void> {
+  async associateLeadWithCompany(
+    leadCrmId: string,
+    companyCrmId: string,
+  ): Promise<void> {
     // URL en HubSpot v3 para asociación: /contacts/{contactId}/associations/companies/{companyId}/contact_to_company
     await this.request<void>(
       `/contacts/${leadCrmId}/associations/companies/${companyCrmId}/contact_to_company`,
       {
         method: 'PUT',
-      }
+      },
     )
   }
 
@@ -218,7 +234,9 @@ export class HubSpotProvider implements ICRMProvider {
   async checkHealth(): Promise<boolean> {
     try {
       // Endpoint rápido con límite 1 para comprobar conectividad del token
-      const result = await this.request<HubSpotSearchResponse<HubSpotContactResponse>>('/contacts?limit=1', {
+      const result = await this.request<
+        HubSpotSearchResponse<HubSpotContactResponse>
+      >('/contacts?limit=1', {
         method: 'GET',
       })
       return !!result
@@ -229,24 +247,33 @@ export class HubSpotProvider implements ICRMProvider {
 
   async fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]> {
     // Buscar contactos en HubSpot asignados a este ownerId
-    const searchResult = await this.request<HubSpotSearchResponse<any>>('/contacts/search', {
-      method: 'POST',
-      body: JSON.stringify({
-        filterGroups: [
-          {
-            filters: [
-              {
-                propertyName: 'hubspot_owner_id',
-                operator: 'EQ',
-                value: ownerId,
-              },
-            ],
-          },
-        ],
-        properties: ['firstname', 'lastname', 'email', 'phone', 'hubspot_owner_id'],
-        limit: 100, // Límite estándar para sincronización
-      }),
-    })
+    const searchResult = await this.request<HubSpotSearchResponse<any>>(
+      '/contacts/search',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: 'hubspot_owner_id',
+                  operator: 'EQ',
+                  value: ownerId,
+                },
+              ],
+            },
+          ],
+          properties: [
+            'firstname',
+            'lastname',
+            'email',
+            'phone',
+            'hubspot_owner_id',
+          ],
+          limit: 100, // Límite estándar para sincronización
+        }),
+      },
+    )
 
     return searchResult.results.map((item: any) => ({
       crmId: item.id,
@@ -260,9 +287,12 @@ export class HubSpotProvider implements ICRMProvider {
 
   async fetchAllCompanies(): Promise<CRMCompany[]> {
     // Listar las empresas registradas en HubSpot (límite 100 para pruebas y escalabilidad estándar)
-    const result = await this.request<any>('/companies?limit=100&properties=name,domain', {
-      method: 'GET',
-    })
+    const result = await this.request<any>(
+      '/companies?limit=100&properties=name,domain',
+      {
+        method: 'GET',
+      },
+    )
 
     const results = result.results || []
 
@@ -285,7 +315,10 @@ export class HubSpotProvider implements ICRMProvider {
       }
       return undefined
     } catch (err) {
-      console.error('[HubSpot Provider] Error al buscar propietario por email:', err)
+      console.error(
+        '[HubSpot Provider] Error al buscar propietario por email:',
+        err,
+      )
       return undefined
     }
   }
