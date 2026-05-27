@@ -22,7 +22,7 @@ const pwaConfig = withPWA({
   dest: 'public',
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
+  disable: process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test',
   buildExcludes: [/app-build-manifest\.json$/, /middleware-manifest\.json$/],
   additionalManifestEntries: [
     { url: '/~offline', revision: Date.now().toString() }
