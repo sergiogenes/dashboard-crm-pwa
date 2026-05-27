@@ -51,15 +51,21 @@
 *   **Soporte de Variables:** Soporte para las variables de entorno `prod_MONGODB_URI` y `prod_MONGODB_URI_URL` en la conexión de producción ([src/lib/mongodb.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/mongodb.ts)).
 *   **Validación de PWA:** Despliegue completado con éxito; PWA plenamente probada e instalable en dispositivos móviles (Android/Chrome) en modo standalone con resolución de variables de entorno.
 
-## Fases del 27 de mayo de 2026 (Privacidad y Asignación de Propietario en CRM)
+## Fases del 27 de mayo de 2026 (Privacidad, Asignación de Propietario en CRM y Sincronización)
 *   **Forzar Base de Datos Dinámicamente:** Extracción automática de la base de datos de la URI de conexión. En producción sin base de datos en la URI, se conecta por defecto a `dashboard-pwa`. En desarrollo local y testing, respeta las bases de datos `dashboard-pwa` y `dashboard-pwa-test` / `testdb` respectivamente, evitando borrar datos de desarrollo en las pruebas.
 *   **Visibilidad de Datos:** Re-arquitectura del flujo de sincronización y de la UI para que las Empresas sean compartidas globalmente por todos los usuarios y los Contactos (Leads) permanezcan privados para su creador.
 *   **Asignación de HubSpot Owner:** Inyección condicional de la propiedad `hubspot_owner_id` en el adaptador de HubSpot, mapeada dinámicamente desde el `crmOwnerId` del usuario creador del contacto en MongoDB.
-*   **Autodetectación de HubSpot Owner:** Mapeo automático del `crmOwnerId` consultando silenciosamente la API de HubSpot por el email del usuario en su primera sincronización. Se revirtió el campo manual de registro, manteniendo la UX limpia.
+*   **Autodetectación de HubSpot Owner:** Mapeo automático del `crmOwnerId` consultando la API de HubSpot por el email del usuario en su primera sincronización. Se corrigió el enrutamiento de la petición al endpoint `/owners` de HubSpot redireccionándola fuera del prefijo `/objects`.
 *   **Caché de Sesión Optimizado:** Configuración del Service Worker de la PWA (`next.config.mjs`) para usar la estrategia `NetworkFirst` para `/api/auth/session`, eliminando el bloqueo ("loading") infinito tras iniciar sesión en producción.
+*   **Sincronización Inbound Robusta:** Incorporación de un fallback que fuerza la importación desde HubSpot si la base de datos de MongoDB está vacía, y propagación explícita de errores al cliente para asegurar reintentos en fallos de conexión o autenticación.
+*   **Autosanación de Sincronización Outbound:** Integración de la llamada a `syncMongoDBToCRM` en `pullServerUpdates` para actuar como mecanismo de autosanación, resolviendo de forma transparente problemas con registros huérfanos (como el caso de "Jua per") en los ciclos de polling periódico tras una caída o interrupción.
+*   **Alineación de Bases de Datos en Tests:** Introducción de `IS_PLAYWRIGHT_TEST=true` para forzar a Mongoose a conectarse a `dashboard-pwa-test` durante la ejecución de los tests, garantizando que el servidor de desarrollo y el test runner compartan el mismo almacenamiento.
+*   **Resiliencia ante Duplicados en HubSpot:** Captura robusta de errores 400 de conflicto por email duplicado debido a latencias de indexación en la búsqueda de HubSpot, extrayendo el ID del contacto en conflicto para realizar una actualización (`PATCH`) transparente.
+*   **Optimización de Tiempos de Conexión en Redes Lentas:** Incrementado el timeout de Mongoose a 15s (`serverSelectionTimeoutMS`), el abort timeout del frontend en login a 20s y el tiempo límite global de Playwright a 60s para prevenir falsos fallos y timeouts debido a latencia DNS o TCP en la conexión a MongoDB Atlas.
+*   **Estabilización del Estado Online en Tests:** Añadida una espera de 1 segundo tras restaurar la conexión a Internet en Playwright (`setOffline(false)`) para que la pila de red virtual se inicialice completamente antes de disparar peticiones, evitando fallos inmediatos por desconexión temporal.
 
 *   **Tareas Pendientes (Próximos Pasos):**
-    1. Subir los últimos cambios de privacidad y propietario a GitHub y verificar el despliegue automático en Vercel.
+    1. Subir los últimos cambios a GitHub y verificar el despliegue automático en Vercel.
     2. Configurar los Webhooks en HubSpot apuntando al dominio de producción.
 
 ---

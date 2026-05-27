@@ -48,6 +48,7 @@ export async function GET() {
       { status: 200 }
     )
   } catch (error: any) {
+    console.error('[Health API Error]:', error)
     return NextResponse.json(
       { status: 'error', message: error.message || 'Unknown server error' },
       { status: 500 }

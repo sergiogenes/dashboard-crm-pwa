@@ -1,5 +1,6 @@
 'use server'
 
+import mongoose from 'mongoose'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
@@ -18,10 +19,13 @@ async function getUserIdOrThrow(): Promise<string> {
 
 export async function pushClientChanges(
   leads: Omit<LocalLead, 'synced'>[],
-  companies: Omit<LocalCompany, 'synced'>[]
+  companies: Omit<LocalCompany, 'synced'>[],
 ) {
   const userId = await getUserIdOrThrow()
   await dbConnect()
+
+  console.log(`[pushClientChanges] Recibidas ${companies.length} empresas:`, JSON.stringify(companies))
+  console.log(`[pushClientChanges] Recibidos ${leads.length} leads:`, JSON.stringify(leads))
 
   const companyMappings: { tempId: string; id: string }[] = []
   const leadMappings: { tempId: string; id: string }[] = []
@@ -34,13 +38,20 @@ export async function pushClientChanges(
       if (clientComp.deleted) {
         await Company.findOneAndUpdate(
           { _id: clientComp.id },
-          { deleted: true, crmSynced: false }
+          { deleted: true, crmSynced: false },
         )
       } else {
         await Company.findOneAndUpdate(
           { _id: clientComp.id },
-          { name: clientComp.name, domain: clientComp.domain, crmSynced: false }
+          {
+            name: clientComp.name,
+            domain: clientComp.domain,
+            crmSynced: false,
+          },
         )
+      }
+      if (clientComp.tempId) {
+        tempToRealCompanyId.set(clientComp.tempId, clientComp.id)
       }
     } else if (clientComp.tempId) {
       // Evitar duplicados por nombre en MongoDB a nivel global
@@ -63,7 +74,7 @@ export async function pushClientChanges(
         existingComp.crmSynced = false
         await existingComp.save()
       }
-      
+
       const realId = existingComp._id.toString()
       tempToRealCompanyId.set(clientComp.tempId, realId)
       companyMappings.push({ tempId: clientComp.tempId, id: realId })
@@ -82,11 +93,17 @@ export async function pushClientChanges(
       }
     }
 
+    // Sanitizar companyId: si no es un ObjectId válido (ej. un UUID huérfano), se asigna a null
+    if (resolvedCompanyId && !mongoose.Types.ObjectId.isValid(resolvedCompanyId)) {
+      console.warn(`[pushClientChanges] Advertencia: companyId "${resolvedCompanyId}" no es un ObjectId válido. Seteando a null.`)
+      resolvedCompanyId = null
+    }
+
     if (clientLead.id) {
       if (clientLead.deleted) {
         await Lead.findOneAndUpdate(
           { _id: clientLead.id, userId },
-          { deleted: true, crmSynced: false }
+          { deleted: true, crmSynced: false },
         )
       } else {
         await Lead.findOneAndUpdate(
@@ -98,7 +115,7 @@ export async function pushClientChanges(
             phone: clientLead.phone,
             companyId: resolvedCompanyId,
             crmSynced: false,
-          }
+          },
         )
       }
     } else if (clientLead.tempId) {
@@ -141,7 +158,9 @@ export async function pushClientChanges(
 
   // Disparar sincronización asíncrona de MongoDB al CRM en segundo plano sin esperar (fire-and-forget)
   const { syncMongoDBToCRM } = await import('@/lib/crm/sync-engine')
-  syncMongoDBToCRM().catch(err => console.error('[Sync Trigger] Falló la sincronización saliente:', err))
+  syncMongoDBToCRM().catch((err) =>
+    console.error('[Sync Trigger] Falló la sincronización saliente:', err),
+  )
 
   return {
     success: true,
@@ -154,8 +173,20 @@ export async function pullServerUpdates(lastSyncTime: number) {
   const userId = await getUserIdOrThrow()
   await dbConnect()
 
-  // Si es la primera sincronización (dispositivo nuevo o caché vacía), importamos activamente desde HubSpot
-  if (lastSyncTime === 0) {
+  // Comprobar si la base de datos intermedia (MongoDB) está vacía de empresas o leads
+  const companyCount = await Company.countDocuments({ deleted: false })
+  const user = await User.findById(userId)
+  const leadCount = user?.crmOwnerId
+    ? await Lead.countDocuments({ userId, deleted: false })
+    : 0
+
+  const needsImport =
+    lastSyncTime === 0 ||
+    companyCount === 0 ||
+    (user?.crmOwnerId && leadCount === 0)
+
+  // Si es la primera sincronización o la base de datos está vacía, importamos activamente desde HubSpot
+  if (needsImport) {
     try {
       const { CRMProviderFactory } = await import('@/lib/crm/factory')
       const crm = CRMProviderFactory.getProvider()
@@ -163,13 +194,14 @@ export async function pullServerUpdates(lastSyncTime: number) {
 
       if (isCrmOnline) {
         // A. Autodetectar crmOwnerId por email en HubSpot si no existe todavía
-        const user = await User.findById(userId)
         if (user && !user.crmOwnerId) {
           const ownerId = await crm.fetchOwnerIdByEmail(user.email)
           if (ownerId) {
             user.crmOwnerId = ownerId
             await user.save()
-            console.log(`[Sync] Mapeado crmOwnerId automáticamente para ${user.email} -> ${ownerId}`)
+            console.log(
+              `[Sync] Mapeado crmOwnerId automáticamente para ${user.email} -> ${ownerId}`,
+            )
           }
         }
 
@@ -181,24 +213,23 @@ export async function pullServerUpdates(lastSyncTime: number) {
               {
                 $or: [
                   { crmId: crmComp.crmId },
-                  { name: crmComp.name, deleted: false }
-                ]
+                  { name: crmComp.name, deleted: false },
+                ],
               },
               {
                 $setOnInsert: {
                   name: crmComp.name,
                   domain: crmComp.domain,
                   userId: userId,
-                  crmSynced: true,
                   crmLastSyncAt: new Date(),
-                  deleted: false
+                  deleted: false,
                 },
                 $set: {
                   crmId: crmComp.crmId,
-                  crmSynced: true
-                }
+                  crmSynced: true,
+                },
               },
-              { upsert: true, new: true }
+              { upsert: true, new: true },
             )
           }
         }
@@ -212,8 +243,8 @@ export async function pullServerUpdates(lastSyncTime: number) {
                 {
                   $or: [
                     { crmId: crmLead.crmId },
-                    { email: crmLead.email, userId, deleted: false }
-                  ]
+                    { email: crmLead.email, userId, deleted: false },
+                  ],
                 },
                 {
                   $setOnInsert: {
@@ -222,23 +253,28 @@ export async function pullServerUpdates(lastSyncTime: number) {
                     email: crmLead.email,
                     phone: crmLead.phone,
                     userId: userId,
-                    crmSynced: true,
                     crmLastSyncAt: new Date(),
-                    deleted: false
+                    deleted: false,
                   },
                   $set: {
                     crmId: crmLead.crmId,
-                    crmSynced: true
-                  }
+                    crmSynced: true,
+                  },
                 },
-                { upsert: true, new: true }
+                { upsert: true, new: true },
               )
             }
           }
         }
       }
-    } catch (err) {
-      console.error('[Sync Action] Error en importación inicial de HubSpot:', err)
+    } catch (err: any) {
+      console.error(
+        '[Sync Action] Error en importación inicial de HubSpot:',
+        err,
+      )
+      throw new Error(
+        `Error en la importación inicial de HubSpot: ${err.message}`,
+      )
     }
   }
 
@@ -254,8 +290,14 @@ export async function pullServerUpdates(lastSyncTime: number) {
     updatedAt: { $gt: sinceDate },
   })
 
+  // Disparar Sincronización asíncrona de MongoDB al CRM en segundo plano (autosanación)
+  const { syncMongoDBToCRM } = await import('@/lib/crm/sync-engine')
+  syncMongoDBToCRM().catch((err) =>
+    console.error('[Sync Trigger] Falló la sincronización saliente:', err),
+  )
+
   return {
-    companies: updatedCompanies.map(c => ({
+    companies: updatedCompanies.map((c) => ({
       id: c._id.toString(),
       name: c.name,
       domain: c.domain,
@@ -264,7 +306,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
       createdAt: c.createdAt.getTime(),
       updatedAt: c.updatedAt.getTime(),
     })),
-    leads: updatedLeads.map(l => ({
+    leads: updatedLeads.map((l) => ({
       id: l._id.toString(),
       firstName: l.firstName,
       lastName: l.lastName,
