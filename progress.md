@@ -55,7 +55,8 @@
 *   **Forzar Base de Datos Dinámicamente:** Extracción automática de la base de datos de la URI de conexión. En producción sin base de datos en la URI, se conecta por defecto a `dashboard-pwa`. En desarrollo local y testing, respeta las bases de datos `dashboard-pwa` y `dashboard-pwa-test` / `testdb` respectivamente, evitando borrar datos de desarrollo en las pruebas.
 *   **Visibilidad de Datos:** Re-arquitectura del flujo de sincronización y de la UI para que las Empresas sean compartidas globalmente por todos los usuarios y los Contactos (Leads) permanezcan privados para su creador.
 *   **Asignación de HubSpot Owner:** Inyección condicional de la propiedad `hubspot_owner_id` en el adaptador de HubSpot, mapeada dinámicamente desde el `crmOwnerId` del usuario creador del contacto en MongoDB.
-*   **Registro Ampliado:** Añadido el campo opcional "HubSpot Owner ID" al formulario de registro e inicio de sesión y guardado correspondiente en base de datos.
+*   **Autodetectación de HubSpot Owner:** Mapeo automático del `crmOwnerId` consultando silenciosamente la API de HubSpot por el email del usuario en su primera sincronización. Se revirtió el campo manual de registro, manteniendo la UX limpia.
+*   **Caché de Sesión Optimizado:** Configuración del Service Worker de la PWA (`next.config.mjs`) para usar la estrategia `NetworkFirst` para `/api/auth/session`, eliminando el bloqueo ("loading") infinito tras iniciar sesión en producción.
 
 *   **Tareas Pendientes (Próximos Pasos):**
     1. Subir los últimos cambios de privacidad y propietario a GitHub y verificar el despliegue automático en Vercel.

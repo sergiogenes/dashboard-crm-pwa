@@ -49,4 +49,5 @@ export interface ICRMProvider {
   checkHealth(): Promise<boolean>
   fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]>
   fetchAllCompanies(): Promise<CRMCompany[]>
+  fetchOwnerIdByEmail(email: string): Promise<string | undefined>
 }

@@ -156,45 +156,55 @@ export async function pullServerUpdates(lastSyncTime: number) {
 
   // Si es la primera sincronización (dispositivo nuevo o caché vacía), importamos activamente desde HubSpot
   if (lastSyncTime === 0) {
-    const user = await User.findById(userId)
-    if (user?.crmOwnerId) {
-      try {
-        const { CRMProviderFactory } = await import('@/lib/crm/factory')
-        const crm = CRMProviderFactory.getProvider()
-        const isCrmOnline = await crm.checkHealth()
+    try {
+      const { CRMProviderFactory } = await import('@/lib/crm/factory')
+      const crm = CRMProviderFactory.getProvider()
+      const isCrmOnline = await crm.checkHealth()
 
-        if (isCrmOnline) {
-          // 1. Importar empresas de HubSpot a MongoDB
-          const crmCompanies = await crm.fetchAllCompanies()
-          for (const crmComp of crmCompanies) {
-            if (crmComp.crmId) {
-              await Company.findOneAndUpdate(
-                {
-                  $or: [
-                    { crmId: crmComp.crmId },
-                    { name: crmComp.name, deleted: false }
-                  ]
-                },
-                {
-                  $setOnInsert: {
-                    name: crmComp.name,
-                    domain: crmComp.domain,
-                    userId: userId,
-                    crmSynced: true,
-                    crmLastSyncAt: new Date(),
-                    deleted: false
-                  },
-                  $set: {
-                    crmId: crmComp.crmId,
-                    crmSynced: true
-                  }
-                },
-                { upsert: true, new: true }
-              )
-            }
+      if (isCrmOnline) {
+        // A. Autodetectar crmOwnerId por email en HubSpot si no existe todavía
+        const user = await User.findById(userId)
+        if (user && !user.crmOwnerId) {
+          const ownerId = await crm.fetchOwnerIdByEmail(user.email)
+          if (ownerId) {
+            user.crmOwnerId = ownerId
+            await user.save()
+            console.log(`[Sync] Mapeado crmOwnerId automáticamente para ${user.email} -> ${ownerId}`)
           }
+        }
 
-          // 2. Importar contactos (Leads) de HubSpot a MongoDB asignados a este propietario
+        // 1. Importar empresas de HubSpot a MongoDB (Para todos los usuarios)
+        const crmCompanies = await crm.fetchAllCompanies()
+        for (const crmComp of crmCompanies) {
+          if (crmComp.crmId) {
+            await Company.findOneAndUpdate(
+              {
+                $or: [
+                  { crmId: crmComp.crmId },
+                  { name: crmComp.name, deleted: false }
+                ]
+              },
+              {
+                $setOnInsert: {
+                  name: crmComp.name,
+                  domain: crmComp.domain,
+                  userId: userId,
+                  crmSynced: true,
+                  crmLastSyncAt: new Date(),
+                  deleted: false
+                },
+                $set: {
+                  crmId: crmComp.crmId,
+                  crmSynced: true
+                }
+              },
+              { upsert: true, new: true }
+            )
+          }
+        }
+
+        // 2. Importar contactos (Leads) de HubSpot a MongoDB (Solo si el usuario tiene crmOwnerId)
+        if (user?.crmOwnerId) {
           const crmLeads = await crm.fetchLeadsByOwner(user.crmOwnerId)
           for (const crmLead of crmLeads) {
             if (crmLead.crmId) {
@@ -226,9 +236,9 @@ export async function pullServerUpdates(lastSyncTime: number) {
             }
           }
         }
-      } catch (err) {
-        console.error('[Sync Action] Error en importación inicial de HubSpot:', err)
       }
+    } catch (err) {
+      console.error('[Sync Action] Error en importación inicial de HubSpot:', err)
     }
   }
 
