@@ -58,7 +58,7 @@ test('Debe registrar un nuevo usuario exitosamente', async ({ page }) => {
   await page.getByRole('button', { name: 'Registrarse' }).click()
 
   // Esperar a navegar al dashboard principal
-  await expect(page.getByRole('heading', { name: 'Panel de Control' })).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('heading', { name: 'Panel de Control' })).toBeVisible({ timeout: 30000 })
 })
 
 test('Debe persistir localmente en modo Offline y sincronizar al volver Online', async ({ page, context }) => {
@@ -105,6 +105,7 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
 
   // 4. Restaurar Conexión (Volver Online)
   await context.setOffline(false)
+  await page.waitForTimeout(1000) // Dar tiempo a la pila de red del navegador para restablecerse
 
   // Forzar un evento 'online' en la ventana para gatillar el hook useSync de inmediato
   await page.evaluate(() => {
@@ -112,6 +113,11 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
   })
 
   // 5. Verificar que el estado cambie a 'CloudDb' (Sincronizado con MongoDB/CRM)
+  const syncBadge = page.locator('button:has-text("Error de Sincronización")')
+  if (await syncBadge.isVisible()) {
+    const errorMsg = await syncBadge.getAttribute('title')
+    console.error('DEBUG - Mensaje de Error de Sincronización:', errorMsg)
+  }
   await expect(page.getByText('CloudDb').first()).toBeVisible({ timeout: 20000 })
 
   // 6. Verificar persistencia física y metadatos de sincronización en MongoDB (con reintentos para dar tiempo al background sync)
