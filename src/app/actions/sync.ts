@@ -1,5 +1,6 @@
 'use server'
 
+import mongoose from 'mongoose'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
@@ -23,6 +24,9 @@ export async function pushClientChanges(
   const userId = await getUserIdOrThrow()
   await dbConnect()
 
+  console.log(`[pushClientChanges] Recibidas ${companies.length} empresas:`, JSON.stringify(companies))
+  console.log(`[pushClientChanges] Recibidos ${leads.length} leads:`, JSON.stringify(leads))
+
   const companyMappings: { tempId: string; id: string }[] = []
   const leadMappings: { tempId: string; id: string }[] = []
 
@@ -45,6 +49,9 @@ export async function pushClientChanges(
             crmSynced: false,
           },
         )
+      }
+      if (clientComp.tempId) {
+        tempToRealCompanyId.set(clientComp.tempId, clientComp.id)
       }
     } else if (clientComp.tempId) {
       // Evitar duplicados por nombre en MongoDB a nivel global
@@ -84,6 +91,12 @@ export async function pushClientChanges(
       } else {
         resolvedCompanyId = clientLead.companyId
       }
+    }
+
+    // Sanitizar companyId: si no es un ObjectId válido (ej. un UUID huérfano), se asigna a null
+    if (resolvedCompanyId && !mongoose.Types.ObjectId.isValid(resolvedCompanyId)) {
+      console.warn(`[pushClientChanges] Advertencia: companyId "${resolvedCompanyId}" no es un ObjectId válido. Seteando a null.`)
+      resolvedCompanyId = null
     }
 
     if (clientLead.id) {
@@ -234,21 +247,21 @@ export async function pullServerUpdates(lastSyncTime: number) {
                   ],
                 },
                 {
-                $setOnInsert: {
-                  firstName: crmLead.firstName,
-                  lastName: crmLead.lastName,
-                  email: crmLead.email,
-                  phone: crmLead.phone,
-                  userId: userId,
-                  crmLastSyncAt: new Date(),
-                  deleted: false,
+                  $setOnInsert: {
+                    firstName: crmLead.firstName,
+                    lastName: crmLead.lastName,
+                    email: crmLead.email,
+                    phone: crmLead.phone,
+                    userId: userId,
+                    crmLastSyncAt: new Date(),
+                    deleted: false,
+                  },
+                  $set: {
+                    crmId: crmLead.crmId,
+                    crmSynced: true,
+                  },
                 },
-                $set: {
-                  crmId: crmLead.crmId,
-                  crmSynced: true,
-                },
-              },
-              { upsert: true, new: true },
+                { upsert: true, new: true },
               )
             }
           }
@@ -276,6 +289,12 @@ export async function pullServerUpdates(lastSyncTime: number) {
     userId,
     updatedAt: { $gt: sinceDate },
   })
+
+  // Disparar Sincronización asíncrona de MongoDB al CRM en segundo plano (autosanación)
+  const { syncMongoDBToCRM } = await import('@/lib/crm/sync-engine')
+  syncMongoDBToCRM().catch((err) =>
+    console.error('[Sync Trigger] Falló la sincronización saliente:', err),
+  )
 
   return {
     companies: updatedCompanies.map((c) => ({

@@ -119,20 +119,44 @@ export class HubSpotProvider implements ICRMProvider {
     }
 
     // Si no existe, creamos el contacto
-    const newContact = await this.request<HubSpotContactResponse>('/contacts', {
-      method: 'POST',
-      body: JSON.stringify({
-        properties: {
-          firstname: lead.firstName,
-          lastname: lead.lastName,
-          email: lead.email,
-          phone: lead.phone || '',
-          ...(lead.ownerId ? { hubspot_owner_id: lead.ownerId } : {}),
+    try {
+      const newContact = await this.request<HubSpotContactResponse>(
+        '/contacts',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            properties: {
+              firstname: lead.firstName,
+              lastname: lead.lastName,
+              email: lead.email,
+              phone: lead.phone || '',
+              ...(lead.ownerId ? { hubspot_owner_id: lead.ownerId } : {}),
+            },
+          }),
         },
-      }),
-    })
-
-    return newContact.id
+      )
+      return newContact.id
+    } catch (err: any) {
+      // Si la creación falla porque el email ya existe (retraso en índice de búsqueda)
+      const match = err.message.match(/(\d+)\s+already has that value/)
+      if (match && match[1]) {
+        const existingId = match[1]
+        // Actualizamos el contacto encontrado en lugar de arrojar error
+        await this.request<HubSpotContactResponse>(`/contacts/${existingId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            properties: {
+              firstname: lead.firstName,
+              lastname: lead.lastName,
+              phone: lead.phone || '',
+              ...(lead.ownerId ? { hubspot_owner_id: lead.ownerId } : {}),
+            },
+          }),
+        })
+        return existingId
+      }
+      throw err
+    }
   }
 
   async upsertCompany(company: CRMCompany): Promise<string> {

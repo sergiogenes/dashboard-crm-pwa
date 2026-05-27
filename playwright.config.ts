@@ -4,9 +4,12 @@ import path from 'path'
 
 // Cargar variables de entorno específicas de testing
 dotenv.config({ path: path.resolve(process.cwd(), '.env.test') })
+process.env.IS_PLAYWRIGHT_TEST = 'true'
 
 export default defineConfig({
   testDir: './tests',
+  /* Límite de tiempo por test (60 segundos por latencia de red y compilación) */
+  timeout: 60 * 1000,
   /* Ejecución secuencial para evitar colisiones en la DB de pruebas */
   fullyParallel: false,
   /* Cancelar ejecución en CI si se queda colgado algún test */
@@ -40,11 +43,13 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
     env: {
-      MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/testdb',
+      MONGODB_URI:
+        process.env.MONGODB_URI || 'mongodb://localhost:27017/testdb',
       CRM_PROVIDER: 'mock',
       NEXTAUTH_SECRET: 'secreto_criptografico_seguro_para_pruebas_locales',
       NEXTAUTH_URL: 'http://localhost:3000',
       NODE_ENV: 'test',
+      IS_PLAYWRIGHT_TEST: 'true',
     },
   },
 })

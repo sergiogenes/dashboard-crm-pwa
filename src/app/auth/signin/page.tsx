@@ -50,10 +50,10 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
       return
     }
 
-    // 2. Validar que el servidor de autenticación esté respondiendo (10s de margen para compilación en frío o Atlas connection)
+    // 2. Validar que el servidor de autenticación esté respondiendo (20s de margen para compilación en frío o Atlas connection)
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000)
+      const timeoutId = setTimeout(() => controller.abort(), 20000)
       const healthCheck = await fetch('/api/health', {
         signal: controller.signal
       }).catch(() => null)
