@@ -4,6 +4,7 @@ export interface CRMLead {
   lastName: string
   email: string
   phone?: string
+  ownerId?: string
 }
 
 export interface CRMCompany {
@@ -46,4 +47,6 @@ export interface ICRMProvider {
    * Comprueba si la conexión con la API del CRM es saludable.
    */
   checkHealth(): Promise<boolean>
+  fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]>
+  fetchAllCompanies(): Promise<CRMCompany[]>
 }

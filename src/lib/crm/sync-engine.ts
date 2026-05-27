@@ -1,6 +1,7 @@
 import dbConnect from '@/lib/mongodb'
 import Company from '@/models/Company'
 import Lead from '@/models/Lead'
+import User from '@/models/User'
 import { CRMProviderFactory } from './factory'
 
 /**
@@ -83,12 +84,14 @@ export async function syncMongoDBToCRM(): Promise<void> {
       }
 
       // 2. Caso Crear / Actualizar
+      const user = await User.findById(lead.userId)
       const crmId = await crm.upsertLead({
         crmId: lead.crmId,
         firstName: lead.firstName,
         lastName: lead.lastName,
         email: lead.email,
         phone: lead.phone,
+        ownerId: user?.crmOwnerId,
       })
 
       lead.crmId = crmId

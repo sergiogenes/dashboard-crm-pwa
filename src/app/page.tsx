@@ -43,7 +43,7 @@ export default function DashboardPage() {
     async () => {
       if (!userId) return []
       return await localDb.companies
-        .filter((c) => c.userId === userId && c.deleted !== true)
+        .filter((c) => c.deleted !== true)
         .toArray()
     },
     [userId],

@@ -49,4 +49,14 @@ export class MockCRMProvider implements ICRMProvider {
   async checkHealth(): Promise<boolean> {
     return true
   }
+
+  async fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]> {
+    // Retornar la lista en memoria que coincida con el ownerId
+    return Array.from(this.contacts.values()).filter(lead => lead.ownerId === ownerId)
+  }
+
+  async fetchAllCompanies(): Promise<CRMCompany[]> {
+    // Retornar todas las empresas en memoria
+    return Array.from(this.companies.values())
+  }
 }
