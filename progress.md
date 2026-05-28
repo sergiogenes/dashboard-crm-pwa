@@ -64,8 +64,16 @@
 *   **Optimización de Tiempos de Conexión en Redes Lentas:** Incrementado el timeout de Mongoose a 15s (`serverSelectionTimeoutMS`), el abort timeout del frontend en login a 20s y el tiempo límite global de Playwright a 60s para prevenir falsos fallos y timeouts debido a latencia DNS o TCP en la conexión a MongoDB Atlas.
 *   **Estabilización del Estado Online en Tests:** Añadida una espera de 1 segundo tras restaurar la conexión a Internet en Playwright (`setOffline(false)`) para que la pila de red virtual se inicialice completamente antes de disparar peticiones, evitando fallos inmediatos por desconexión temporal.
 
-*   **Tareas Pendientes (Próximos Pasos):**
-    1. Subir los últimos cambios de enrutamiento y sincronización a GitHub y verificar el despliegue automático en Vercel.
-    2. Configurar los Webhooks en HubSpot apuntando al dominio de producción.
-*Última actualización: 2026-05-27*
+## Fases del 28 de mayo de 2026 (Configuración de Webhooks y Resiliencia en Borrados)
+*   **Suscripciones de Webhooks Activas:** Configurada la aplicación en HubSpot para gatillar eventos de creación (`company.creation`) y modificaciones de nombre y dominio (`company.propertyChange`) de empresas apuntando a la URL de producción.
+*   **Verificación Híbrida de Firmas (V3/V2/V1):** Rediseñado el validador del webhook en [src/app/api/webhooks/crm/route.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/api/webhooks/crm/route.ts) para soportar la firma criptográfica V3 (HMAC-SHA256 con timestamp) y mantener la compatibilidad con firmas V2 (SHA-256) y V1 (MD5), solucionando el error `401 Unauthorized`.
+*   **Persistencia de Soft Delete en Base Intermedia:** Modificado el motor de sincronización en [src/lib/crm/sync-engine.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/sync-engine.ts) para que las empresas y contactos eliminados no se borren físicamente de MongoDB. Se actualizan a `crmSynced: true` manteniendo de forma persistente su estado `deleted: true`.
+*   **Protección contra Recreaciones en Webhook:** Ajustada la lógica en el endpoint del webhook ([src/app/api/webhooks/crm/route.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/api/webhooks/crm/route.ts)) para ignorar cualquier evento de cambio de propiedad si el registro en MongoDB ya está marcado como `deleted: true`. Esto evita que eventos atrasados del CRM recreen elementos eliminados.
+*   **Prevención de Re-importaciones Cíclicas:** Modificada la función `pullServerUpdates` en [src/app/actions/sync.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/actions/sync.ts) para contar tanto registros activos como borrados al verificar si MongoDB está vacía, previniendo que se gatille la re-importación masiva desde HubSpot si el usuario borra todas sus entidades locales.
 
+*   Tareas Pendientes (Próximos Pasos):
+    1. Subir los últimos cambios a GitHub y verificar el despliegue automático en Vercel.
+    2. Realizar pruebas exhaustivas de borrado local para certificar que el webhook y el soft delete están sincronizados sin bucles.
+
+---
+*Última actualización: 2026-05-28*
