@@ -173,11 +173,11 @@ export async function pullServerUpdates(lastSyncTime: number) {
   const userId = await getUserIdOrThrow()
   await dbConnect()
 
-  // Comprobar si la base de datos intermedia (MongoDB) está vacía de empresas o leads
-  const companyCount = await Company.countDocuments({ deleted: false })
+  // Comprobar si la base de datos intermedia (MongoDB) está vacía de empresas o leads (contando activos y eliminados)
+  const companyCount = await Company.countDocuments()
   const user = await User.findById(userId)
   const leadCount = user?.crmOwnerId
-    ? await Lead.countDocuments({ userId, deleted: false })
+    ? await Lead.countDocuments({ userId })
     : 0
 
   const needsImport =
