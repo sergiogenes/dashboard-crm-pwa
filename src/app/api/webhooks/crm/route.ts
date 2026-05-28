@@ -40,9 +40,13 @@ export async function POST(req: Request) {
       }
 
       // Validar Firma HubSpot v2
-      const method = 'POST'
-      const urlPath = '/api/webhooks/crm'
-      const sourceString = clientSecret + method + urlPath + rawBody
+      const method = req.method
+      const urlObj = new URL(req.url)
+      const proto = req.headers.get('x-forwarded-proto') || 'https'
+      const host = req.headers.get('host') || urlObj.host
+      const uri = `${proto}://${host}${urlObj.pathname}${urlObj.search}`
+
+      const sourceString = clientSecret + method + uri + rawBody
       const expectedSignature = crypto.createHash('sha256').update(sourceString).digest('hex')
 
       if (signature !== expectedSignature) {
