@@ -36,6 +36,7 @@ export async function POST(req: Request) {
 
     if (clientSecret) {
       if (!signature) {
+        console.error('[Webhook CRM] Error: Falta cabecera x-hubspot-signature')
         return NextResponse.json({ error: 'Falta cabecera x-hubspot-signature' }, { status: 401 })
       }
 
@@ -49,12 +50,26 @@ export async function POST(req: Request) {
       const sourceString = clientSecret + method + uri + rawBody
       const expectedSignature = crypto.createHash('sha256').update(sourceString).digest('hex')
 
+      console.log('[Webhook CRM] Diagnóstico de Firma:', {
+        uri,
+        method,
+        signatureRecibida: signature,
+        firmaCalculadaV2: expectedSignature,
+        clientSecretLength: clientSecret.length,
+        rawBodySnippet: rawBody.slice(0, 100)
+      })
+
       if (signature !== expectedSignature) {
         // Fallback a Firma v1 por compatibilidad
         const sourceStringV1 = clientSecret + rawBody
         const expectedSignatureV1 = crypto.createHash('md5').update(sourceStringV1).digest('hex')
 
+        console.log('[Webhook CRM] Intento Fallback V1:', {
+          firmaCalculadaV1: expectedSignatureV1
+        })
+
         if (signature !== expectedSignatureV1) {
+          console.error('[Webhook CRM] Error: Firma de webhook inválida')
           return NextResponse.json({ error: 'Firma de webhook inválida' }, { status: 401 })
         }
       }
