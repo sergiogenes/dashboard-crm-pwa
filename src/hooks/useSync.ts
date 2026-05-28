@@ -227,23 +227,13 @@ export function useSync(userId: string | undefined) {
     const checkServerAndSync = async () => {
       if (!navigator.onLine) return
 
-      const pendingCompanies = await localDb.companies
-        .filter(c => c.synced === false && c.userId === userId)
-        .count()
-
-      const pendingLeads = await localDb.leads
-        .filter(l => l.synced === false && l.userId === userId)
-        .count()
-
-      if (pendingCompanies > 0 || pendingLeads > 0 || syncStatusRef.current === 'error') {
-        try {
-          const response = await fetch('/api/health')
-          if (response.ok) {
-            sync()
-          }
-        } catch {
-          // Servidor caído, reintentar en el próximo polling
+      try {
+        const response = await fetch('/api/health')
+        if (response.ok) {
+          await sync()
         }
+      } catch {
+        // Servidor caído, reintentar en el próximo polling
       }
     }
 
