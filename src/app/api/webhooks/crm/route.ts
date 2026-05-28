@@ -33,46 +33,74 @@ export async function POST(req: Request) {
     // 1. Validación de Firma de HubSpot (Opcional en desarrollo)
     const clientSecret = process.env.HUBSPOT_CLIENT_SECRET
     const signature = req.headers.get('x-hubspot-signature')
+    const signatureV3 = req.headers.get('x-hubspot-signature-v3')
+    const timestamp = req.headers.get('x-hubspot-request-timestamp')
 
     if (clientSecret) {
-      if (!signature) {
-        console.error('[Webhook CRM] Error: Falta cabecera x-hubspot-signature')
-        return NextResponse.json({ error: 'Falta cabecera x-hubspot-signature' }, { status: 401 })
+      if (!signature && !signatureV3) {
+        console.error('[Webhook CRM] Error: Falta cabecera de firma de HubSpot')
+        return NextResponse.json({ error: 'Faltan cabeceras de firma' }, { status: 401 })
       }
 
-      // Validar Firma HubSpot v2
+      // Reconstruir la URL absoluta
       const method = req.method
       const urlObj = new URL(req.url)
       const proto = req.headers.get('x-forwarded-proto') || 'https'
       const host = req.headers.get('host') || urlObj.host
       const uri = `${proto}://${host}${urlObj.pathname}${urlObj.search}`
 
-      const sourceString = clientSecret + method + uri + rawBody
-      const expectedSignature = crypto.createHash('sha256').update(sourceString).digest('hex')
+      let v3Valid = false
+      let v2Valid = false
+      let v1Valid = false
 
-      console.log('[Webhook CRM] Diagnóstico de Firma:', {
-        uri,
-        method,
-        signatureRecibida: signature,
-        firmaCalculadaV2: expectedSignature,
-        clientSecretLength: clientSecret.length,
-        rawBodySnippet: rawBody.slice(0, 100)
-      })
+      // --- VALIDACIÓN V3 (Recomendada por HubSpot) ---
+      if (signatureV3 && timestamp) {
+        // La firma v3 de HubSpot es HMAC-SHA256 en Base64
+        const sourceStringV3 = method + uri + rawBody + timestamp
+        const expectedSignatureV3 = crypto
+          .createHmac('sha256', clientSecret)
+          .update(sourceStringV3)
+          .digest('base64')
 
-      if (signature !== expectedSignature) {
-        // Fallback a Firma v1 por compatibilidad
+        v3Valid = (signatureV3 === expectedSignatureV3)
+        console.log('[Webhook CRM] Diagnóstico V3:', {
+          signatureV3,
+          expectedSignatureV3,
+          v3Valid
+        })
+      }
+
+      // --- VALIDACIÓN V2 (SHA-256) ---
+      if (signature) {
+        const sourceStringV2 = clientSecret + method + uri + rawBody
+        const expectedSignatureV2 = crypto.createHash('sha256').update(sourceStringV2).digest('hex')
+        v2Valid = (signature === expectedSignatureV2)
+
+        // Fallback V1 (MD5)
         const sourceStringV1 = clientSecret + rawBody
         const expectedSignatureV1 = crypto.createHash('md5').update(sourceStringV1).digest('hex')
+        v1Valid = (signature === expectedSignatureV1)
 
-        console.log('[Webhook CRM] Intento Fallback V1:', {
-          firmaCalculadaV1: expectedSignatureV1
+        console.log('[Webhook CRM] Diagnóstico V2/V1:', {
+          signature,
+          expectedSignatureV2,
+          v2Valid,
+          expectedSignatureV1,
+          v1Valid
         })
-
-        if (signature !== expectedSignatureV1) {
-          console.error('[Webhook CRM] Error: Firma de webhook inválida')
-          return NextResponse.json({ error: 'Firma de webhook inválida' }, { status: 401 })
-        }
       }
+
+      // Validar si al menos un método es exitoso
+      if (!v3Valid && !v2Valid && !v1Valid) {
+        console.error('[Webhook CRM] Error: Todas las firmas de HubSpot fallaron la validación.')
+        return NextResponse.json({ error: 'Firma de webhook inválida' }, { status: 401 })
+      }
+
+      console.log('[Webhook CRM] Firma validada exitosamente mediante:', {
+        v3: v3Valid,
+        v2: v2Valid,
+        v1: v1Valid
+      })
     } else {
       console.warn('[Webhook CRM] Advertencia: HUBSPOT_CLIENT_SECRET no configurado. Procesando webhook sin verificar firma.')
     }
