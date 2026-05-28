@@ -31,7 +31,10 @@ export async function syncMongoDBToCRM(): Promise<void> {
         if (company.crmId) {
           await crm.deleteCompany(company.crmId)
         }
-        await Company.findByIdAndDelete(company._id)
+        company.crmSynced = true
+        company.crmLastSyncAt = new Date()
+        company.crmSyncError = undefined
+        await company.save()
         continue
       }
 
@@ -79,7 +82,10 @@ export async function syncMongoDBToCRM(): Promise<void> {
         if (lead.crmId) {
           await crm.deleteLead(lead.crmId)
         }
-        await Lead.findByIdAndDelete(lead._id)
+        lead.crmSynced = true
+        lead.crmLastSyncAt = new Date()
+        lead.crmSyncError = undefined
+        await lead.save()
         continue
       }
 

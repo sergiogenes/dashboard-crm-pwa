@@ -132,6 +132,11 @@ export async function POST(req: Request) {
           lead = await Lead.findOne({ email: event.propertyValue })
         }
 
+        if (lead && lead.deleted) {
+          console.log(`[Webhook CRM] Ignorando evento para lead crmId ${crmId} marcado como eliminado.`)
+          continue
+        }
+
         if (!lead) {
           lead = new Lead({
             crmId,
@@ -176,6 +181,11 @@ export async function POST(req: Request) {
         }
 
         let company = await Company.findOne({ crmId })
+
+        if (company && company.deleted) {
+          console.log(`[Webhook CRM] Ignorando evento para empresa crmId ${crmId} marcada como eliminada.`)
+          continue
+        }
 
         if (!company) {
           company = new Company({
