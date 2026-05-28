@@ -47,3 +47,6 @@ next-env.d.ts
 
 # Antigravity CLI (Archivos locales de la IA)
 /.antigravitycli
+
+#imagenes de feedback
+/feedback-images
