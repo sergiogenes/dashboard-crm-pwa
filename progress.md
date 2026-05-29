@@ -95,6 +95,11 @@
     - Reforzados los formularios con `method="POST"` para evitar la exposición de contraseñas por GET ante fallos de hidratación.
     - Corregidas las advertencias (warnings) de Mongoose v9 reemplazando `new: true` por `returnDocument: 'after'` en `src/app/actions/sync.ts`.
     - Reubicados los botones de creación en el Dashboard para ser contextuales de acuerdo al tab activo (`+ Contacto` / `+ Empresa`).
+*   [x] **Rediseño del Layout (Sidebar Lateral y Páginas Independientes) - Fase 8:**
+    - Creados los componentes estructurales [Sidebar.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/Sidebar.tsx) (sticky y colapsable) y [Header.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/Header.tsx) (buscador y avatar de usuario, con `SyncStatusBadge` integrado).
+    - Configurado el Layout Maestro [src/app/(dashboard)/layout.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/layout.tsx) para el route group `(dashboard)`.
+    - Creadas las páginas independientes para [Contacts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx), [Companies](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/companies/page.tsx), [Dashboard Home](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/page.tsx) y [Settings](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/settings/page.tsx) dentro del route group.
+    - Se dejó lista la indicación para eliminar el archivo raíz obsoleto `src/app/page.tsx`.
 *   [ ] **Cifrado y Purga de Datos Locales (IndexedDB) - Fase 3:**
     - Cifrado transparente en la capa local de Dexie.js derivando claves efímeras en RAM en el inicio de sesión.
     - Implementar purga total de Dexie.js en el evento de cierre de sesión (logout).
@@ -103,3 +108,4 @@
 
 ---
 *Última actualización: 2026-05-29*
+
