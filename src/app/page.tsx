@@ -168,39 +168,14 @@ export default function DashboardPage() {
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-8">
-        {/* Sección de Encabezado y Acciones Rápidas */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              Panel de Control
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Gestiona tus leads y empresas con persistencia local y sincronización automática.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setCompanyToEdit(null)
-                setIsCompanyModalOpen(true)
-              }}
-              className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-800 px-5 py-2.5 text-sm font-semibold text-slate-300 hover:text-white transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Empresa
-            </button>
-            <button
-              onClick={() => {
-                setLeadToEdit(null)
-                setIsLeadModalOpen(true)
-              }}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-violet-700 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Contacto
-            </button>
-          </div>
+        {/* Sección de Encabezado */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            Panel de Control
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Gestiona tus leads y empresas con persistencia local y sincronización automática.
+          </p>
         </div>
 
         {/* Tarjetas de Estadísticas */}
@@ -280,31 +255,58 @@ export default function DashboardPage() {
         <div className="rounded-2xl border border-slate-800 bg-slate-900/20 p-6 backdrop-blur-md mb-8">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             {/* Tabs */}
-            <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800 self-start">
-              <button
-                onClick={() => {
-                  setActiveTab('leads')
-                  setSearchTerm('')
-                }}
-                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-                  activeTab === 'leads' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Users className="h-4 w-4" />
-                Leads / Contactos
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('companies')
-                  setSearchTerm('')
-                }}
-                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-                  activeTab === 'companies' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Building2 className="h-4 w-4" />
-                Empresas
-              </button>
+            <div className="flex items-center gap-3 self-start">
+              <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800">
+                <button
+                  onClick={() => {
+                    setActiveTab('leads')
+                    setSearchTerm('')
+                  }}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+                    activeTab === 'leads' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Users className="h-4 w-4" />
+                  Leads / Contactos
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('companies')
+                    setSearchTerm('')
+                  }}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+                    activeTab === 'companies' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Building2 className="h-4 w-4" />
+                  Empresas
+                </button>
+              </div>
+
+              {/* Botón Contextual */}
+              {activeTab === 'leads' ? (
+                <button
+                  onClick={() => {
+                    setLeadToEdit(null)
+                    setIsLeadModalOpen(true)
+                  }}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-violet-700 transition-colors shrink-0"
+                >
+                  <Plus className="h-4.5 w-4.5" />
+                  Contacto
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setCompanyToEdit(null)
+                    setIsCompanyModalOpen(true)
+                  }}
+                  className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-300 hover:text-white transition-colors shrink-0"
+                >
+                  <Plus className="h-4.5 w-4.5" />
+                  Empresa
+                </button>
+              )}
             </div>
 
             {/* Inputs de Búsqueda y Filtro */}

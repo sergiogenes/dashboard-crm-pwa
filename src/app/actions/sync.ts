@@ -229,7 +229,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
                   crmSynced: true,
                 },
               },
-              { upsert: true, new: true },
+              { upsert: true, returnDocument: 'after' },
             )
           }
         }
@@ -261,7 +261,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
                     crmSynced: true,
                   },
                 },
-                { upsert: true, new: true },
+                { upsert: true, returnDocument: 'after' },
               )
             }
           }
