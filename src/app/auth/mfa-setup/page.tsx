@@ -155,6 +155,7 @@ export default function MfaSetupPage() {
                     pattern="[0-9]*"
                     maxLength={6}
                     required
+                    autoFocus // UX: Foco automático en el campo de configuración
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                     placeholder="000000"

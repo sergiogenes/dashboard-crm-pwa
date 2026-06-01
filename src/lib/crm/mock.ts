@@ -1,4 +1,4 @@
-import { ICRMProvider, CRMLead, CRMCompany } from './interface'
+import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice } from './interface'
 
 export class MockCRMProvider implements ICRMProvider {
   private contacts = new Map<string, CRMLead>()
@@ -51,8 +51,26 @@ export class MockCRMProvider implements ICRMProvider {
   }
 
   async fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]> {
-    // Retornar la lista en memoria que coincida con el ownerId
-    return Array.from(this.contacts.values()).filter(lead => lead.ownerId === ownerId)
+    // Retornar la lista en memoria que coincida con el ownerId, calculando su scoring
+    const leads = Array.from(this.contacts.values()).filter(lead => lead.ownerId === ownerId)
+    
+    for (const lead of leads) {
+      if (lead.crmId) {
+        const invoices = await this.fetchInvoicesByLead(lead.crmId)
+        const hasOverdue = invoices.some(inv => inv.status === 'OVERDUE')
+        const hasPending = invoices.some(inv => inv.status === 'PENDING')
+        
+        if (hasOverdue) {
+          lead.scoring = 'D - Deudor'
+        } else if (hasPending) {
+          lead.scoring = 'B - Bueno'
+        } else {
+          lead.scoring = 'A - Excelente'
+        }
+      }
+    }
+
+    return leads
   }
 
   async fetchAllCompanies(): Promise<CRMCompany[]> {
@@ -62,5 +80,49 @@ export class MockCRMProvider implements ICRMProvider {
 
   async fetchOwnerIdByEmail(email: string): Promise<string | undefined> {
     return 'mock_owner_id'
+  }
+
+  async fetchInvoicesByLead(leadCrmId: string): Promise<CRMInvoice[]> {
+    // Generar facturas deterministas según el leadCrmId para consistencia visual
+    const hash = leadCrmId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    const count = (hash % 3) + 2 // 2 a 4 facturas
+
+    const invoices: CRMInvoice[] = []
+    const baseDate = new Date('2026-01-15T12:00:00.000Z')
+
+    for (let i = 0; i < count; i++) {
+      const invoiceDate = new Date(baseDate.getTime() + i * 30 * 24 * 60 * 60 * 1000)
+      const dueDate = new Date(invoiceDate.getTime() + 15 * 24 * 60 * 60 * 1000)
+      
+      // Estado de factura basado en el índice y hash
+      let status: 'PAID' | 'PENDING' | 'OVERDUE' = 'PAID'
+      let paymentDate: string | undefined = undefined
+
+      if (i === count - 1) {
+        // La última factura depende del hash
+        if (hash % 5 === 0) {
+          status = 'OVERDUE'
+        } else if (hash % 3 === 0) {
+          status = 'PENDING'
+        } else {
+          status = 'PAID'
+          paymentDate = new Date(dueDate.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString()
+        }
+      } else {
+        status = 'PAID'
+        paymentDate = new Date(dueDate.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString()
+      }
+
+      invoices.push({
+        crmId: `mock_inv_${leadCrmId}_${i}`,
+        amount: ((hash + i * 17) % 500) + 100, // montos deterministas entre $100 y $600
+        status,
+        invoiceDate: invoiceDate.toISOString(),
+        dueDate: dueDate.toISOString(),
+        paymentDate
+      })
+    }
+
+    return invoices
   }
 }

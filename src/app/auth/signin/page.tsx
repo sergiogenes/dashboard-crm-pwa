@@ -21,12 +21,17 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
   const errorParam = searchParams?.error
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('mfa_attempts')
+    }
+
     if (errorParam) {
       const errorMessages: { [key: string]: string } = {
         Configuration: 'Hay un problema con la configuración del servidor de autenticación.',
         AccessDenied: 'Acceso denegado. No tienes permisos para ingresar.',
         Verification: 'El token de verificación ha expirado o es inválido.',
         CredentialsSignin: 'Los datos de acceso provistos son incorrectos.',
+        MfaAttemptsExceeded: 'Has superado el número máximo de intentos permitidos para el código MFA. Por seguridad, debes volver a iniciar sesión.',
         Default: 'Ocurrió un error al intentar autenticarse con el servidor.',
       }
       setError(errorMessages[errorParam] || errorMessages.Default)

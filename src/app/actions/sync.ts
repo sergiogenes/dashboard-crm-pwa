@@ -5,9 +5,11 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Company from '@/models/Company'
-import Lead from '@/models/Lead'
+import Lead, { ILeadSchema } from '@/models/Lead'
 import User from '@/models/User'
+import Invoice from '@/models/Invoice'
 import { LocalLead, LocalCompany } from '@/lib/db'
+import { ICRMProvider, CRMInvoice } from '@/lib/crm/interface'
 
 async function getUserIdOrThrow(): Promise<string> {
   const session = await getServerSession(authOptions)
@@ -237,9 +239,11 @@ export async function pullServerUpdates(lastSyncTime: number) {
         // 2. Importar contactos (Leads) de HubSpot a MongoDB (Solo si el usuario tiene crmOwnerId)
         if (user?.crmOwnerId) {
           const crmLeads = await crm.fetchLeadsByOwner(user.crmOwnerId)
+          const leadDocsToSync: { doc: ILeadSchema; crmId: string }[] = []
+
           for (const crmLead of crmLeads) {
             if (crmLead.crmId) {
-              await Lead.findOneAndUpdate(
+              const leadDoc = await Lead.findOneAndUpdate(
                 {
                   $or: [
                     { crmId: crmLead.crmId },
@@ -263,7 +267,20 @@ export async function pullServerUpdates(lastSyncTime: number) {
                 },
                 { upsert: true, returnDocument: 'after' },
               )
+
+              if (leadDoc) {
+                leadDocsToSync.push({ doc: leadDoc, crmId: crmLead.crmId })
+              }
             }
+          }
+
+          // Paralelizar la descarga de facturas durante la importación inicial para máxima velocidad
+          if (leadDocsToSync.length > 0) {
+            await Promise.all(
+              leadDocsToSync.map(({ doc, crmId }) =>
+                syncInvoicesForLead(doc, crmId, crm, userId)
+              )
+            )
           }
         }
       }
@@ -286,6 +303,32 @@ export async function pullServerUpdates(lastSyncTime: number) {
   })
 
   const updatedLeads = await Lead.find({
+    userId,
+    updatedAt: { $gt: sinceDate },
+  })
+
+  // Sincronización incremental de facturas en segundo plano (fire-and-forget de forma paralela)
+  // para responder inmediatamente al cliente y prevenir timeouts de Next.js
+  if (updatedLeads.length > 0) {
+    import('@/lib/crm/factory').then(({ CRMProviderFactory }) => {
+      const crm = CRMProviderFactory.getProvider()
+      crm.checkHealth().then(async (isOnline) => {
+        if (isOnline) {
+          await Promise.all(
+            updatedLeads.map(lead => {
+              if (lead.crmId) {
+                return syncInvoicesForLead(lead, lead.crmId, crm, userId)
+              }
+              return Promise.resolve()
+            })
+          )
+        }
+      }).catch(err => console.error('[Sync Action Background] Error al validar salud del CRM:', err))
+    }).catch(err => console.error('[Sync Action Background] Error al cargar factory:', err))
+  }
+
+  // Obtener facturas actualizadas desde la última sincronización
+  const updatedInvoices = await Invoice.find({
     userId,
     updatedAt: { $gt: sinceDate },
   })
@@ -315,8 +358,79 @@ export async function pullServerUpdates(lastSyncTime: number) {
       companyId: l.companyId?.toString() || undefined,
       deleted: l.deleted,
       userId: l.userId,
+      scoring: l.scoring,
       createdAt: l.createdAt.getTime(),
       updatedAt: l.updatedAt.getTime(),
     })),
+    invoices: updatedInvoices.map((inv) => ({
+      id: inv._id.toString(),
+      crmId: inv.crmId,
+      leadId: inv.leadId.toString(),
+      userId: inv.userId,
+      amount: inv.amount,
+      status: inv.status,
+      invoiceDate: inv.invoiceDate.getTime(),
+      dueDate: inv.dueDate.getTime(),
+      paymentDate: inv.paymentDate ? inv.paymentDate.getTime() : undefined,
+      createdAt: inv.createdAt.getTime(),
+      updatedAt: inv.updatedAt.getTime(),
+    })),
+  }
+}
+
+/**
+ * Función auxiliar para sincronizar facturas y calcular el scoring del lead en MongoDB.
+ */
+async function syncInvoicesForLead(
+  leadDoc: ILeadSchema,
+  crmLeadCrmId: string,
+  crm: ICRMProvider,
+  userId: string,
+) {
+  try {
+    const crmInvoices = await crm.fetchInvoicesByLead(crmLeadCrmId)
+
+    // 1. Limpiar facturas previas de este lead en MongoDB para evitar duplicados
+    await Invoice.deleteMany({ leadId: leadDoc._id })
+
+    // 2. Insertar las nuevas facturas asociadas a este lead
+    if (crmInvoices.length > 0) {
+      const invoiceDocs = crmInvoices.map((inv: CRMInvoice) => ({
+        crmId: inv.crmId,
+        leadId: leadDoc._id,
+        userId,
+        amount: inv.amount,
+        status: inv.status,
+        invoiceDate: new Date(inv.invoiceDate),
+        dueDate: new Date(inv.dueDate),
+        paymentDate: inv.paymentDate ? new Date(inv.paymentDate) : undefined,
+      }))
+      await Invoice.insertMany(invoiceDocs)
+    }
+
+    // 3. Calcular scoring de crédito en base a las facturas
+    const hasOverdue = crmInvoices.some((inv: CRMInvoice) => inv.status === 'OVERDUE')
+    const hasPending = crmInvoices.some((inv: CRMInvoice) => inv.status === 'PENDING')
+    let scoring = 'A - Excelente'
+    
+    if (hasOverdue) {
+      scoring = 'D - Deudor'
+    } else if (hasPending) {
+      scoring = 'B - Bueno'
+    }
+
+    // 4. Actualizar el scoring en el lead de MongoDB
+    if (leadDoc.scoring !== scoring) {
+      await Lead.updateOne(
+        { _id: leadDoc._id },
+        { $set: { scoring } },
+      )
+      leadDoc.scoring = scoring
+    }
+  } catch (error) {
+    console.error(
+      `[syncInvoicesForLead] Error al sincronizar facturas para lead ${leadDoc._id}:`,
+      error,
+    )
   }
 }

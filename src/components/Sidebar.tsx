@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { signOut } from 'next-auth/react'
+import { useSession, signOut } from 'next-auth/react'
 import {
   LayoutDashboard,
   Users,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 
 export default function Sidebar() {
+  const { data: session } = useSession()
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
@@ -33,6 +34,10 @@ export default function Sidebar() {
       import('@/lib/db').then(({ localDb }) => {
         localDb.delete().catch((err) => console.error('Error al purgar IndexedDB:', err))
       })
+      sessionStorage.removeItem('mfa_attempts')
+      if (session?.user?.id) {
+        localStorage.removeItem(`last_sync_time_${session.user.id}`)
+      }
     }
     signOut({ callbackUrl: '/auth/signin' })
   }
@@ -44,8 +49,8 @@ export default function Sidebar() {
       }`}
     >
       {/* Cabecera del Sidebar */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-slate-800/50">
-        <div className="flex items-center gap-3 overflow-hidden">
+      <div className="relative flex h-16 items-center px-4 border-b border-slate-800/50">
+        <div className={`flex items-center gap-3 overflow-hidden ${isCollapsed ? 'mx-auto justify-center' : ''}`}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 shadow-md shadow-indigo-500/20">
             <Activity className="h-5 w-5 text-white animate-pulse" />
           </div>
@@ -58,14 +63,14 @@ export default function Sidebar() {
 
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition-colors"
+          className="hidden md:flex absolute -right-3.5 top-[18px] z-30 h-7 w-7 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 hover:text-white transition-all shadow-md"
         >
           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </div>
 
       {/* Menú de Navegación */}
-      <nav className="flex-1 space-y-1.5 px-3 py-6 overflow-y-auto">
+      <nav className={`flex-1 space-y-1.5 px-3 py-6 ${isCollapsed ? 'overflow-visible' : 'overflow-y-auto'}`}>
         {menuItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
@@ -101,7 +106,7 @@ export default function Sidebar() {
           className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold hover:bg-red-500/10 hover:text-red-400 transition-all group relative"
         >
           <LogOut className="h-5 w-5 shrink-0 text-slate-500 group-hover:text-red-400 transition-transform group-hover:scale-105" />
-          {!isCollapsed && <span>Cerrar Sesión</span>}
+          {!isCollapsed && <span className="truncate">Cerrar Sesión</span>}
 
           {isCollapsed && (
             <div className="pointer-events-none absolute left-full ml-4 z-50 rounded bg-slate-900 border border-slate-800 px-2 py-1 text-xs text-red-400 opacity-0 transition-opacity group-hover:opacity-100 shadow-md">

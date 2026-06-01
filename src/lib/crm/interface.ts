@@ -5,12 +5,22 @@ export interface CRMLead {
   email: string
   phone?: string
   ownerId?: string
+  scoring?: string
 }
 
 export interface CRMCompany {
   crmId?: string
   name: string
   domain?: string
+}
+
+export interface CRMInvoice {
+  crmId?: string
+  amount: number
+  status: 'PAID' | 'PENDING' | 'OVERDUE'
+  invoiceDate: string // Formato fecha ISO
+  dueDate: string // Formato fecha ISO
+  paymentDate?: string // Formato fecha ISO
 }
 
 export interface ICRMProvider {
@@ -50,4 +60,9 @@ export interface ICRMProvider {
   fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]>
   fetchAllCompanies(): Promise<CRMCompany[]>
   fetchOwnerIdByEmail(email: string): Promise<string | undefined>
+
+  /**
+   * Obtiene el historial de facturas de un contacto (Custom Object) desde el CRM.
+   */
+  fetchInvoicesByLead(leadCrmId: string): Promise<CRMInvoice[]>
 }

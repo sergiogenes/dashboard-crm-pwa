@@ -8,6 +8,7 @@ export interface ILeadSchema extends Document {
   companyId?: mongoose.Types.ObjectId | null
   userId: string
   deleted: boolean
+  scoring?: string
   
   // Metadatos de sincronización con el CRM
   crmId?: string
@@ -27,6 +28,7 @@ const LeadSchema = new Schema<ILeadSchema>(
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', default: null },
     userId: { type: String, required: true, index: true },
     deleted: { type: Boolean, default: false, index: true },
+    scoring: { type: String },
     crmId: { type: String, index: true },
     crmSynced: { type: Boolean, default: false, index: true },
     crmSyncError: { type: String },

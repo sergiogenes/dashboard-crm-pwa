@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, Search, User, LogOut, Settings } from 'lucide-react'
+import { Bell, User, LogOut, Settings } from 'lucide-react'
 import Link from 'next/link'
 import SyncStatusBadge from './SyncStatusBadge'
 
@@ -15,23 +15,16 @@ export default function Header() {
       import('@/lib/db').then(({ localDb }) => {
         localDb.delete().catch((err) => console.error('Error al purgar IndexedDB:', err))
       })
+      sessionStorage.removeItem('mfa_attempts')
+      if (session?.user?.id) {
+        localStorage.removeItem(`last_sync_time_${session.user.id}`)
+      }
     }
     signOut({ callbackUrl: '/auth/signin' })
   }
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b border-slate-800/50 bg-slate-950/80 px-6 backdrop-blur-md">
-      {/* Barra de Búsqueda Global */}
-      <div className="relative w-64 md:w-80">
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
-          <Search className="h-4.5 w-4.5" />
-        </div>
-        <input
-          type="text"
-          placeholder="Buscar en el CRM..."
-          className="block w-full rounded-xl border border-slate-800 bg-slate-900/40 py-2 pl-10 pr-4 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
+    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-end border-b border-slate-800/50 bg-slate-950/80 px-6 backdrop-blur-md">
 
       {/* Panel de Usuario y Notificaciones */}
       <div className="flex items-center gap-4">
