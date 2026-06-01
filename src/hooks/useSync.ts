@@ -129,7 +129,14 @@ export function useSync(userId: string | undefined) {
 
       // 3. Descargar actualizaciones del servidor (Inbound Sync)
       const lastSyncKey = `last_sync_time_${userId}`
-      const lastSyncTime = parseInt(localStorage.getItem(lastSyncKey) || '0', 10)
+      let lastSyncTime = parseInt(localStorage.getItem(lastSyncKey) || '0', 10)
+
+      // Si la base de datos local de Dexie está vacía, forzar descarga completa desde el servidor (lastSyncTime = 0)
+      const localLeadsCount = await localDb.leads.count()
+      const localCompaniesCount = await localDb.companies.count()
+      if (localLeadsCount === 0 && localCompaniesCount === 0) {
+        lastSyncTime = 0
+      }
 
       const updates = await pullServerUpdates(lastSyncTime)
 
@@ -162,6 +169,7 @@ export function useSync(userId: string | undefined) {
       for (const serverLead of updates.leads) {
         if (serverLead.deleted) {
           await localDb.leads.where('id').equals(serverLead.id).delete()
+          await localDb.invoices.where('leadId').equals(serverLead.id).delete() // Borrado en cascada local
         } else {
           // Buscar si ya existe localmente el lead usando el ID de MongoDB o por email
           let existingLocal = await localDb.leads.where('id').equals(serverLead.id).first()
@@ -182,11 +190,37 @@ export function useSync(userId: string | undefined) {
             email: serverLead.email,
             phone: serverLead.phone,
             companyId: serverLead.companyId,
+            scoring: serverLead.scoring, // Persistir el scoring en Dexie
             synced: true,
             createdAt: serverLead.createdAt,
             updatedAt: serverLead.updatedAt,
           })
         }
+      }
+
+      // Guardar facturas en Dexie (Inbound Sync)
+      if (updates.invoices && updates.invoices.length > 0) {
+        // Limpiar facturas previas de los leads recibidos en IndexedDB antes de insertar las nuevas
+        const leadIds = Array.from(new Set(updates.invoices.map((inv: any) => inv.leadId)))
+        for (const leadId of leadIds) {
+          await localDb.invoices.where('leadId').equals(leadId).delete()
+        }
+
+        await localDb.invoices.bulkPut(
+          updates.invoices.map((inv: any) => ({
+            id: inv.id,
+            crmId: inv.crmId,
+            leadId: inv.leadId,
+            userId: inv.userId,
+            amount: inv.amount,
+            status: inv.status,
+            invoiceDate: inv.invoiceDate,
+            dueDate: inv.dueDate,
+            paymentDate: inv.paymentDate,
+            createdAt: inv.createdAt,
+            updatedAt: inv.updatedAt,
+          }))
+        )
       }
 
       localStorage.setItem(lastSyncKey, Date.now().toString())

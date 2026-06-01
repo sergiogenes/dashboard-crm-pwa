@@ -34,21 +34,38 @@ export interface LocalLead {
   synced: boolean      // Estado de sincronización a MongoDB
   createdAt: number
   updatedAt: number
+  scoring?: string     // Scoring crediticio del lead
+}
+
+export interface LocalInvoice {
+  id?: string          // ID real de MongoDB
+  crmId?: string       // ID de la factura (Custom Object) en HubSpot
+  leadId: string       // ID de MongoDB o tempId del contacto asociado
+  userId: string       // Sesión del usuario
+  amount: number       // Monto de la factura
+  status: 'PAID' | 'PENDING' | 'OVERDUE'
+  invoiceDate: number  // Timestamp de emisión
+  dueDate: number      // Timestamp de vencimiento
+  paymentDate?: number // Timestamp de pago (opcional)
+  createdAt: number
+  updatedAt: number
 }
 
 export class PWAResilientDatabase extends Dexie {
   leads!: Table<LocalLead>
   companies!: Table<LocalCompany>
   users!: Table<LocalUser>
+  invoices!: Table<LocalInvoice> // Nueva tabla para historial crediticio
 
   constructor() {
     super('PWAResilientDB')
     
-    // Esquema de almacenamiento de IndexedDB
-    this.version(2).stores({
+    // Esquema de almacenamiento de IndexedDB (versión 3)
+    this.version(3).stores({
       leads: 'tempId, id, userId, synced, deleted, companyId, email',
       companies: 'tempId, id, userId, synced, deleted, name',
       users: 'id, email',
+      invoices: 'id, crmId, leadId, userId, status', // Índice por ID de lead y estado
     })
   }
 }
