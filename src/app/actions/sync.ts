@@ -194,6 +194,7 @@ export async function pushClientChanges(
             title: clientAct.title,
             body: clientAct.body,
             timestamp: new Date(clientAct.timestamp),
+            reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined,
             crmSynced: false,
           },
         )
@@ -206,6 +207,7 @@ export async function pushClientChanges(
         title: clientAct.title,
         body: clientAct.body,
         timestamp: new Date(clientAct.timestamp),
+        reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined,
         deleted: clientAct.deleted || false,
         crmSynced: false,
       })
@@ -453,6 +455,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
       title: act.title,
       body: act.body,
       timestamp: act.timestamp.getTime(),
+      reminderDate: act.reminderDate ? act.reminderDate.getTime() : undefined,
       deleted: act.deleted,
       createdAt: act.createdAt.getTime(),
       updatedAt: act.updatedAt.getTime(),
@@ -546,9 +549,9 @@ async function syncActivitiesForLead(
       // 2. Realizar upsert de las actividades recuperadas del CRM
       for (const act of crmActivities) {
         if (act.crmId) {
-          // Si la actividad ya fue eliminada localmente, evitar resucitarla
-          const isDeleted = await Activity.exists({ crmId: act.crmId, deleted: true })
-          if (isDeleted) {
+          // Si la actividad fue eliminada y la eliminación está pendiente de sincronizarse, evitar resucitarla
+          const isPendingDelete = await Activity.exists({ crmId: act.crmId, deleted: true, crmSynced: false })
+          if (isPendingDelete) {
             continue
           }
 
@@ -565,6 +568,11 @@ async function syncActivitiesForLead(
                 title: act.title,
                 body: act.body,
                 timestamp: new Date(act.timestamp),
+                reminderDate: act.reminderDate
+                  ? (isNaN(Number(act.reminderDate))
+                      ? new Date(act.reminderDate)
+                      : new Date(Number(act.reminderDate)))
+                  : undefined,
                 crmSynced: true,
                 deleted: false,
               },

@@ -298,6 +298,7 @@ export function useSync(userId: string | undefined) {
               title: serverAct.title,
               body: serverAct.body,
               timestamp: serverAct.timestamp,
+              reminderDate: serverAct.reminderDate,
               synced: true,
               createdAt: serverAct.createdAt,
               updatedAt: serverAct.updatedAt,

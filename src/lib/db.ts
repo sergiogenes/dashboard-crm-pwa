@@ -61,10 +61,24 @@ export interface LocalActivity {
   title: string
   body: string
   timestamp: number    // Timestamp de creación/registro
+  reminderDate?: number // Timestamp del recordatorio (opcional)
   deleted?: boolean    // Soft Delete
   synced: boolean      // Estado de sincronización a MongoDB
   createdAt: number
   updatedAt: number
+}
+
+export interface LocalNotification {
+  id: string           // UUID único
+  activityId?: string  // ID (o tempId) de la actividad
+  leadId: string       // ID (o tempId) del lead
+  userId: string       // ID del usuario de la sesión
+  title: string        // Título del recordatorio
+  body: string         // Detalles
+  scheduledAt: number  // Timestamp en el que debe dispararse
+  read: boolean        // Si ya fue leída en la campanita
+  notified: boolean    // Si ya disparó la notificación del sistema Web
+  createdAt: number
 }
 
 export class PWAResilientDatabase extends Dexie {
@@ -73,6 +87,7 @@ export class PWAResilientDatabase extends Dexie {
   users!: Table<LocalUser>
   invoices!: Table<LocalInvoice> // Nueva tabla para historial crediticio
   activities!: Table<LocalActivity> // Nueva tabla v4 para actividades
+  notifications!: Table<LocalNotification> // Nueva tabla v5 para notificaciones
 
   constructor() {
     super('PWAResilientDB')
@@ -84,6 +99,16 @@ export class PWAResilientDatabase extends Dexie {
       users: 'id, email',
       invoices: 'id, crmId, leadId, userId, status',
       activities: 'tempId, id, leadId, userId, type, synced, deleted', // Tabla v4 de actividades
+    })
+
+    // Esquema de almacenamiento de IndexedDB (versión 5)
+    this.version(5).stores({
+      leads: 'tempId, id, userId, synced, deleted, companyId, email',
+      companies: 'tempId, id, userId, synced, deleted, name',
+      users: 'id, email',
+      invoices: 'id, crmId, leadId, userId, status',
+      activities: 'tempId, id, leadId, userId, type, synced, deleted',
+      notifications: 'id, userId, read, notified, scheduledAt, activityId, leadId', // Tabla v5 de notificaciones
     })
   }
 }

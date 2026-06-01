@@ -30,6 +30,7 @@ export interface CRMActivity {
   title: string
   body: string
   timestamp: string // Formato fecha ISO
+  reminderDate?: string // Formato fecha ISO
 }
 
 export interface ICRMProvider {

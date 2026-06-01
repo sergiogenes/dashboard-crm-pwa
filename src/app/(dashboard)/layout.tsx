@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import Sidebar from '@/components/Sidebar'
 import Header from '@/components/Header'
+import { useNotifications } from '@/hooks/useNotifications'
 
 export default function DashboardLayout({
   children,
@@ -13,6 +14,8 @@ export default function DashboardLayout({
 }) {
   const { data: session, status } = useSession()
   const router = useRouter()
+
+  useNotifications()
 
   useEffect(() => {
     // Si la sesión de NextAuth ya resolvió que está autenticada

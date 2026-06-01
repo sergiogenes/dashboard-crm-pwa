@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { localDb, LocalLead, LocalInvoice, LocalActivity } from '@/lib/db'
@@ -22,7 +22,8 @@ import {
   MessageSquare,
   Phone,
   Mail,
-  CheckSquare
+  CheckSquare,
+  Bell
 } from 'lucide-react'
 
 export default function ContactsPage() {
@@ -43,6 +44,9 @@ export default function ContactsPage() {
   const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'>('NOTE')
   const [activityTitle, setActivityTitle] = useState('')
   const [activityBody, setActivityBody] = useState('')
+  const [activityReminderDate, setActivityReminderDate] = useState('')
+  const [showReminderPicker, setShowReminderPicker] = useState(false)
+  const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null)
   const [isSubmittingActivity, setIsSubmittingActivity] = useState(false)
 
   // Filtros y Búsqueda
@@ -136,6 +140,7 @@ export default function ContactsPage() {
     setIsSubmittingActivity(true)
     try {
       const now = Date.now()
+      const reminderTimestamp = activityReminderDate ? new Date(activityReminderDate).getTime() : undefined
       const newAct: LocalActivity = {
         tempId: crypto.randomUUID(),
         leadId: selectedLeadId,
@@ -144,6 +149,7 @@ export default function ContactsPage() {
         title: activityTitle.trim(),
         body: activityBody.trim(),
         timestamp: now,
+        reminderDate: reminderTimestamp,
         synced: false,
         createdAt: now,
         updatedAt: now,
@@ -154,6 +160,8 @@ export default function ContactsPage() {
       setActivityTitle('')
       setActivityBody('')
       setActivityType('NOTE')
+      setActivityReminderDate('')
+      setShowReminderPicker(false)
     } catch (err) {
       console.error('[Contacts] Error al agregar actividad:', err)
     } finally {
@@ -181,6 +189,50 @@ export default function ContactsPage() {
       console.error('[Contacts] Error al eliminar actividad:', err)
     }
   }
+
+  // Auto-seleccionar Lead si viene de un recordatorio en la URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const leadIdParam = params.get('leadId')
+    const activityIdParam = params.get('activityId')
+
+    if (activityIdParam) {
+      setHighlightedActivityId(activityIdParam)
+    }
+
+    if (leadIdParam && leads.length > 0) {
+      const foundLead = leads.find((l) => l.id === leadIdParam || l.tempId === leadIdParam)
+      if (foundLead) {
+        setSelectedLeadForInvoice(foundLead)
+        setActiveTab('activities')
+        const newParams = new URLSearchParams(window.location.search)
+        newParams.delete('leadId')
+        newParams.delete('activityId')
+        const newSearch = newParams.toString()
+        const newUrl = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`
+        window.history.replaceState({}, '', newUrl)
+      }
+    }
+  }, [leads])
+
+  // Efecto para hacer scroll automático a la actividad resaltada
+  useEffect(() => {
+    if (highlightedActivityId) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`activity-${highlightedActivityId}`)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          
+          // Desvanecer el resaltado a los 3 segundos
+          setTimeout(() => {
+            setHighlightedActivityId(null)
+          }, 3000)
+        }
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [highlightedActivityId])
 
   // Configuración de estilo y visualización según el tipo de actividad
   const getActivityConfig = (type: LocalActivity['type']) => {
@@ -630,6 +682,33 @@ export default function ContactsPage() {
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="enable-reminder"
+                        checked={showReminderPicker}
+                        onChange={(e) => {
+                          setShowReminderPicker(e.target.checked)
+                          if (!e.target.checked) setActivityReminderDate('')
+                        }}
+                        className="rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                      />
+                      <label htmlFor="enable-reminder" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider select-none cursor-pointer">
+                        Programar recordatorio
+                      </label>
+                    </div>
+                    {showReminderPicker && (
+                      <input
+                        type="datetime-local"
+                        value={activityReminderDate}
+                        onChange={(e) => setActivityReminderDate(e.target.value)}
+                        required={showReminderPicker}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                      />
+                    )}
+                  </div>
+
                   <button
                     type="submit"
                     disabled={isSubmittingActivity}
@@ -660,7 +739,14 @@ export default function ContactsPage() {
                               </div>
 
                               {/* Card de Actividad */}
-                              <div className="rounded-xl border border-slate-900 bg-slate-950/80 p-4 space-y-2">
+                              <div
+                                id={`activity-${act.id || act.tempId}`}
+                                className={`rounded-xl border p-4 space-y-2 transition-all duration-500 ${
+                                  highlightedActivityId === act.id || highlightedActivityId === act.tempId
+                                    ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20 scale-[1.02]'
+                                    : 'border-slate-900 bg-slate-950/80'
+                                }`}
+                              >
                                 <div className="flex justify-between items-start">
                                   <div>
                                     <span className="text-[9px] text-slate-500 font-mono block">
@@ -694,6 +780,12 @@ export default function ContactsPage() {
                                 <p className="text-xs text-slate-400 whitespace-pre-line leading-relaxed">
                                   {act.body}
                                 </p>
+                                {act.reminderDate && (
+                                  <div className="flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2 py-1 text-[10px] text-indigo-400 w-fit mt-1">
+                                    <Bell className="h-3.5 w-3.5 animate-pulse" />
+                                    <span>Recordatorio: {new Date(act.reminderDate).toLocaleString()}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           )

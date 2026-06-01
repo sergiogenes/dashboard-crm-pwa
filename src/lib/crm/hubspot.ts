@@ -501,57 +501,68 @@ export class HubSpotProvider implements ICRMProvider {
       const activities: CRMActivity[] = []
 
       for (const noteId of associatedIds) {
-        interface HubSpotNoteResponse {
-          id: string
-          properties: {
-            hs_note_body?: string
-            hs_timestamp?: string
-            hs_lastmodifieddate?: string
-          }
-        }
-
-        const noteDetail = await this.request<HubSpotNoteResponse>(
-          `/notes/${noteId}?properties=hs_note_body,hs_timestamp`,
-          { method: 'GET' }
-        )
-
-        if (noteDetail && noteDetail.properties) {
-          const props = noteDetail.properties
-          const bodyHtml = props.hs_note_body || ''
-          
-          let type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' = 'NOTE'
-          let title = 'Nota de contacto'
-          let body = bodyHtml
-
-          const match = bodyHtml.match(/\[([^\]]+)\]\s*([^\<]+)/)
-          if (match) {
-            const label = match[1]
-            title = match[2] || 'Actividad de contacto'
-
-            if (label.includes('Llamada')) type = 'CALL'
-            else if (label.includes('Reunión')) type = 'MEETING'
-            else if (label.includes('Email')) type = 'EMAIL'
-            else if (label.includes('Tarea')) type = 'TASK'
-            
-            const bodyMatch = bodyHtml.match(/\<p\>([^\<]+)\<\/p\>/)
-            if (bodyMatch) {
-              body = bodyMatch[1]
-            } else {
-              body = bodyHtml.replace(/<[^>]*>/g, '').replace(/\[[^\]]+\]/, '').replace(title, '').trim()
+        try {
+          interface HubSpotNoteResponse {
+            id: string
+            properties: {
+              hs_note_body?: string
+              hs_timestamp?: string
+              hs_lastmodifieddate?: string
             }
-          } else {
-            const cleanText = bodyHtml.replace(/<[^>]*>/g, '').trim()
-            title = cleanText.substring(0, 40) + (cleanText.length > 40 ? '...' : '')
-            body = cleanText
           }
 
-          activities.push({
-            crmId: noteDetail.id,
-            type,
-            title: title || 'Nota de contacto',
-            body: body || '',
-            timestamp: props.hs_timestamp || new Date().toISOString()
-          })
+          const noteDetail = await this.request<HubSpotNoteResponse>(
+            `/notes/${noteId}?properties=hs_note_body,hs_timestamp`,
+            { method: 'GET' }
+          )
+
+          if (noteDetail && noteDetail.properties) {
+            const props = noteDetail.properties
+            const bodyHtml = props.hs_note_body || ''
+            
+            let reminderDate: string | undefined = undefined
+            const reminderMatch = bodyHtml.match(/<!-- reminder:([^>]+) -->/)
+            if (reminderMatch) {
+              reminderDate = reminderMatch[1]
+            }
+
+            let type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' = 'NOTE'
+            let title = 'Nota de contacto'
+            let body = bodyHtml
+
+            const match = bodyHtml.match(/\[([^\]]+)\]\s*([^\<]+)/)
+            if (match) {
+              const label = match[1]
+              title = match[2] || 'Actividad de contacto'
+
+              if (label.includes('Llamada')) type = 'CALL'
+              else if (label.includes('Reunión')) type = 'MEETING'
+              else if (label.includes('Email')) type = 'EMAIL'
+              else if (label.includes('Tarea')) type = 'TASK'
+              
+              const bodyMatch = bodyHtml.match(/\<p\>([^\<]+)\<\/p\>/)
+              if (bodyMatch) {
+                body = bodyMatch[1]
+              } else {
+                body = bodyHtml.replace(/<[^>]*>/g, '').replace(/\[[^\]]+\]/, '').replace(title, '').trim()
+              }
+            } else {
+              const cleanText = bodyHtml.replace(/<[^>]*>/g, '').trim()
+              title = cleanText.substring(0, 40) + (cleanText.length > 40 ? '...' : '')
+              body = cleanText
+            }
+
+            activities.push({
+              crmId: noteDetail.id,
+              type,
+              title: title || 'Nota de contacto',
+              body: body || '',
+              timestamp: props.hs_timestamp || new Date().toISOString(),
+              reminderDate
+            })
+          }
+        } catch (singleNoteErr) {
+          console.warn(`[HubSpot Provider] Saltada nota/tarea con ID ${noteId} debido a error:`, singleNoteErr)
         }
       }
 
@@ -571,7 +582,10 @@ export class HubSpotProvider implements ICRMProvider {
       TASK: '✅ Tarea',
     }
     const prefix = typeLabels[activity.type] || '📝 Nota'
-    const htmlBody = `<div><strong>[${prefix}] ${activity.title}</strong><br/><p>${activity.body}</p></div>`
+    let htmlBody = `<div><strong>[${prefix}] ${activity.title}</strong><br/><p>${activity.body}</p></div>`
+    if (activity.reminderDate) {
+      htmlBody += `<!-- reminder:${activity.reminderDate} -->`
+    }
 
     const response = await this.request<{ id: string }>('/notes', {
       method: 'POST',
@@ -593,6 +607,39 @@ export class HubSpotProvider implements ICRMProvider {
         ],
       }),
     })
+
+    // Si la actividad tiene un recordatorio programado, crear también una tarea (task) nativa en HubSpot
+    if (activity.reminderDate) {
+      try {
+        const timestampNum = parseInt(activity.reminderDate, 10)
+        const dueDateIso = new Date(timestampNum).toISOString()
+        await this.request('/tasks', {
+          method: 'POST',
+          body: JSON.stringify({
+            properties: {
+              hs_task_subject: `Recordatorio: ${activity.title}`,
+              hs_task_body: activity.body,
+              hs_task_status: 'NOT_STARTED',
+              hs_timestamp: activity.timestamp || new Date().toISOString(),
+              dueDate: dueDateIso,
+            },
+            associations: [
+              {
+                to: { id: leadCrmId },
+                types: [
+                  {
+                    associationCategory: 'HUBSPOT_DEFINED',
+                    associationTypeId: 204, // Task to Contact
+                  },
+                ],
+              },
+            ],
+          }),
+        })
+      } catch (err) {
+        console.error('[HubSpot Provider] Error al crear la tarea nativa de recordatorio en HubSpot:', err)
+      }
+    }
 
     return response.id
   }

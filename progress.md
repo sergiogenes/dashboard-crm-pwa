@@ -101,6 +101,14 @@
     - Re-diseñado el Slide-Over Drawer de detalles del lead en `contacts/page.tsx` para implementar una vista por pestañas: "Finanzas" e "Actividades".
     - Diseñado un formulario offline para registrar nuevas actividades con selección de tipo (`NOTE`, `CALL`, `MEETING`, `EMAIL`, `TASK`), título y descripción, persistidas reactivamente en Dexie.
     - Implementada la cronología (timeline) de actividades en el Drawer con iconos distintivos de `lucide-react` y colores vibrantes según el tipo de actividad, mostrando indicadores de estado de sincronización (`Cloud` vs `Database`) y opción de eliminación local resiliente.
+*   **Fase 5: Sistema de Recordatorios y Notificaciones (Campanita):**
+    - **Dexie v5 e IndexedDB**: Actualizado el esquema de IndexedDB incorporando la tabla `notifications` y el campo opcional `reminderDate` en actividades locales.
+    - **Capa Servidor**: Añadido el campo `reminderDate` al modelo MongoDB `Activity` y su propagación transparente en Server Actions (`sync.ts`).
+    - **Mapeo en HubSpot (Retrocompatible)**: Añadida inyección y extracción automática de recordatorios de HubSpot codificados de forma invisible como comentarios HTML (`<!-- reminder:ISO_DATE -->`) dentro del cuerpo de la nota.
+    - **Orquestador Global (`useNotifications.ts`)**: Creado un hook en segundo plano que sincroniza actividades con la tabla de alertas y gatilla alertas Web del sistema (`Notification`) cada 10s cuando un recordatorio vence.
+    - **Selector e Historial en UI**: Incorporado selector de fecha y hora (`datetime-local`) condicional en la creación de actividades y etiqueta descriptiva de recordatorio programado en el timeline del drawer.
+    - **Campanita Interactiva en Header**: Rediseñada la campanita estática por un dropdown dinámico con contador y animación de ping para notificaciones no leídas, permitiendo marcarlas como leídas y abriendo el drawer del contacto automáticamente.
+
 ## Roadmap de Seguridad (Tareas Pendientes)
 *   [x] **Autenticación Multifactor Obligatoria (MFA) - Fase 2:**
     - Modificado el modelo `User` en `User.ts` agregando los flags de MFA, Backup Codes y roles.
