@@ -200,19 +200,39 @@ export async function pushClientChanges(
         )
       }
     } else if (clientAct.tempId) {
-      const newAct = new Activity({
-        leadId: resolvedLeadId,
-        userId,
-        type: clientAct.type,
-        title: clientAct.title,
-        body: clientAct.body,
-        timestamp: new Date(clientAct.timestamp),
-        reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined,
-        deleted: clientAct.deleted || false,
-        crmSynced: false,
-      })
-      await newAct.save()
-      const realId = newAct._id.toString()
+      // Evitar duplicación si falló el ACK de la sincronización previa
+      let existingAct = await Activity.findOne({ tempId: clientAct.tempId })
+      
+      if (!existingAct) {
+        existingAct = new Activity({
+          tempId: clientAct.tempId,
+          leadId: resolvedLeadId,
+          userId,
+          type: clientAct.type,
+          title: clientAct.title,
+          body: clientAct.body,
+          timestamp: new Date(clientAct.timestamp),
+          reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined,
+          deleted: clientAct.deleted || false,
+          crmSynced: false,
+        })
+        await existingAct.save()
+      } else {
+        // Si ya existe en MongoDB, actualizamos sus campos en caso de cambios locales no consolidados
+        existingAct.leadId = resolvedLeadId as any
+        existingAct.type = clientAct.type
+        existingAct.title = clientAct.title
+        existingAct.body = clientAct.body
+        existingAct.timestamp = new Date(clientAct.timestamp)
+        existingAct.reminderDate = clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined
+        if (clientAct.deleted) {
+          existingAct.deleted = true
+        }
+        existingAct.crmSynced = false
+        await existingAct.save()
+      }
+      
+      const realId = existingAct._id.toString()
       activityMappings.push({ tempId: clientAct.tempId, id: realId })
     }
   }

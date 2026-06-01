@@ -43,8 +43,9 @@ export default function Sidebar() {
   }
 
   return (
-    <aside
-      className={`sticky top-0 left-0 z-20 flex h-screen flex-col border-r border-slate-800 bg-slate-950 text-slate-400 transition-all duration-300 shrink-0 ${
+    <>
+      <aside
+      className={`sticky top-0 left-0 z-20 hidden md:flex h-screen flex-col border-r border-slate-800 bg-slate-950 text-slate-400 transition-all duration-300 shrink-0 ${
         isCollapsed ? 'w-20' : 'w-64'
       }`}
     >
@@ -116,5 +117,29 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+
+    {/* Barra de navegación inferior para dispositivos móviles */}
+    <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden flex h-16 border-t border-slate-800 bg-slate-950/90 backdrop-blur-md px-2 justify-around items-center text-slate-400">
+      {menuItems.map((item) => {
+        const Icon = item.icon
+        const isActive = pathname === item.href
+
+        return (
+          <Link
+            key={item.name}
+            href={item.href}
+            className={`flex flex-col items-center justify-center gap-1 w-14 py-1.5 transition-colors ${
+              isActive ? 'text-indigo-400' : 'hover:text-white'
+            }`}
+          >
+            <Icon className={`h-5.5 w-5.5 ${isActive ? 'text-indigo-400' : 'text-slate-500'}`} />
+            <span className="text-[9px] font-medium tracking-wide truncate max-w-full">
+              {item.name}
+            </span>
+          </Link>
+        )
+      })}
+    </nav>
+    </>
   )
 }

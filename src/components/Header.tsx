@@ -75,10 +75,10 @@ export default function Header() {
               className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 text-red-500 hover:text-red-400 hover:bg-red-500/20 transition-colors"
             >
               <Bell className="h-5 w-5" />
-              <span className="absolute -top-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white ring-2 ring-slate-950">
+              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white ring-2 ring-slate-950">
                 {unreadCount}
               </span>
-              <span className="absolute -top-1 -right-1 flex h-4.5 w-4.5 animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 animate-ping rounded-full bg-red-500 opacity-75" />
             </button>
           ) : (
             <button

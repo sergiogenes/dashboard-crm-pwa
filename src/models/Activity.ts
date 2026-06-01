@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose'
 
 export interface IActivitySchema extends Document {
   crmId?: string
+  tempId?: string
   leadId: mongoose.Types.ObjectId
   userId: string
   type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
@@ -18,6 +19,7 @@ export interface IActivitySchema extends Document {
 const ActivitySchema = new Schema<IActivitySchema>(
   {
     crmId: { type: String, unique: true, sparse: true },
+    tempId: { type: String, unique: true, sparse: true },
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true },
     userId: { type: String, required: true },
     type: {

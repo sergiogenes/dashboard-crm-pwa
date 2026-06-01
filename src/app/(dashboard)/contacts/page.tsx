@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { localDb, LocalLead, LocalInvoice, LocalActivity } from '@/lib/db'
@@ -19,6 +19,7 @@ import {
   TrendingUp,
   ShieldAlert,
   Calendar,
+  Clock,
   MessageSquare,
   Phone,
   Mail,
@@ -26,9 +27,23 @@ import {
   Bell
 } from 'lucide-react'
 
+// Helper para obtener la fecha de mañana en formato YYYY-MM-DD
+const getTomorrowString = () => {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const year = tomorrow.getFullYear()
+  const month = String(tomorrow.getMonth() + 1).padStart(2, '0')
+  const day = String(tomorrow.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function ContactsPage() {
   const { data: session, status } = useSession()
   const userId = session?.user?.id
+
+  // Referencias para disparar los selectores de fecha/hora
+  const dateInputRef = useRef<HTMLInputElement>(null)
+  const timeInputRef = useRef<HTMLInputElement>(null)
 
   // Estado del Modal de Edición/Creación de Lead
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false)
@@ -44,7 +59,8 @@ export default function ContactsPage() {
   const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'>('NOTE')
   const [activityTitle, setActivityTitle] = useState('')
   const [activityBody, setActivityBody] = useState('')
-  const [activityReminderDate, setActivityReminderDate] = useState('')
+  const [reminderDateOnly, setReminderDateOnly] = useState('')
+  const [reminderTimeOnly, setReminderTimeOnly] = useState('08:00')
   const [showReminderPicker, setShowReminderPicker] = useState(false)
   const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null)
   const [isSubmittingActivity, setIsSubmittingActivity] = useState(false)
@@ -140,7 +156,15 @@ export default function ContactsPage() {
     setIsSubmittingActivity(true)
     try {
       const now = Date.now()
-      const reminderTimestamp = activityReminderDate ? new Date(activityReminderDate).getTime() : undefined
+      let reminderTimestamp: number | undefined = undefined
+      if (showReminderPicker && reminderDateOnly) {
+        const timeVal = reminderTimeOnly || '08:00'
+        const datetimeStr = `${reminderDateOnly}T${timeVal}`
+        const parsedDate = new Date(datetimeStr)
+        if (!isNaN(parsedDate.getTime())) {
+          reminderTimestamp = parsedDate.getTime()
+        }
+      }
       const newAct: LocalActivity = {
         tempId: crypto.randomUUID(),
         leadId: selectedLeadId,
@@ -160,7 +184,8 @@ export default function ContactsPage() {
       setActivityTitle('')
       setActivityBody('')
       setActivityType('NOTE')
-      setActivityReminderDate('')
+      setReminderDateOnly('')
+      setReminderTimeOnly('08:00')
       setShowReminderPicker(false)
     } catch (err) {
       console.error('[Contacts] Error al agregar actividad:', err)
@@ -395,7 +420,7 @@ export default function ContactsPage() {
         </div>
 
         {/* Tabla de Leads */}
-        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-md">
+        <div className="hidden md:block overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-md">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm text-slate-300">
               <thead className="bg-slate-900/60 text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
@@ -488,11 +513,91 @@ export default function ContactsPage() {
             </table>
           </div>
         </div>
+
+        {/* Vista móvil (Tarjetas) */}
+        <div className="grid grid-cols-1 gap-4 md:hidden">
+          {filteredLeads.length > 0 ? (
+            filteredLeads.map((lead) => (
+              <div 
+                key={lead.id || lead.tempId}
+                onClick={() => setSelectedLeadForInvoice(lead)}
+                className={`rounded-2xl border p-4 space-y-3 cursor-pointer transition-all duration-300 ${
+                  (selectedLeadForInvoice?.id === lead.id || selectedLeadForInvoice?.tempId === lead.tempId)
+                    ? 'border-indigo-500 bg-slate-900/40 shadow-md ring-1 ring-indigo-500/20'
+                    : 'border-slate-800 bg-slate-900/20'
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-white text-sm">
+                      {lead.firstName} {lead.lastName}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">{lead.email}</p>
+                    {lead.phone && <p className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.phone}</p>}
+                  </div>
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    {lead.synced ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-500/10 p-1 text-emerald-400 border border-emerald-500/20" title="CloudDb">
+                        <Cloud className="h-3.5 w-3.5" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-500/10 p-1 text-amber-400 border border-amber-500/20 animate-pulse" title="LocalDb">
+                        <Database className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                    {getScoringBadge(lead.scoring)}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-slate-850">
+                  <span className="inline-flex items-center rounded bg-slate-950 border border-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400">
+                    {getCompanyName(lead.companyId)}
+                  </span>
+                  
+                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setSelectedLeadForInvoice(lead)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition-colors"
+                      title="Ver Historial Crediticio"
+                    >
+                      <FileText className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setLeadToEdit(lead)
+                        setIsLeadModalOpen(true)
+                      }}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                      title="Editar"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteLead(lead)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                      title="Eliminar"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-xs text-slate-500 py-12">No se encontraron contactos.</p>
+          )}
+        </div>
       </div>
 
       {/* Slide-over Drawer: Detalles del Contacto (Finanzas y Actividades) */}
       {selectedLeadForInvoice && (
-        <div className="fixed inset-y-0 right-0 z-30 w-full max-w-md bg-slate-950/95 border-l border-slate-800 shadow-2xl backdrop-blur-xl flex flex-col animate-slide-in">
+        <>
+          {/* Backdrop overlay */}
+          <div 
+            onClick={() => setSelectedLeadForInvoice(null)}
+            className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-300"
+          />
+          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-950/95 border-l border-slate-800 shadow-2xl flex flex-col animate-slide-in">
           
           {/* Cabecera del Drawer */}
           <div className="p-6 border-b border-slate-800 flex items-center justify-between">
@@ -690,7 +795,13 @@ export default function ContactsPage() {
                         checked={showReminderPicker}
                         onChange={(e) => {
                           setShowReminderPicker(e.target.checked)
-                          if (!e.target.checked) setActivityReminderDate('')
+                          if (e.target.checked) {
+                            setReminderDateOnly(getTomorrowString())
+                            setReminderTimeOnly('08:00')
+                          } else {
+                            setReminderDateOnly('')
+                            setReminderTimeOnly('')
+                          }
                         }}
                         className="rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
                       />
@@ -699,13 +810,76 @@ export default function ContactsPage() {
                       </label>
                     </div>
                     {showReminderPicker && (
-                      <input
-                        type="datetime-local"
-                        value={activityReminderDate}
-                        onChange={(e) => setActivityReminderDate(e.target.value)}
-                        required={showReminderPicker}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Fecha</label>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => {
+                                if (typeof dateInputRef.current?.showPicker === 'function') {
+                                  try {
+                                    dateInputRef.current.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition-colors focus:outline-none"
+                            >
+                              <Calendar className="h-3.5 w-3.5" />
+                            </button>
+                            <input
+                              ref={dateInputRef}
+                              type="date"
+                              value={reminderDateOnly}
+                              onChange={(e) => setReminderDateOnly(e.target.value)}
+                              onClick={(e) => {
+                                if (typeof e.currentTarget.showPicker === 'function') {
+                                  try {
+                                    e.currentTarget.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              required={showReminderPicker}
+                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Hora</label>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => {
+                                if (typeof timeInputRef.current?.showPicker === 'function') {
+                                  try {
+                                    timeInputRef.current.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition-colors focus:outline-none"
+                            >
+                              <Clock className="h-3.5 w-3.5" />
+                            </button>
+                            <input
+                              ref={timeInputRef}
+                              type="time"
+                              value={reminderTimeOnly}
+                              onChange={(e) => setReminderTimeOnly(e.target.value)}
+                              onClick={(e) => {
+                                if (typeof e.currentTarget.showPicker === 'function') {
+                                  try {
+                                    e.currentTarget.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              required={showReminderPicker}
+                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
 
@@ -801,6 +975,7 @@ export default function ContactsPage() {
             )}
           </div>
         </div>
+        </>
       )}
 
       {/* Formulario Modal para Leads */}
