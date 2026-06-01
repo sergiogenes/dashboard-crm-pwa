@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { signIn } from 'next-auth/react'
 import { registerUser } from '@/app/actions/auth'
 import { Lock, Mail, User, ArrowRight, Activity, AlertCircle } from 'lucide-react'
+import Link from 'next/link'
 
 interface SignInPageProps {
   searchParams?: { error?: string }
@@ -20,12 +21,17 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
   const errorParam = searchParams?.error
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('mfa_attempts')
+    }
+
     if (errorParam) {
       const errorMessages: { [key: string]: string } = {
         Configuration: 'Hay un problema con la configuración del servidor de autenticación.',
         AccessDenied: 'Acceso denegado. No tienes permisos para ingresar.',
         Verification: 'El token de verificación ha expirado o es inválido.',
         CredentialsSignin: 'Los datos de acceso provistos son incorrectos.',
+        MfaAttemptsExceeded: 'Has superado el número máximo de intentos permitidos para el código MFA. Por seguridad, debes volver a iniciar sesión.',
         Default: 'Ocurrió un error al intentar autenticarse con el servidor.',
       }
       setError(errorMessages[errorParam] || errorMessages.Default)
@@ -146,7 +152,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
               </div>
             )}
 
-            <form className="space-y-6" onSubmit={handleSubmit}>
+            <form className="space-y-6" onSubmit={handleSubmit} method="POST">
               {!isLogin && (
                 <div>
                   <label htmlFor="name" className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -211,6 +217,17 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
                   />
                 </div>
               </div>
+
+              {isLogin && (
+                <div className="flex justify-end">
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </Link>
+                </div>
+              )}
 
               <div>
                 <button

@@ -72,9 +72,46 @@
 *   **Prevención de Re-importaciones Cíclicas:** Modificada la función `pullServerUpdates` en [src/app/actions/sync.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/actions/sync.ts) para contar tanto registros activos como borrados al verificar si MongoDB está vacía, previniendo que se gatille la re-importación masiva desde HubSpot si el usuario borra todas sus entidades locales.
 *   **Sincronización Continua Inbound:** Modificada la función `checkServerAndSync` en [src/hooks/useSync.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useSync.ts) para disparar la sincronización de forma incondicional en cada ciclo de 15 segundos si el dispositivo está online y el servidor responde. Esto garantiza que las creaciones o modificaciones realizadas en HubSpot (e ingresadas vía Webhooks) se descarguen de inmediato y se reflejen en la UI sin necesidad de refrescar manualmente la página.
 
-*   Tareas Pendientes (Próximos Pasos):
-    1. Subir los últimos cambios a GitHub y verificar el despliegue automático en Vercel.
-    2. Realizar pruebas exhaustivas de borrado local para certificar que el webhook y el soft delete están sincronizados sin bucles.
+*   Tareas Completadas:
+    - Despliegue de los cambios en producción a través de Vercel.
+    - Pruebas exhaustivas de creación, edición y borrado completadas con éxito, confirmando el correcto funcionamiento del soft delete y del webhook de HubSpot sin bucles de sincronización ni retrasos en la UI.
 
 ---
-*Última actualización: 2026-05-28*
+
+## Fases del 29 de mayo de 2026 (Seguridad y Recuperación de Contraseña)
+*   **Modelo de Tokens de Recuperación:** Creado el modelo `PasswordResetToken` en MongoDB con índice TTL para autodestrucción (expiración automática de 30 minutos).
+*   **Servicio de Correo con SendGrid:** Configurado `src/lib/mail.ts` utilizando `@sendgrid/mail` con simulación en consola para entornos locales de desarrollo.
+*   **Server Actions de Seguridad:** Creadas las acciones `requestPasswordReset` y `resetPassword` en `src/app/actions/password-reset.ts` con tokens seguros y hashing SHA-256.
+*   **Interfaces de UI de Recuperación:** Creadas las vistas `/auth/forgot-password` y `/auth/reset-password` integradas con el formulario principal `/auth/signin`.
+*   **Robustecimiento de Autenticación:** Unificados los mensajes de error en NextAuth (`src/lib/auth.ts`) a un único mensaje genérico en español para evitar la enumeración de usuarios (User Enumeration).
+
+## Roadmap de Seguridad (Tareas Pendientes)
+*   [x] **Autenticación Multifactor Obligatoria (MFA) - Fase 2:**
+    - Modificado el modelo `User` en `User.ts` agregando los flags de MFA, Backup Codes y roles.
+    - Creadas las Server Actions en `src/app/actions/mfa.ts` adaptadas a la API modular asíncrona de `otplib` v13.
+    - Creadas las pantallas reactivas de `/auth/mfa-setup` y `/auth/mfa` con descarga de códigos de recuperación (.txt) y copiado.
+    - Configurado el Middleware en `src/middleware.ts` para obligar al usuario a completar o validar su MFA antes de acceder al Dashboard.
+    - Añadida la Server Action `adminResetMFA` para restablecer accesos desde soporte de administradores.
+    - Reforzados los formularios con `method="POST"` para evitar la exposición de contraseñas por GET ante fallos de hidratación.
+    - Corregidas las advertencias (warnings) de Mongoose v9 reemplazando `new: true` por `returnDocument: 'after'` en `src/app/actions/sync.ts`.
+    - Reubicados los botones de creación en el Dashboard para ser contextuales de acuerdo al tab activo (`+ Contacto` / `+ Empresa`).
+    - **Limitación de 3 Intentos (Lockout MFA)**: Implementado el límite estricto de 3 intentos fallidos de código TOTP en `/auth/mfa`. En el tercer error se borran los intentos locales y se redirige con `signOut` a la pantalla de login `/auth/signin?error=MfaAttemptsExceeded`.
+    - **Persistencia Anti-F5**: Almacenado el contador de intentos fallidos en `sessionStorage` para evitar el bypass al recargar la página.
+    - **Errores Personalizados**: Mapeado el error de bloqueo `MfaAttemptsExceeded` a un mensaje descriptivo en español en `/auth/signin`.
+    - **Auto-Enfoque (UX)**: Incorporado el foco automático (`autoFocus`) en los inputs del código MFA tanto en la pantalla de verificación como en la de configuración inicial (`/auth/mfa-setup`).
+*   [x] **Rediseño del Layout (Sidebar Lateral y Páginas Independientes) - Fase 8:**
+    - Creados los componentes estructurales [Sidebar.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/Sidebar.tsx) (sticky y colapsable) y [Header.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/Header.tsx) (buscador y avatar de usuario, con `SyncStatusBadge` integrado).
+    - Configurado el Layout Maestro [src/app/(dashboard)/layout.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/layout.tsx) para el route group `(dashboard)`.
+    - Creadas las páginas independientes para [Contacts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx), [Companies](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/companies/page.tsx), [Dashboard Home](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/page.tsx) y [Settings](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/settings/page.tsx) dentro del route group.
+    - Se dejó lista la indicación para eliminar el archivo raíz obsoleto `src/app/page.tsx`.
+    - **Corrección de Solapamiento y Scroll**: Corregido el solapamiento estético del botón de expandir/colapsar en el sidebar colapsado mediante un botón circular flotante posicionado de forma absoluta sobre el borde derecho y centrando dinámicamente el logotipo. Asimismo, se incorporó `overflow-x-hidden` en el layout general y un comportamiento de desbordamiento dinámico (`overflow-visible` al colapsar y `overflow-y-auto` al expandir) en el menú de navegación para eliminar definitivamente scrollbars horizontales espurios en el navegador y el sidebar. Adicionalmente, se añadió la clase `truncate` al botón de cerrar sesión para evitar saltos de línea molestos durante la animación de transición.
+    - **Limpieza de Interfaz**: Se removió el buscador global de cabecera sin funcionalidad del [Header.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/Header.tsx) y se re-alineó el menú de usuario hacia la derecha.
+*   [ ] **Cifrado y Purga de Datos Locales (IndexedDB) - Fase 3:**
+    - Cifrado transparente en la capa local de Dexie.js derivando claves efímeras en RAM en el inicio de sesión.
+    - [x] Implementar purga total de Dexie.js en el evento de cierre de sesión (logout) y limpieza de `localStorage`/`sessionStorage`.
+*   [ ] **Cifrado en MongoDB (Capa de Base Intermedia) - Fase 4:**
+    - Implementar Field-Level Encryption (CSFLE) o cifrado simétrico en el servidor de campos confidenciales de contactos.
+
+---
+*Última actualización: 2026-05-29*
+
