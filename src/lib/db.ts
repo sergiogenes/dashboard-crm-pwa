@@ -43,10 +43,26 @@ export interface LocalInvoice {
   leadId: string       // ID de MongoDB o tempId del contacto asociado
   userId: string       // Sesión del usuario
   amount: number       // Monto de la factura
+  balanceDue?: number  // Saldo pendiente
   status: 'PAID' | 'PENDING' | 'OVERDUE'
   invoiceDate: number  // Timestamp de emisión
   dueDate: number      // Timestamp de vencimiento
   paymentDate?: number // Timestamp de pago (opcional)
+  createdAt: number
+  updatedAt: number
+}
+
+export interface LocalActivity {
+  id?: string          // ID real de MongoDB
+  tempId?: string      // ID temporal para offline
+  leadId: string       // ID de MongoDB o tempId del contacto asociado
+  userId: string       // Sesión del usuario
+  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
+  title: string
+  body: string
+  timestamp: number    // Timestamp de creación/registro
+  deleted?: boolean    // Soft Delete
+  synced: boolean      // Estado de sincronización a MongoDB
   createdAt: number
   updatedAt: number
 }
@@ -56,16 +72,18 @@ export class PWAResilientDatabase extends Dexie {
   companies!: Table<LocalCompany>
   users!: Table<LocalUser>
   invoices!: Table<LocalInvoice> // Nueva tabla para historial crediticio
+  activities!: Table<LocalActivity> // Nueva tabla v4 para actividades
 
   constructor() {
     super('PWAResilientDB')
     
-    // Esquema de almacenamiento de IndexedDB (versión 3)
-    this.version(3).stores({
+    // Esquema de almacenamiento de IndexedDB (versión 4)
+    this.version(4).stores({
       leads: 'tempId, id, userId, synced, deleted, companyId, email',
       companies: 'tempId, id, userId, synced, deleted, name',
       users: 'id, email',
-      invoices: 'id, crmId, leadId, userId, status', // Índice por ID de lead y estado
+      invoices: 'id, crmId, leadId, userId, status',
+      activities: 'tempId, id, leadId, userId, type, synced, deleted', // Tabla v4 de actividades
     })
   }
 }

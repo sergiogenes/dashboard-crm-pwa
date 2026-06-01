@@ -1,4 +1,4 @@
-import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice } from './interface'
+import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice, CRMActivity } from './interface'
 
 interface HubSpotContactResponse {
   id: string
@@ -255,6 +255,12 @@ export class HubSpotProvider implements ICRMProvider {
     })
   }
 
+  async deleteActivity(crmId: string): Promise<void> {
+    await this.request<void>(`/notes/${crmId}`, {
+      method: 'DELETE',
+    })
+  }
+
   async checkHealth(): Promise<boolean> {
     try {
       // Endpoint rápido con límite 1 para comprobar conectividad del token
@@ -411,14 +417,14 @@ export class HubSpotProvider implements ICRMProvider {
       const isNativeInvoice = objectTypeId === 'invoices'
       
       const propertiesQuery = [
-        'hs_total_amount_billed', 'hs_balance_due', 'hs_total_amount', 'invoice_amount', 'hs_invoice_amount', 'amount',
+        'hs_amount_billed', 'amount_billed', 'balance_due', 'hs_total_amount_billed', 'hs_balance_due', 'hs_total_amount', 'invoice_amount', 'hs_invoice_amount', 'amount',
         'hs_invoice_status', 'invoice_status', 'status',
         'hs_invoice_date', 'invoice_date',
         'hs_due_date', 'due_date',
         'hs_payment_date', 'payment_date',
         'hs_invoice_number'
       ].join(',')
-
+ 
       for (const invId of associatedIds) {
         interface HubSpotCustomObjectResponse {
           id: string
@@ -429,20 +435,16 @@ export class HubSpotProvider implements ICRMProvider {
           `/${objectTypeId}/${invId}?properties=${propertiesQuery}`,
           { method: 'GET' }
         )
-
+ 
         if (invDetail && invDetail.properties) {
           const props = invDetail.properties
           console.log(`[HubSpot Invoices Debug] ID: ${invId}, Properties:`, JSON.stringify(props))
-
+ 
           // Mapeo resiliente buscando múltiples variantes de nombres de propiedades de HubSpot
-          const amountRaw = props.hs_total_amount_billed || props.hs_balance_due || props.hs_total_amount || props.invoice_amount || props.hs_invoice_amount || props.amount || '0'
-          const statusRaw = props.hs_invoice_status || props.invoice_status || props.status || 'PENDING'
-          const invoiceDateRaw = props.hs_invoice_date || props.invoice_date
-          const dueDateRaw = props.hs_due_date || props.due_date
-          const paymentDateRaw = props.hs_payment_date || props.payment_date
-          const invoiceNumber = props.hs_invoice_number || invDetail.id
-
+          const amountRaw = props.hs_amount_billed || props.amount_billed || props.hs_total_amount_billed || props.hs_total_amount || props.invoice_amount || props.hs_invoice_amount || props.amount || '0'
+          
           // Normalizar estados de facturación
+          const statusRaw = props.hs_invoice_status || props.invoice_status || props.status || 'PENDING'
           let normalizedStatus: 'PAID' | 'PENDING' | 'OVERDUE' = 'PENDING'
           const statusUpper = statusRaw.toUpperCase()
           
@@ -452,9 +454,18 @@ export class HubSpotProvider implements ICRMProvider {
             normalizedStatus = 'OVERDUE'
           }
 
+          // Mapear saldo adeudado (balanceDue)
+          const balanceDueRaw = props.balance_due || props.hs_balance_due || (normalizedStatus === 'PAID' ? '0' : amountRaw)
+
+          const invoiceDateRaw = props.hs_invoice_date || props.invoice_date
+          const dueDateRaw = props.hs_due_date || props.due_date
+          const paymentDateRaw = props.hs_payment_date || props.payment_date
+          const invoiceNumber = props.hs_invoice_number || invDetail.id
+ 
           invoices.push({
             crmId: invoiceNumber, // Mostrar el número de factura amigable (ej: INV-1001)
             amount: parseFloat(amountRaw || '0') || 0,
+            balanceDue: parseFloat(balanceDueRaw || '0') || 0,
             status: normalizedStatus,
             invoiceDate: invoiceDateRaw || new Date().toISOString(),
             dueDate: dueDateRaw || new Date().toISOString(),
@@ -467,5 +478,122 @@ export class HubSpotProvider implements ICRMProvider {
       console.error(`[HubSpot Provider] Error al obtener facturas para el contacto ${leadCrmId}:`, err)
       return []
     }
+  }
+
+  async fetchActivitiesByLead(leadCrmId: string): Promise<CRMActivity[]> {
+    try {
+      interface HubSpotAssociation {
+        id: string
+        type: string
+      }
+      interface HubSpotAssociationsResponse {
+        results: HubSpotAssociation[]
+      }
+
+      const assocResult = await this.request<HubSpotAssociationsResponse>(
+        `/contacts/${leadCrmId}/associations/notes`,
+        { method: 'GET' }
+      )
+
+      const associatedIds = assocResult.results?.map(r => r.id) || []
+      if (associatedIds.length === 0) return []
+
+      const activities: CRMActivity[] = []
+
+      for (const noteId of associatedIds) {
+        interface HubSpotNoteResponse {
+          id: string
+          properties: {
+            hs_note_body?: string
+            hs_timestamp?: string
+            hs_lastmodifieddate?: string
+          }
+        }
+
+        const noteDetail = await this.request<HubSpotNoteResponse>(
+          `/notes/${noteId}?properties=hs_note_body,hs_timestamp`,
+          { method: 'GET' }
+        )
+
+        if (noteDetail && noteDetail.properties) {
+          const props = noteDetail.properties
+          const bodyHtml = props.hs_note_body || ''
+          
+          let type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' = 'NOTE'
+          let title = 'Nota de contacto'
+          let body = bodyHtml
+
+          const match = bodyHtml.match(/\[([^\]]+)\]\s*([^\<]+)/)
+          if (match) {
+            const label = match[1]
+            title = match[2] || 'Actividad de contacto'
+
+            if (label.includes('Llamada')) type = 'CALL'
+            else if (label.includes('Reunión')) type = 'MEETING'
+            else if (label.includes('Email')) type = 'EMAIL'
+            else if (label.includes('Tarea')) type = 'TASK'
+            
+            const bodyMatch = bodyHtml.match(/\<p\>([^\<]+)\<\/p\>/)
+            if (bodyMatch) {
+              body = bodyMatch[1]
+            } else {
+              body = bodyHtml.replace(/<[^>]*>/g, '').replace(/\[[^\]]+\]/, '').replace(title, '').trim()
+            }
+          } else {
+            const cleanText = bodyHtml.replace(/<[^>]*>/g, '').trim()
+            title = cleanText.substring(0, 40) + (cleanText.length > 40 ? '...' : '')
+            body = cleanText
+          }
+
+          activities.push({
+            crmId: noteDetail.id,
+            type,
+            title: title || 'Nota de contacto',
+            body: body || '',
+            timestamp: props.hs_timestamp || new Date().toISOString()
+          })
+        }
+      }
+
+      return activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    } catch (err) {
+      console.error(`[HubSpot Provider] Error al obtener actividades para el contacto ${leadCrmId}:`, err)
+      return []
+    }
+  }
+
+  async createActivity(leadCrmId: string, activity: CRMActivity): Promise<string> {
+    const typeLabels: Record<string, string> = {
+      NOTE: '📝 Nota',
+      CALL: '📞 Llamada',
+      MEETING: '🤝 Reunión',
+      EMAIL: '📧 Email',
+      TASK: '✅ Tarea',
+    }
+    const prefix = typeLabels[activity.type] || '📝 Nota'
+    const htmlBody = `<div><strong>[${prefix}] ${activity.title}</strong><br/><p>${activity.body}</p></div>`
+
+    const response = await this.request<{ id: string }>('/notes', {
+      method: 'POST',
+      body: JSON.stringify({
+        properties: {
+          hs_note_body: htmlBody,
+          hs_timestamp: activity.timestamp || new Date().toISOString(),
+        },
+        associations: [
+          {
+            to: { id: leadCrmId },
+            types: [
+              {
+                associationCategory: 'HUBSPOT_DEFINED',
+                associationTypeId: 202, // Note to Contact
+              },
+            ],
+          },
+        ],
+      }),
+    })
+
+    return response.id
   }
 }

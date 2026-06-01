@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { localDb, LocalLead, LocalInvoice } from '@/lib/db'
+import { localDb, LocalLead, LocalInvoice, LocalActivity } from '@/lib/db'
 import LeadFormModal from '@/components/LeadFormModal'
 import {
   Users,
@@ -18,7 +18,11 @@ import {
   X,
   TrendingUp,
   ShieldAlert,
-  Calendar
+  Calendar,
+  MessageSquare,
+  Phone,
+  Mail,
+  CheckSquare
 } from 'lucide-react'
 
 export default function ContactsPage() {
@@ -29,8 +33,17 @@ export default function ContactsPage() {
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false)
   const [leadToEdit, setLeadToEdit] = useState<LocalLead | null>(null)
 
-  // Estado del Drawer de Historial Crediticio (Facturas)
+  // Estado del Drawer de Historial Crediticio (Facturas) y Detalles
   const [selectedLeadForInvoice, setSelectedLeadForInvoice] = useState<LocalLead | null>(null)
+
+  // Estado de Pestaña activa en el Drawer
+  const [activeTab, setActiveTab] = useState<'finance' | 'activities'>('activities')
+
+  // Estado del Formulario de Actividad
+  const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'>('NOTE')
+  const [activityTitle, setActivityTitle] = useState('')
+  const [activityBody, setActivityBody] = useState('')
+  const [isSubmittingActivity, setIsSubmittingActivity] = useState(false)
 
   // Filtros y Búsqueda
   const [searchTerm, setSearchTerm] = useState('')
@@ -74,6 +87,20 @@ export default function ContactsPage() {
     []
   )
 
+  // 4. Obtener reactivamente las actividades asociadas al lead seleccionado para el Drawer
+  const activities = useLiveQuery(
+    async () => {
+      if (!selectedLeadId) return []
+      return await localDb.activities
+        .where('leadId')
+        .equals(selectedLeadId)
+        .filter((a) => a.deleted !== true)
+        .toArray()
+    },
+    [selectedLeadId],
+    []
+  )
+
   // Soft Delete del Lead
   const handleDeleteLead = async (lead: LocalLead) => {
     if (!confirm(`¿Estás seguro de que deseas eliminar a ${lead.firstName} ${lead.lastName}?`)) return
@@ -97,6 +124,78 @@ export default function ContactsPage() {
       }
     } catch (err) {
       console.error('[Contacts] Error al eliminar lead:', err)
+    }
+  }
+
+  // Registrar una nueva actividad offline en Dexie
+  const handleAddActivity = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId || !selectedLeadId) return
+    if (!activityTitle.trim() || !activityBody.trim()) return
+
+    setIsSubmittingActivity(true)
+    try {
+      const now = Date.now()
+      const newAct: LocalActivity = {
+        tempId: crypto.randomUUID(),
+        leadId: selectedLeadId,
+        userId,
+        type: activityType,
+        title: activityTitle.trim(),
+        body: activityBody.trim(),
+        timestamp: now,
+        synced: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+      await localDb.activities.put(newAct)
+      
+      // Limpiar formulario
+      setActivityTitle('')
+      setActivityBody('')
+      setActivityType('NOTE')
+    } catch (err) {
+      console.error('[Contacts] Error al agregar actividad:', err)
+    } finally {
+      setIsSubmittingActivity(false)
+    }
+  }
+
+  // Soft delete de actividad en Dexie
+  const handleDeleteActivity = async (act: LocalActivity) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta actividad?')) return
+    try {
+      const now = Date.now()
+      if (act.id) {
+        // Marcamos soft-delete local para sincronizar al servidor
+        await localDb.activities.where('id').equals(act.id).modify({
+          deleted: true,
+          synced: false,
+          updatedAt: now,
+        })
+      } else if (act.tempId) {
+        // Creado localmente y no sincronizado: borrar físicamente
+        await localDb.activities.where('tempId').equals(act.tempId).delete()
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al eliminar actividad:', err)
+    }
+  }
+
+  // Configuración de estilo y visualización según el tipo de actividad
+  const getActivityConfig = (type: LocalActivity['type']) => {
+    switch (type) {
+      case 'CALL':
+        return { icon: Phone, bg: 'bg-blue-500/10', border: 'border-blue-500/20', text: 'text-blue-400' }
+      case 'MEETING':
+        return { icon: Calendar, bg: 'bg-purple-500/10', border: 'border-purple-500/20', text: 'text-purple-400' }
+      case 'EMAIL':
+        return { icon: Mail, bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-400' }
+      case 'TASK':
+        return { icon: CheckSquare, bg: 'bg-rose-500/10', border: 'border-rose-500/20', text: 'text-rose-400' }
+      case 'NOTE':
+      default:
+        return { icon: MessageSquare, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400' }
     }
   }
 
@@ -154,6 +253,7 @@ export default function ContactsPage() {
 
   // Calcular métricas rápidas del Historial de Facturas
   const totalInvoicesAmount = invoices?.reduce((sum, inv) => sum + inv.amount, 0) || 0
+  const totalBalanceDue = invoices?.reduce((sum, inv) => sum + (inv.balanceDue ?? (inv.status === 'PAID' ? 0 : inv.amount)), 0) || 0
   const paidInvoices = invoices?.filter(inv => inv.status === 'PAID') || []
   const pendingInvoices = invoices?.filter(inv => inv.status === 'PENDING') || []
   const overdueInvoices = invoices?.filter(inv => inv.status === 'OVERDUE') || []
@@ -338,14 +438,14 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Slide-over Drawer: Historial Crediticio del Contacto */}
+      {/* Slide-over Drawer: Detalles del Contacto (Finanzas y Actividades) */}
       {selectedLeadForInvoice && (
         <div className="fixed inset-y-0 right-0 z-30 w-full max-w-md bg-slate-950/95 border-l border-slate-800 shadow-2xl backdrop-blur-xl flex flex-col animate-slide-in">
           
           {/* Cabecera del Drawer */}
           <div className="p-6 border-b border-slate-800 flex items-center justify-between">
             <div>
-              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block">Historial Financiero</span>
+              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block">Detalle del Contacto</span>
               <h3 className="text-lg font-bold text-white mt-1">
                 {selectedLeadForInvoice.firstName} {selectedLeadForInvoice.lastName}
               </h3>
@@ -359,95 +459,254 @@ export default function ContactsPage() {
             </button>
           </div>
 
-          {/* Contenido del Drawer */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            
-            {/* Sección: Resumen de Score */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-400 font-medium">Scoring Crediticio</span>
-                {getScoringBadge(selectedLeadForInvoice.scoring)}
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-800/50">
-                <div>
-                  <span className="text-[9px] text-slate-500 uppercase block">Cumplimiento</span>
-                  <span className="text-sm font-bold text-white flex items-center gap-1.5 mt-0.5">
-                    <TrendingUp className="h-4 w-4 text-emerald-400" />
-                    {paymentRatio}%
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[9px] text-slate-500 uppercase block">Facturas Totales</span>
-                  <span className="text-sm font-bold text-white mt-0.5 block">
-                    {invoices?.length || 0}
-                  </span>
-                </div>
-              </div>
-            </div>
+          {/* Selectores de Pestaña */}
+          <div className="flex border-b border-slate-800 bg-slate-900/10 px-6">
+            <button
+              onClick={() => setActiveTab('finance')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                activeTab === 'finance'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Finanzas
+            </button>
+            <button
+              onClick={() => setActiveTab('activities')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                activeTab === 'activities'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Actividades
+            </button>
+          </div>
 
-            {/* Alertas de Vencimiento si existen facturas pendientes o vencidas */}
-            {overdueInvoices.length > 0 && (
-              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 flex gap-3 text-xs text-rose-300">
-                <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0" />
-                <div>
-                  <span className="font-bold block">¡Facturas Vencidas!</span>
-                  <span>Este lead posee {overdueInvoices.length} factura(s) vencida(s) en HubSpot. Riesgo crediticio activo.</span>
+          {/* Contenido del Drawer */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {activeTab === 'finance' ? (
+              <div className="space-y-6">
+                {/* Sección: Resumen de Score */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-400 font-medium">Scoring Crediticio</span>
+                    {getScoringBadge(selectedLeadForInvoice.scoring)}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/50">
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase block">Total Adeudado</span>
+                      <span className="text-xs font-bold text-rose-450 mt-0.5 block truncate">
+                        ${totalBalanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase block">Cumplimiento</span>
+                      <span className="text-xs font-bold text-emerald-400 mt-0.5 block">
+                        {paymentRatio}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase block">Facturas</span>
+                      <span className="text-xs font-bold text-white mt-0.5 block">
+                        {invoices?.length || 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Alertas de Vencimiento si existen facturas pendientes o vencidas */}
+                {overdueInvoices.length > 0 && (
+                  <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 flex gap-3 text-xs text-rose-300">
+                    <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0" />
+                    <div>
+                      <span className="font-bold block">¡Facturas Vencidas!</span>
+                      <span>Este lead posee {overdueInvoices.length} factura(s) vencida(s) en HubSpot. Riesgo crediticio activo.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Listado de Facturas */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Detalle de Facturas</h4>
+                  <div className="space-y-3">
+                    {invoices && invoices.length > 0 ? (
+                      invoices.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="rounded-xl border border-slate-900 bg-slate-950 p-4 flex justify-between items-start"
+                        >
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] text-slate-500 font-mono block">INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}</span>
+                            <span className="text-sm font-bold text-white block">
+                              ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                            </span>
+                            {inv.status !== 'PAID' && inv.balanceDue !== undefined && inv.balanceDue !== inv.amount && (
+                              <span className="text-[10px] text-slate-450 block font-semibold">
+                                Pendiente: ${inv.balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                              </span>
+                            )}
+                            <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                              <Calendar className="h-3 w-3" />
+                              <span>Vencimiento: {new Date(inv.dueDate).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="text-right">
+                            {inv.status === 'PAID' && (
+                              <span className="inline-flex items-center rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/10">
+                                Pagado
+                              </span>
+                            )}
+                            {inv.status === 'PENDING' && (
+                              <span className="inline-flex items-center rounded bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/10">
+                                Pendiente
+                              </span>
+                            )}
+                            {inv.status === 'OVERDUE' && (
+                              <span className="inline-flex items-center rounded bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/10">
+                                Vencido
+                              </span>
+                            )}
+                            {inv.paymentDate && (
+                              <p className="text-[9px] text-slate-500 mt-1">
+                                Pago: {new Date(inv.paymentDate).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-center text-slate-500 py-6">
+                        No se encontraron facturas asociadas a este contacto.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Formulario para registrar actividad */}
+                <form onSubmit={handleAddActivity} className="rounded-xl border border-slate-800 bg-slate-900/20 p-4 space-y-4 backdrop-blur-md">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Registrar Actividad</h4>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Tipo</label>
+                      <select
+                        value={activityType}
+                        onChange={(e) => setActivityType(e.target.value as any)}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-505 transition-colors focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="NOTE">Nota</option>
+                        <option value="CALL">Llamada</option>
+                        <option value="MEETING">Reunión</option>
+                        <option value="EMAIL">Correo</option>
+                        <option value="TASK">Tarea</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Título</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Llamada de seguimiento"
+                        value={activityTitle}
+                        onChange={(e) => setActivityTitle(e.target.value)}
+                        required
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Descripción</label>
+                    <textarea
+                      placeholder="Escribe el resumen o notas de la actividad..."
+                      value={activityBody}
+                      onChange={(e) => setActivityBody(e.target.value)}
+                      required
+                      rows={3}
+                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingActivity}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Registrar Actividad
+                  </button>
+                </form>
+
+                {/* Línea de tiempo de Actividades */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Historial de Actividades</h4>
+                  
+                  <div className="relative border-l border-slate-800 ml-3.5 pl-6 space-y-6">
+                    {activities && activities.length > 0 ? (
+                      [...activities]
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .map((act) => {
+                          const config = getActivityConfig(act.type)
+                          const IconComponent = config.icon
+                          
+                          return (
+                            <div key={act.id || act.tempId} className="relative group">
+                              {/* Punto/Icono en el timeline */}
+                              <div className={`absolute -left-[38px] top-1 rounded-full p-1.5 border ${config.bg} ${config.border} ${config.text} shadow-md`}>
+                                <IconComponent className="h-3.5 w-3.5" />
+                              </div>
+
+                              {/* Card de Actividad */}
+                              <div className="rounded-xl border border-slate-900 bg-slate-950/80 p-4 space-y-2">
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <span className="text-[9px] text-slate-500 font-mono block">
+                                      {new Date(act.timestamp).toLocaleString()}
+                                    </span>
+                                    <h5 className="text-xs font-bold text-white mt-0.5">
+                                      {act.title}
+                                    </h5>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                    {act.synced ? (
+                                      <span title="Sincronizado con HubSpot">
+                                        <Cloud className="h-3.5 w-3.5 text-slate-600" />
+                                      </span>
+                                    ) : (
+                                      <span title="Guardado localmente, pendiente de sincronización">
+                                        <Database className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => handleDeleteActivity(act)}
+                                      className="rounded p-1 text-slate-600 hover:bg-slate-900 hover:text-red-450 transition-colors"
+                                      title="Eliminar actividad"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <p className="text-xs text-slate-400 whitespace-pre-line leading-relaxed">
+                                  {act.body}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })
+                    ) : (
+                      <p className="text-xs text-center text-slate-500 py-6 -ml-3.5">
+                        No se encontraron actividades registradas para este contacto.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
-
-            {/* Listado de Facturas */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Detalle de Facturas</h4>
-              <div className="space-y-3">
-                {invoices && invoices.length > 0 ? (
-                  invoices.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="rounded-xl border border-slate-900 bg-slate-950 p-4 flex justify-between items-start"
-                    >
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] text-slate-500 font-mono block">INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}</span>
-                        <span className="text-sm font-bold text-white block">
-                          ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
-                        </span>
-                        <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                          <Calendar className="h-3 w-3" />
-                          <span>Vencimiento: {new Date(inv.dueDate).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        {inv.status === 'PAID' && (
-                          <span className="inline-flex items-center rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/10">
-                            Pagado
-                          </span>
-                        )}
-                        {inv.status === 'PENDING' && (
-                          <span className="inline-flex items-center rounded bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/10">
-                            Pendiente
-                          </span>
-                        )}
-                        {inv.status === 'OVERDUE' && (
-                          <span className="inline-flex items-center rounded bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/10">
-                            Vencido
-                          </span>
-                        )}
-                        {inv.paymentDate && (
-                          <p className="text-[9px] text-slate-500 mt-1">
-                            Pago: {new Date(inv.paymentDate).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-center text-slate-500 py-6">
-                    No se encontraron facturas asociadas a este contacto.
-                  </p>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       )}

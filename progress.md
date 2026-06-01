@@ -85,6 +85,22 @@
 *   **Interfaces de UI de Recuperación:** Creadas las vistas `/auth/forgot-password` y `/auth/reset-password` integradas con el formulario principal `/auth/signin`.
 *   **Robustecimiento de Autenticación:** Unificados los mensajes de error en NextAuth (`src/lib/auth.ts`) a un único mensaje genérico en español para evitar la enumeración de usuarios (User Enumeration).
 
+## Fases del 1 de junio de 2026 (Actividades de Contactos y Sincronización)
+*   **Fase 1: Capa de Persistencia (Local y Servidor):**
+    - Creado el modelo Mongoose `Activity` en MongoDB ([src/models/Activity.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/models/Activity.ts)).
+    - Actualizado el esquema de la base local Dexie ([src/lib/db.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/db.ts)) a la versión 4, incorporando la tabla `activities` tipada con `LocalActivity` para soporte offline.
+*   **Fase 2: Capa CRM (Adaptador):**
+    - Añadidas las firmas y definiciones para `CRMActivity` en el contrato de CRM ([src/lib/crm/interface.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/interface.ts)).
+    - Implementada la emulación en memoria de actividades en el proveedor simulado ([src/lib/crm/mock.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/mock.ts)).
+    - Creados los métodos `createActivity` y `fetchActivitiesByLead` en el adaptador real de HubSpot ([src/lib/crm/hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts)), utilizando la creación nativa de notas con asociación `202` (Nota a Contacto) y un motor resiliente de análisis basado en expresiones regulares para descifrar tipos, títulos y cuerpos.
+*   **Fase 3: Integración en el Hook de Sincronización (useSync) y Badge:**
+    - Modificado el hook de sincronización cliente-servidor `useSync.ts` para capturar actividades offline en Dexie, subirlas usando la Server Action `pushClientChanges`, y aplicar los mappings de IDs resultantes.
+    - Implementada la descarga del servidor (Inbound Sync) de actividades, con resolución automática de referencias cruzadas (`leadId` local tempId/realId) y borrado en cascada local de actividades si se elimina un contacto.
+    - Modificado `SyncStatusBadge.tsx` para incluir las actividades no sincronizadas en el conteo total de cambios locales pendientes.
+*   **Fase 4: Interfaz de Usuario Reactiva y Cronología (Timeline) de Actividades:**
+    - Re-diseñado el Slide-Over Drawer de detalles del lead en `contacts/page.tsx` para implementar una vista por pestañas: "Finanzas" e "Actividades".
+    - Diseñado un formulario offline para registrar nuevas actividades con selección de tipo (`NOTE`, `CALL`, `MEETING`, `EMAIL`, `TASK`), título y descripción, persistidas reactivamente en Dexie.
+    - Implementada la cronología (timeline) de actividades en el Drawer con iconos distintivos de `lucide-react` y colores vibrantes según el tipo de actividad, mostrando indicadores de estado de sincronización (`Cloud` vs `Database`) y opción de eliminación local resiliente.
 ## Roadmap de Seguridad (Tareas Pendientes)
 *   [x] **Autenticación Multifactor Obligatoria (MFA) - Fase 2:**
     - Modificado el modelo `User` en `User.ts` agregando los flags de MFA, Backup Codes y roles.
@@ -111,7 +127,9 @@
     - [x] Implementar purga total de Dexie.js en el evento de cierre de sesión (logout) y limpieza de `localStorage`/`sessionStorage`.
 *   [ ] **Cifrado en MongoDB (Capa de Base Intermedia) - Fase 4:**
     - Implementar Field-Level Encryption (CSFLE) o cifrado simétrico en el servidor de campos confidenciales de contactos.
+*   [ ] **Sincronización en Producción via Webhooks (Fase 4):**
+    - Configurar suscripción de Webhook en el portal de desarrolladores de HubSpot para cambios en el estado de facturas (`invoices` o Custom Object de facturas) y procesar los eventos entrantes en el endpoint del webhook para actualizar en tiempo real el estado en MongoDB Atlas al pasar a producción.
 
 ---
-*Última actualización: 2026-05-29*
+*Última actualización: 2026-06-01*
 

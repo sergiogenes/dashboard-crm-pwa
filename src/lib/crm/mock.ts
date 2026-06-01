@@ -1,9 +1,10 @@
-import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice } from './interface'
+import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice, CRMActivity } from './interface'
 
 export class MockCRMProvider implements ICRMProvider {
   private contacts = new Map<string, CRMLead>()
   private companies = new Map<string, CRMCompany>()
   private associations = new Map<string, string>() // contactCrmId -> companyCrmId
+  private mockActivities = new Map<string, CRMActivity[]>() // contactCrmId -> CRMActivity[]
 
   async upsertLead(lead: CRMLead): Promise<string> {
     const crmId = lead.crmId || `mock_contact_${Math.random().toString(36).substring(2, 9)}`
@@ -113,9 +114,11 @@ export class MockCRMProvider implements ICRMProvider {
         paymentDate = new Date(dueDate.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString()
       }
 
+      const amountVal = ((hash + i * 17) % 500) + 100 // montos deterministas entre $100 y $600
       invoices.push({
         crmId: `mock_inv_${leadCrmId}_${i}`,
-        amount: ((hash + i * 17) % 500) + 100, // montos deterministas entre $100 y $600
+        amount: amountVal,
+        balanceDue: status === 'PAID' ? 0 : amountVal,
         status,
         invoiceDate: invoiceDate.toISOString(),
         dueDate: dueDate.toISOString(),
@@ -124,5 +127,27 @@ export class MockCRMProvider implements ICRMProvider {
     }
 
     return invoices
+  }
+
+  async fetchActivitiesByLead(leadCrmId: string): Promise<CRMActivity[]> {
+    return this.mockActivities.get(leadCrmId) || []
+  }
+
+  async createActivity(leadCrmId: string, activity: CRMActivity): Promise<string> {
+    const crmId = activity.crmId || `mock_act_${Math.random().toString(36).substring(2, 9)}`
+    const list = this.mockActivities.get(leadCrmId) || []
+    const newActivity = { ...activity, crmId }
+    list.push(newActivity)
+    this.mockActivities.set(leadCrmId, list)
+    return crmId
+  }
+
+  async deleteActivity(crmId: string): Promise<void> {
+    this.mockActivities.forEach((acts) => {
+      const idx = acts.findIndex((a) => a.crmId === crmId)
+      if (idx !== -1) {
+        acts.splice(idx, 1)
+      }
+    })
   }
 }

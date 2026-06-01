@@ -2,7 +2,11 @@ import dbConnect from '@/lib/mongodb'
 import Company from '@/models/Company'
 import Lead from '@/models/Lead'
 import User from '@/models/User'
+import Activity from '@/models/Activity'
 import { CRMProviderFactory } from './factory'
+
+// Semáforo de bloqueo para evitar condiciones de carrera concurrentes
+let isSyncing = false
 
 /**
  * Motor de sincronización asíncrona (Outbound Sync Engine)
@@ -11,15 +15,23 @@ import { CRMProviderFactory } from './factory'
  * la consistencia relacional en las asociaciones.
  */
 export async function syncMongoDBToCRM(): Promise<void> {
-  await dbConnect()
-  const crm = CRMProviderFactory.getProvider()
-
-  // 1. Verificar la disponibilidad del CRM
-  const isCrmOnline = await crm.checkHealth()
-  if (!isCrmOnline) {
-    console.warn('[Sync Engine] El CRM no responde. Postponiendo sincronización.')
+  if (isSyncing) {
+    console.log('[Sync Engine] Sincronización saliente ya en curso. Ignorando ejecución concurrente.')
     return
   }
+
+  isSyncing = true
+
+  try {
+    await dbConnect()
+    const crm = CRMProviderFactory.getProvider()
+
+    // 1. Verificar la disponibilidad del CRM
+    const isCrmOnline = await crm.checkHealth()
+    if (!isCrmOnline) {
+      console.warn('[Sync Engine] El CRM no responde. Postponiendo sincronización.')
+      return
+    }
 
   // --- A. SINCRONIZACIÓN DE EMPRESAS ---
   const pendingCompanies = await Company.find({ crmSynced: false })
@@ -131,5 +143,50 @@ export async function syncMongoDBToCRM(): Promise<void> {
         await lead.save()
       }
     }
+  }
+
+  // --- C. SINCRONIZACIÓN DE ACTIVIDADES ---
+  const pendingActivities = await Activity.find({ crmSynced: false })
+
+  for (const activity of pendingActivities) {
+    try {
+      if (activity.deleted) {
+        if (activity.crmId) {
+          await crm.deleteActivity(activity.crmId)
+        }
+        activity.crmSynced = true
+        await activity.save()
+        continue
+      }
+
+      const lead = await Lead.findById(activity.leadId)
+      if (!lead || !lead.crmId) {
+        continue // Esperar a que el contacto se sincronice y tenga crmId
+      }
+
+      const crmId = await crm.createActivity(lead.crmId, {
+        crmId: activity.crmId,
+        type: activity.type,
+        title: activity.title,
+        body: activity.body,
+        timestamp: activity.timestamp.toISOString(),
+      })
+
+      activity.crmId = crmId
+      activity.crmSynced = true
+      await activity.save()
+    } catch (error: any) {
+      console.error(`[Sync Engine] Error sincronizando actividad ${activity._id}:`, error)
+      const isTransient = error.status === 429 || (error.status >= 500 && error.status <= 599) || error.message?.includes('fetch') || error.message?.includes('ENOTFOUND')
+      if (isTransient) {
+        return
+      } else {
+        activity.crmSynced = true
+        await activity.save()
+      }
+    }
+  }
+  } finally {
+    isSyncing = false
   }
 }

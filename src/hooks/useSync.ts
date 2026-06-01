@@ -44,15 +44,25 @@ export function useSync(userId: string | undefined) {
         .filter(l => l.synced === false && l.userId === userId)
         .toArray()
 
-      const hasPendingChanges = unsyncedCompanies.length > 0 || unsyncedLeads.length > 0
+      const unsyncedActivities = await localDb.activities
+        .filter(a => a.synced === false && a.userId === userId)
+        .toArray()
+
+      const hasPendingChanges =
+        unsyncedCompanies.length > 0 ||
+        unsyncedLeads.length > 0 ||
+        unsyncedActivities.length > 0
+
       let companyMappings: { tempId: string; id: string }[] = []
       let leadMappings: { tempId: string; id: string }[] = []
+      let activityMappings: { tempId: string; id: string }[] = []
 
       // 2. Subir cambios si existen
       if (hasPendingChanges) {
         const response = await pushClientChanges(
           unsyncedLeads.map(({ synced, ...rest }) => rest),
-          unsyncedCompanies.map(({ synced, ...rest }) => rest)
+          unsyncedCompanies.map(({ synced, ...rest }) => rest),
+          unsyncedActivities.map(({ synced, ...rest }) => rest)
         )
 
         if (!response.success) {
@@ -61,6 +71,7 @@ export function useSync(userId: string | undefined) {
 
         companyMappings = response.companyMappings
         leadMappings = response.leadMappings
+        activityMappings = response.activityMappings || []
 
         // Actualizar Dexie aplicando IDs reales y eliminando elementos soft-deleted
         for (const comp of unsyncedCompanies) {
@@ -125,6 +136,46 @@ export function useSync(userId: string | undefined) {
             }
           }
         }
+
+        for (const act of unsyncedActivities) {
+          if (act.tempId) {
+            const mapping = activityMappings.find(m => m.tempId === act.tempId)
+            if (mapping) {
+              if (act.deleted) {
+                await localDb.activities.where('tempId').equals(act.tempId).delete()
+              } else {
+                let resolvedLeadId = act.leadId
+                if (act.leadId) {
+                  const leadMapping = leadMappings.find(m => m.tempId === act.leadId)
+                  if (leadMapping) {
+                    resolvedLeadId = leadMapping.id
+                  }
+                }
+                await localDb.activities.where('tempId').equals(act.tempId).modify({
+                  id: mapping.id,
+                  leadId: resolvedLeadId,
+                  synced: true,
+                })
+              }
+            }
+          } else if (act.id) {
+            if (act.deleted) {
+              await localDb.activities.where('id').equals(act.id).delete()
+            } else {
+              let resolvedLeadId = act.leadId
+              if (act.leadId) {
+                const leadMapping = leadMappings.find(m => m.tempId === act.leadId)
+                if (leadMapping) {
+                  resolvedLeadId = leadMapping.id
+                }
+              }
+              await localDb.activities.where('id').equals(act.id).modify({
+                leadId: resolvedLeadId,
+                synced: true,
+              })
+            }
+          }
+        }
       }
 
       // 3. Descargar actualizaciones del servidor (Inbound Sync)
@@ -170,6 +221,7 @@ export function useSync(userId: string | undefined) {
         if (serverLead.deleted) {
           await localDb.leads.where('id').equals(serverLead.id).delete()
           await localDb.invoices.where('leadId').equals(serverLead.id).delete() // Borrado en cascada local
+          await localDb.activities.where('leadId').equals(serverLead.id).delete() // Borrado en cascada local
         } else {
           // Buscar si ya existe localmente el lead usando el ID de MongoDB o por email
           let existingLocal = await localDb.leads.where('id').equals(serverLead.id).first()
@@ -213,6 +265,7 @@ export function useSync(userId: string | undefined) {
             leadId: inv.leadId,
             userId: inv.userId,
             amount: inv.amount,
+            balanceDue: inv.balanceDue,
             status: inv.status,
             invoiceDate: inv.invoiceDate,
             dueDate: inv.dueDate,
@@ -221,6 +274,36 @@ export function useSync(userId: string | undefined) {
             updatedAt: inv.updatedAt,
           }))
         )
+      }
+
+      // Guardar actividades en Dexie (Inbound Sync)
+      if (updates.activities && updates.activities.length > 0) {
+        for (const serverAct of updates.activities) {
+          if (serverAct.deleted) {
+            await localDb.activities.where('id').equals(serverAct.id).delete()
+          } else {
+            // Buscar si ya existe localmente la actividad usando el ID de MongoDB
+            let existingLocal = await localDb.activities.where('id').equals(serverAct.id).first()
+
+            // Resolver leadId local si tiene tempId en lugar de ID de MongoDB
+            let localLead = await localDb.leads.where('id').equals(serverAct.leadId).first()
+            const resolvedLeadId = localLead?.tempId || serverAct.leadId
+
+            await localDb.activities.put({
+              tempId: existingLocal?.tempId || serverAct.id,
+              id: serverAct.id,
+              leadId: resolvedLeadId,
+              userId: serverAct.userId,
+              type: serverAct.type as any,
+              title: serverAct.title,
+              body: serverAct.body,
+              timestamp: serverAct.timestamp,
+              synced: true,
+              createdAt: serverAct.createdAt,
+              updatedAt: serverAct.updatedAt,
+            })
+          }
+        }
       }
 
       localStorage.setItem(lastSyncKey, Date.now().toString())
