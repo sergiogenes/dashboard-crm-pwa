@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { localDb, LocalLead, LocalInvoice, LocalActivity } from '@/lib/db'
+import { localDb, LocalLead, LocalInvoice, LocalActivity, LocalDeal } from '@/lib/db'
 import LeadFormModal from '@/components/LeadFormModal'
 import {
   Users,
@@ -24,7 +24,8 @@ import {
   Phone,
   Mail,
   CheckSquare,
-  Bell
+  Bell,
+  Wallet
 } from 'lucide-react'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
@@ -53,7 +54,14 @@ export default function ContactsPage() {
   const [selectedLeadForInvoice, setSelectedLeadForInvoice] = useState<LocalLead | null>(null)
 
   // Estado de Pestaña activa en el Drawer
-  const [activeTab, setActiveTab] = useState<'finance' | 'activities'>('activities')
+  const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'deals'>('activities')
+
+  // Estado del Formulario de Nuevo Préstamo (Deal)
+  const [dealAmount, setDealAmount] = useState('')
+  const [dealTermMonths, setDealTermMonths] = useState('12')
+  const [dealInterestRate, setDealInterestRate] = useState('15')
+  const [dealNotes, setDealNotes] = useState('')
+  const [isSubmittingDeal, setIsSubmittingDeal] = useState(false)
 
   // Estado del Formulario de Actividad
   const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'>('NOTE')
@@ -121,6 +129,20 @@ export default function ContactsPage() {
     []
   )
 
+  // 5. Obtener reactivamente los préstamos (deals) asociados al lead seleccionado
+  const deals = useLiveQuery(
+    async () => {
+      if (!selectedLeadId) return []
+      return await localDb.deals
+        .where('leadId')
+        .equals(selectedLeadId)
+        .filter((d) => d.deleted !== true)
+        .toArray()
+    },
+    [selectedLeadId],
+    []
+  )
+
   // Soft Delete del Lead
   const handleDeleteLead = async (lead: LocalLead) => {
     if (!confirm(`¿Estás seguro de que deseas eliminar a ${lead.firstName} ${lead.lastName}?`)) return
@@ -165,7 +187,8 @@ export default function ContactsPage() {
           reminderTimestamp = parsedDate.getTime()
         }
       }
-      const newAct: LocalActivity = {
+      // 1. Registrar la actividad principal (Nota, Llamada, Reunión, Email)
+      const newMainAct: LocalActivity = {
         tempId: crypto.randomUUID(),
         leadId: selectedLeadId,
         userId,
@@ -173,12 +196,29 @@ export default function ContactsPage() {
         title: activityTitle.trim(),
         body: activityBody.trim(),
         timestamp: now,
-        reminderDate: reminderTimestamp,
         synced: false,
         createdAt: now,
         updatedAt: now,
       }
-      await localDb.activities.put(newAct)
+      await localDb.activities.put(newMainAct)
+
+      // 2. Si se definió un recordatorio, registrar una actividad separada de tipo TASK (Tarea)
+      if (reminderTimestamp) {
+        const newTaskAct: LocalActivity = {
+          tempId: crypto.randomUUID(),
+          leadId: selectedLeadId,
+          userId,
+          type: 'TASK',
+          title: `Recordatorio: ${activityTitle.trim()}`,
+          body: activityBody.trim(),
+          timestamp: now,
+          reminderDate: reminderTimestamp,
+          synced: false,
+          createdAt: now,
+          updatedAt: now,
+        }
+        await localDb.activities.put(newTaskAct)
+      }
       
       // Limpiar formulario
       setActivityTitle('')
@@ -214,6 +254,156 @@ export default function ContactsPage() {
       console.error('[Contacts] Error al eliminar actividad:', err)
     }
   }
+
+  // Marcar recordatorio como leído desde el historial
+  const handleMarkReminderAsRead = async (act: LocalActivity) => {
+    try {
+      const now = Date.now()
+      const actKey = act.tempId || act.id
+      if (actKey) {
+        const notif = await localDb.notifications.where('activityId').equals(actKey).first()
+        if (notif) {
+          await localDb.notifications.update(notif.id, { read: true, notified: true })
+        }
+      }
+
+      if (act.tempId) {
+        await localDb.activities.update(act.tempId, {
+          reminderRead: true,
+          synced: false,
+          updatedAt: now,
+        })
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al marcar recordatorio como leído:', err)
+    }
+  }
+
+  // Eliminar recordatorio de una actividad manteniendo la nota
+  const handleRemoveReminder = async (act: LocalActivity) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar este recordatorio? La nota permanecerá en el historial.')) return
+    try {
+      const now = Date.now()
+      const actKey = act.tempId || act.id
+      if (actKey) {
+        const notif = await localDb.notifications.where('activityId').equals(actKey).first()
+        if (notif) {
+          await localDb.notifications.delete(notif.id)
+        }
+      }
+
+      if (act.tempId) {
+        if (act.type === 'TASK') {
+          // Si es una Tarea independiente (alarma), la eliminamos por completo
+          await localDb.activities.update(act.tempId, {
+            deleted: true,
+            synced: false,
+            updatedAt: now,
+          })
+        } else {
+          // Retrocompatibilidad: Si es una nota antigua con recordatorio embebido, limpiamos el campo
+          await localDb.activities.update(act.tempId, {
+            reminderDate: null as any,
+            reminderRead: false,
+            synced: false,
+            updatedAt: now,
+          })
+        }
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al eliminar recordatorio:', err)
+    }
+  }
+
+  // Registrar una nueva solicitud de préstamo offline en Dexie
+  const handleAddDeal = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId || !selectedLeadId || !selectedLeadForInvoice) return
+    if (!dealAmount.trim()) return
+
+    setIsSubmittingDeal(true)
+    try {
+      const now = Date.now()
+      const amountVal = parseFloat(dealAmount)
+      const termVal = parseInt(dealTermMonths)
+      const rateVal = parseFloat(dealInterestRate)
+
+      if (isNaN(amountVal) || amountVal <= 0) {
+        alert('Por favor ingresa un monto válido.')
+        return
+      }
+
+      const newDeal: LocalDeal = {
+        tempId: crypto.randomUUID(),
+        leadId: selectedLeadId,
+        userId,
+        name: `Préstamo ${selectedLeadForInvoice.firstName} ${selectedLeadForInvoice.lastName}`,
+        amount: amountVal,
+        termMonths: termVal,
+        interestRate: rateVal,
+        stage: 'draft', // El vendedor origina en borrador
+        notes: dealNotes.trim() || undefined,
+        synced: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+
+      await localDb.deals.put(newDeal)
+
+      // Limpiar formulario
+      setDealAmount('')
+      setDealTermMonths('12')
+      setDealInterestRate('15')
+      setDealNotes('')
+    } catch (err) {
+      console.error('[Contacts] Error al registrar préstamo:', err)
+    } finally {
+      setIsSubmittingDeal(false)
+    }
+  }
+
+  // Soft Delete de Deal en Dexie
+  const handleDeleteDeal = async (deal: LocalDeal) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta solicitud de préstamo?')) return
+    try {
+      const now = Date.now()
+      if (deal.id) {
+        // Tiene ID real: marcar soft delete para sincronizar al servidor
+        await localDb.deals.where('id').equals(deal.id).modify({
+          deleted: true,
+          synced: false,
+          updatedAt: now,
+        })
+      } else if (deal.tempId) {
+        // Creado localmente y no sincronizado: borrar físicamente
+        await localDb.deals.where('tempId').equals(deal.tempId).delete()
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al eliminar préstamo:', err)
+    }
+  }
+
+  // Escuchar eventos de recordatorios del Header para abrir Drawer reactivamente
+  useEffect(() => {
+    const handleOpenReminder = (e: Event) => {
+      const customEvent = e as CustomEvent<{ leadId: string; activityId: string }>
+      const { leadId, activityId } = customEvent.detail
+      if (activityId) {
+        setHighlightedActivityId(activityId)
+      }
+      if (leadId && leads.length > 0) {
+        const foundLead = leads.find((l) => l.id === leadId || l.tempId === leadId)
+        if (foundLead) {
+          setSelectedLeadForInvoice(foundLead)
+          setActiveTab('activities')
+        }
+      }
+    }
+    window.addEventListener('open-lead-reminder', handleOpenReminder)
+    return () => {
+      window.removeEventListener('open-lead-reminder', handleOpenReminder)
+    }
+  }, [leads])
 
   // Auto-seleccionar Lead si viene de un recordatorio en la URL
   useEffect(() => {
@@ -638,6 +828,16 @@ export default function ContactsPage() {
             >
               Actividades
             </button>
+            <button
+              onClick={() => setActiveTab('deals')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                activeTab === 'deals'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Préstamos
+            </button>
           </div>
 
           {/* Contenido del Drawer */}
@@ -741,7 +941,7 @@ export default function ContactsPage() {
                   </div>
                 </div>
               </div>
-            ) : (
+            ) : activeTab === 'activities' ? (
               <div className="space-y-6">
                 {/* Formulario para registrar actividad */}
                 <form onSubmit={handleAddActivity} className="rounded-xl border border-slate-800 bg-slate-900/20 p-4 space-y-4 backdrop-blur-md">
@@ -955,11 +1155,44 @@ export default function ContactsPage() {
                                   {act.body}
                                 </p>
                                 {act.reminderDate && (
-                                  <div className="flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2 py-1 text-[10px] text-indigo-400 w-fit mt-1">
-                                    <Bell className="h-3.5 w-3.5 animate-pulse" />
-                                    <span>Recordatorio: {new Date(act.reminderDate).toLocaleString()}</span>
-                                  </div>
-                                )}
+                                   <div className="flex flex-col gap-1.5 mt-2 rounded-lg bg-indigo-950/40 border border-indigo-500/20 p-2.5 max-w-md">
+                                     <div className="flex items-center gap-1.5 text-[10px] text-indigo-300">
+                                       <Bell className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
+                                       <span className="font-medium">
+                                         Recordatorio: {new Date(act.reminderDate).toLocaleString()}
+                                       </span>
+                                       {act.reminderRead ? (
+                                         <span className="ml-1 text-[8px] bg-indigo-500/20 text-indigo-200 px-1.5 py-0.5 rounded border border-indigo-500/30">
+                                           Leído
+                                         </span>
+                                       ) : (
+                                         <span className="ml-1 text-[8px] bg-amber-500/20 text-amber-200 px-1.5 py-0.5 rounded border border-amber-500/30">
+                                           Activo
+                                         </span>
+                                       )}
+                                     </div>
+                                     <div className="flex items-center gap-2">
+                                       {!act.reminderRead && (
+                                         <button
+                                           type="button"
+                                           onClick={() => handleMarkReminderAsRead(act)}
+                                           className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 hover:text-indigo-200 bg-indigo-500/20 hover:bg-indigo-500/30 px-2 py-1 rounded transition-colors border border-indigo-500/30"
+                                         >
+                                           <CheckSquare className="h-3 w-3" />
+                                           Marcar Leído
+                                         </button>
+                                       )}
+                                       <button
+                                         type="button"
+                                         onClick={() => handleRemoveReminder(act)}
+                                         className="flex items-center gap-1 text-[9px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 rounded transition-colors border border-red-500/20"
+                                       >
+                                         <X className="h-3 w-3" />
+                                         Quitar Alarma
+                                       </button>
+                                     </div>
+                                   </div>
+                                 )}
                               </div>
                             </div>
                           )
@@ -967,6 +1200,217 @@ export default function ContactsPage() {
                     ) : (
                       <p className="text-xs text-center text-slate-500 py-6 -ml-3.5">
                         No se encontraron actividades registradas para este contacto.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Formulario de creación */}
+                <form onSubmit={handleAddDeal} className="rounded-xl border border-slate-800 bg-slate-900/20 p-4 space-y-4 backdrop-blur-md">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Nueva Solicitud de Préstamo</h4>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Monto (USD)</label>
+                      <input
+                        type="number"
+                        placeholder="Ej. 5000"
+                        value={dealAmount}
+                        onChange={(e) => setDealAmount(e.target.value)}
+                        required
+                        min="1"
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Plazo (Meses)</label>
+                      <select
+                        value={dealTermMonths}
+                        onChange={(e) => setDealTermMonths(e.target.value)}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white transition-colors focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="3">3 meses</option>
+                        <option value="6">6 meses</option>
+                        <option value="12">12 meses</option>
+                        <option value="18">18 meses</option>
+                        <option value="24">24 meses</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Tasa de Interés (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="Ej. 15"
+                      value={dealInterestRate}
+                      onChange={(e) => setDealInterestRate(e.target.value)}
+                      required
+                      min="0"
+                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Notas / Justificación</label>
+                    <textarea
+                      placeholder="Escribe comentarios u observaciones del préstamo..."
+                      value={dealNotes}
+                      onChange={(e) => setDealNotes(e.target.value)}
+                      rows={3}
+                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingDeal}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Enviar Solicitud
+                  </button>
+                </form>
+
+                {/* Listado de Préstamos Activos */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Solicitudes de Préstamos</h4>
+                  <div className="space-y-4">
+                    {deals && deals.length > 0 ? (
+                      deals.map((deal) => {
+                        const steps = [
+                          { stage: 'draft', label: 'Borrador' },
+                          { stage: 'under_evaluation', label: 'Riesgo' },
+                          { stage: 'approved', label: 'Aprobado' },
+                          { stage: 'disbursed', label: 'Desembolsado' },
+                        ]
+
+                        const getStepStatus = (dealStage: string, stepStage: string) => {
+                          const stageOrder = ['draft', 'under_evaluation', 'approved', 'disbursed', 'completed']
+                          const currentIdx = stageOrder.indexOf(dealStage)
+                          const stepIdx = stageOrder.indexOf(stepStage)
+                          
+                          if (dealStage === 'refused' || dealStage === 'overdue') {
+                            return 'disabled'
+                          }
+                          if (currentIdx >= 3 && dealStage === 'completed') {
+                            return 'completed'
+                          }
+                          if (stepIdx < currentIdx) return 'completed'
+                          if (stepIdx === currentIdx) return 'active'
+                          return 'upcoming'
+                        }
+
+                        return (
+                          <div key={deal.id || deal.tempId} className="rounded-xl border border-slate-900 bg-slate-950 p-4 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[10px] text-slate-500 font-mono block">
+                                  Creado: {new Date(deal.createdAt).toLocaleDateString()}
+                                </span>
+                                <h5 className="text-sm font-bold text-white mt-0.5">
+                                  ${deal.amount.toLocaleString()} USD
+                                </h5>
+                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                  Plazo: {deal.termMonths} meses | Tasa: {deal.interestRate}%
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                {deal.synced ? (
+                                  <span title="Sincronizado con el CRM">
+                                    <Cloud className="h-3.5 w-3.5 text-slate-600" />
+                                  </span>
+                                ) : (
+                                  <span title="Pendiente de sincronización">
+                                    <Database className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteDeal(deal)}
+                                  className="rounded p-1 text-slate-600 hover:bg-slate-900 hover:text-red-450 transition-colors"
+                                  title="Eliminar préstamo"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {deal.notes && (
+                              <p className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded border border-slate-900 leading-relaxed font-mono">
+                                {deal.notes}
+                              </p>
+                            )}
+
+                            {/* Stepper Horizontal */}
+                            {deal.stage !== 'refused' && deal.stage !== 'overdue' && deal.stage !== 'completed' ? (
+                              <div className="relative flex items-center justify-between mt-4 px-2 pt-2 pb-1">
+                                <div className="absolute left-4 right-4 top-1/2 -translate-y-[10px] h-0.5 bg-slate-800 -z-10" />
+                                <div 
+                                  className="absolute left-4 top-1/2 -translate-y-[10px] h-0.5 bg-emerald-500 transition-all duration-500 -z-10"
+                                  style={{
+                                    width: 
+                                      deal.stage === 'draft' ? '0%' :
+                                      deal.stage === 'under_evaluation' ? '33.33%' :
+                                      deal.stage === 'approved' ? '66.66%' : '100%'
+                                  }}
+                                />
+                                {steps.map((step, idx) => {
+                                  const status = getStepStatus(deal.stage, step.stage)
+                                  return (
+                                    <div key={step.stage} className="flex flex-col items-center z-10">
+                                      <div 
+                                        className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold border transition-all ${
+                                          status === 'completed' 
+                                            ? 'bg-emerald-500 border-emerald-500 text-slate-950'
+                                            : status === 'active'
+                                            ? 'bg-indigo-950 border-indigo-500 text-indigo-400 ring-2 ring-indigo-500/20'
+                                            : 'bg-slate-950 border-slate-850 text-slate-500'
+                                        }`}
+                                      >
+                                        {status === 'completed' ? '✓' : idx + 1}
+                                      </div>
+                                      <span className={`text-[8px] font-semibold mt-1.5 ${
+                                        status === 'completed' ? 'text-emerald-400' :
+                                        status === 'active' ? 'text-indigo-400 font-bold' : 'text-slate-500'
+                                      }`}>
+                                        {step.label}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : null}
+
+                            {deal.stage === 'refused' && (
+                              <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 p-2 flex items-center gap-2 text-red-400 text-xs font-semibold">
+                                <ShieldAlert className="h-4 w-4 shrink-0" />
+                                <span>Solicitud Rechazada por Riesgos</span>
+                              </div>
+                            )}
+
+                            {deal.stage === 'overdue' && (
+                              <div className="mt-2 rounded-lg bg-rose-500/10 border border-rose-500/20 p-2 flex items-center gap-2 text-rose-400 text-xs font-semibold">
+                                <ShieldAlert className="h-4 w-4 shrink-0" />
+                                <span>Crédito en Mora (Vencido)</span>
+                              </div>
+                            )}
+
+                            {deal.stage === 'completed' && (
+                              <div className="mt-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2 flex items-center gap-2 text-emerald-400 text-xs font-semibold">
+                                <CheckSquare className="h-4 w-4 shrink-0" />
+                                <span>Crédito Completado (Pagado)</span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <p className="text-xs text-center text-slate-500 py-6">
+                        No hay solicitudes de préstamos registradas para este contacto.
                       </p>
                     )}
                   </div>

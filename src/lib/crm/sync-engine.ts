@@ -3,6 +3,7 @@ import Company from '@/models/Company'
 import Lead from '@/models/Lead'
 import User from '@/models/User'
 import Activity from '@/models/Activity'
+import Deal from '@/models/Deal'
 import { CRMProviderFactory } from './factory'
 
 // Semáforo de bloqueo para evitar condiciones de carrera concurrentes
@@ -152,7 +153,7 @@ export async function syncMongoDBToCRM(): Promise<void> {
     try {
       if (activity.deleted) {
         if (activity.crmId) {
-          await crm.deleteActivity(activity.crmId)
+          await crm.deleteActivity(activity.crmId, activity.type)
         }
         activity.crmSynced = true
         await activity.save()
@@ -170,6 +171,8 @@ export async function syncMongoDBToCRM(): Promise<void> {
         title: activity.title,
         body: activity.body,
         timestamp: activity.timestamp.toISOString(),
+        reminderDate: activity.reminderDate ? String(activity.reminderDate.getTime()) : undefined,
+        reminderRead: activity.reminderRead || false,
       })
 
       activity.crmId = crmId
@@ -183,6 +186,76 @@ export async function syncMongoDBToCRM(): Promise<void> {
       } else {
         activity.crmSynced = true
         await activity.save()
+      }
+    }
+  }
+
+  // --- D. SINCRONIZACIÓN DE DEALS (SOLICITUDES DE MICROCRÉDITO) ---
+  const pendingDeals = await Deal.find({ crmSynced: false })
+
+  for (const deal of pendingDeals) {
+    try {
+      // 1. Caso Borrado (Soft delete)
+      if (deal.deleted) {
+        if (deal.crmId) {
+          await crm.deleteDeal(deal.crmId)
+        }
+        deal.crmSynced = true
+        deal.crmLastSyncAt = new Date()
+        deal.crmSyncError = undefined
+        await deal.save()
+        continue
+      }
+
+      // 2. Caso Crear / Actualizar
+      const lead = await Lead.findById(deal.leadId)
+      if (!lead || !lead.crmId) {
+        continue // Esperar a que el contacto asociado tenga crmId
+      }
+
+      // Obtener el Owner ID (asesor / usuario del dashboard)
+      const user = await User.findById(deal.userId)
+      const ownerId = user?.crmOwnerId || undefined
+
+      // Empaquetar metadatos de microcrédito en la descripción
+      const description = `Asesor: ${deal.userId}\nNotas: ${deal.notes || ''}\n<!-- loan_metadata:{"termMonths":${deal.termMonths},"interestRate":${deal.interestRate},"localStage":"${deal.stage}"} -->`
+
+      const crmId = await crm.upsertDeal({
+        crmId: deal.crmId,
+        name: deal.name,
+        amount: deal.amount,
+        stage: deal.stage,
+        description,
+        ownerId,
+      })
+
+      const isNew = !deal.crmId
+      deal.crmId = crmId
+
+      // 3. Si es nuevo, asociarlo con el Contacto
+      if (isNew) {
+        await crm.associateDealWithLead(crmId, lead.crmId)
+      }
+
+      deal.crmSynced = true
+      deal.crmSyncError = undefined
+      deal.crmLastSyncAt = new Date()
+      await deal.save()
+    } catch (error: any) {
+      console.error(`[Sync Engine] Error sincronizando deal ${deal._id}:`, error)
+
+      const isTransient =
+        error.status === 429 ||
+        (error.status >= 500 && error.status <= 599) ||
+        error.message?.includes('fetch') ||
+        error.message?.includes('ENOTFOUND')
+
+      if (isTransient) {
+        return // Detener y reintentar después
+      } else {
+        deal.crmSynced = true
+        deal.crmSyncError = error.message || 'Error de validación de Deal en CRM'
+        await deal.save()
       }
     }
   }

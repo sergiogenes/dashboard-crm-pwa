@@ -8,9 +8,10 @@ import Company from '@/models/Company'
 import Lead, { ILeadSchema } from '@/models/Lead'
 import User from '@/models/User'
 import Invoice from '@/models/Invoice'
-import { LocalLead, LocalCompany, LocalActivity } from '@/lib/db'
-import { ICRMProvider, CRMInvoice, CRMActivity } from '@/lib/crm/interface'
+import { LocalLead, LocalCompany, LocalActivity, LocalDeal } from '@/lib/db'
+import { ICRMProvider, CRMInvoice, CRMActivity, CRMDeal } from '@/lib/crm/interface'
 import Activity from '@/models/Activity'
+import Deal from '@/models/Deal'
 
 async function getUserIdOrThrow(): Promise<string> {
   const session = await getServerSession(authOptions)
@@ -24,6 +25,7 @@ export async function pushClientChanges(
   leads: Omit<LocalLead, 'synced'>[],
   companies: Omit<LocalCompany, 'synced'>[],
   activities: Omit<LocalActivity, 'synced'>[] = [],
+  deals: Omit<LocalDeal, 'synced'>[] = [],
 ) {
   const userId = await getUserIdOrThrow()
   await dbConnect()
@@ -194,7 +196,8 @@ export async function pushClientChanges(
             title: clientAct.title,
             body: clientAct.body,
             timestamp: new Date(clientAct.timestamp),
-            reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined,
+            reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : null,
+            reminderRead: clientAct.reminderRead || false,
             crmSynced: false,
           },
         )
@@ -212,7 +215,8 @@ export async function pushClientChanges(
           title: clientAct.title,
           body: clientAct.body,
           timestamp: new Date(clientAct.timestamp),
-          reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined,
+          reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : null,
+          reminderRead: clientAct.reminderRead || false,
           deleted: clientAct.deleted || false,
           crmSynced: false,
         })
@@ -224,7 +228,8 @@ export async function pushClientChanges(
         existingAct.title = clientAct.title
         existingAct.body = clientAct.body
         existingAct.timestamp = new Date(clientAct.timestamp)
-        existingAct.reminderDate = clientAct.reminderDate ? new Date(clientAct.reminderDate) : undefined
+        existingAct.reminderDate = clientAct.reminderDate ? new Date(clientAct.reminderDate) : null
+        existingAct.reminderRead = clientAct.reminderRead || false
         if (clientAct.deleted) {
           existingAct.deleted = true
         }
@@ -234,6 +239,83 @@ export async function pushClientChanges(
       
       const realId = existingAct._id.toString()
       activityMappings.push({ tempId: clientAct.tempId, id: realId })
+    }
+  }
+
+  const dealMappings: { tempId: string; id: string }[] = []
+
+  // 4. Procesar deals (solicitudes de microcrédito)
+  for (const clientDeal of deals) {
+    let resolvedLeadId: string | null = null
+
+    if (clientDeal.leadId) {
+      const mapping = leadMappings.find(m => m.tempId === clientDeal.leadId)
+      if (mapping) {
+        resolvedLeadId = mapping.id
+      } else {
+        resolvedLeadId = clientDeal.leadId
+      }
+    }
+
+    if (resolvedLeadId && !mongoose.Types.ObjectId.isValid(resolvedLeadId)) {
+      console.warn(`[pushClientChanges] Advertencia: leadId "${resolvedLeadId}" no es un ObjectId válido para Deal. Saltando.`)
+      continue
+    }
+
+    if (clientDeal.id) {
+      if (clientDeal.deleted) {
+        await Deal.findOneAndUpdate(
+          { _id: clientDeal.id, userId },
+          { deleted: true, crmSynced: false },
+        )
+      } else {
+        await Deal.findOneAndUpdate(
+          { _id: clientDeal.id, userId },
+          {
+            name: clientDeal.name,
+            amount: clientDeal.amount,
+            termMonths: clientDeal.termMonths,
+            interestRate: clientDeal.interestRate,
+            stage: clientDeal.stage,
+            notes: clientDeal.notes,
+            crmSynced: false,
+          },
+        )
+      }
+    } else if (clientDeal.tempId) {
+      // Evitar duplicación si falló el ACK de la sincronización previa
+      let existingDeal = await Deal.findOne({ tempId: clientDeal.tempId })
+      if (!existingDeal) {
+        existingDeal = new Deal({
+          tempId: clientDeal.tempId,
+          leadId: resolvedLeadId,
+          userId,
+          name: clientDeal.name,
+          amount: clientDeal.amount,
+          termMonths: clientDeal.termMonths,
+          interestRate: clientDeal.interestRate,
+          stage: clientDeal.stage,
+          notes: clientDeal.notes,
+          deleted: clientDeal.deleted || false,
+          crmSynced: false,
+        })
+        await existingDeal.save()
+      } else {
+        existingDeal.leadId = resolvedLeadId as any
+        existingDeal.name = clientDeal.name
+        existingDeal.amount = clientDeal.amount
+        existingDeal.termMonths = clientDeal.termMonths
+        existingDeal.interestRate = clientDeal.interestRate
+        existingDeal.stage = clientDeal.stage
+        existingDeal.notes = clientDeal.notes
+        if (clientDeal.deleted) {
+          existingDeal.deleted = true
+        }
+        existingDeal.crmSynced = false
+        await existingDeal.save()
+      }
+      const realId = existingDeal._id.toString()
+      dealMappings.push({ tempId: clientDeal.tempId, id: realId })
     }
   }
 
@@ -248,6 +330,7 @@ export async function pushClientChanges(
     companyMappings,
     leadMappings,
     activityMappings,
+    dealMappings,
   }
 }
 
@@ -387,7 +470,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
     updatedAt: { $gt: sinceDate },
   })
 
-  // Sincronizar facturas y actividades para todos los leads activos en segundo plano para reflejar cambios externos del CRM
+  // Sincronizar facturas, actividades y deals para todos los leads activos en segundo plano para reflejar cambios externos del CRM
   const activeLeads = await Lead.find({ userId, deleted: false })
   if (activeLeads.length > 0) {
     import('@/lib/crm/factory').then(({ CRMProviderFactory }) => {
@@ -406,6 +489,12 @@ export async function pullServerUpdates(lastSyncTime: number) {
                 return syncActivitiesForLead(lead, lead.crmId, crm, userId)
               }
               return Promise.resolve()
+            }),
+            ...activeLeads.map(lead => {
+              if (lead.crmId) {
+                return syncDealsForLead(lead, lead.crmId, crm, userId)
+              }
+              return Promise.resolve()
             })
           ])
         }
@@ -413,13 +502,18 @@ export async function pullServerUpdates(lastSyncTime: number) {
     }).catch(err => console.error('[Sync Action Background] Error al cargar factory:', err))
   }
 
-  // Obtener facturas y actividades actualizadas desde la última sincronización
+  // Obtener facturas, actividades y deals actualizados desde la última sincronización
   const updatedInvoices = await Invoice.find({
     userId,
     updatedAt: { $gt: sinceDate },
   })
 
   const updatedActivities = await Activity.find({
+    userId,
+    updatedAt: { $gt: sinceDate },
+  })
+
+  const updatedDeals = await Deal.find({
     userId,
     updatedAt: { $gt: sinceDate },
   })
@@ -476,9 +570,24 @@ export async function pullServerUpdates(lastSyncTime: number) {
       body: act.body,
       timestamp: act.timestamp.getTime(),
       reminderDate: act.reminderDate ? act.reminderDate.getTime() : undefined,
+      reminderRead: act.reminderRead,
       deleted: act.deleted,
       createdAt: act.createdAt.getTime(),
       updatedAt: act.updatedAt.getTime(),
+    })),
+    deals: updatedDeals.map((d) => ({
+      id: d._id.toString(),
+      leadId: d.leadId.toString(),
+      userId: d.userId,
+      name: d.name,
+      amount: d.amount,
+      termMonths: d.termMonths,
+      interestRate: d.interestRate,
+      stage: d.stage,
+      notes: d.notes,
+      deleted: d.deleted,
+      createdAt: d.createdAt.getTime(),
+      updatedAt: d.updatedAt.getTime(),
     })),
   }
 }
@@ -575,6 +684,19 @@ async function syncActivitiesForLead(
             continue
           }
 
+          // Evitar sobreescribir con datos obsoletos del CRM si hay cambios locales pendientes de sincronizar
+          const existingAct = await Activity.findOne({ crmId: act.crmId })
+          if (existingAct) {
+            if (!existingAct.crmSynced) {
+              continue
+            }
+            // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de los últimos 20 segundos)
+            const timeSinceLastUpdate = Date.now() - existingAct.updatedAt.getTime()
+            if (timeSinceLastUpdate < 20000) {
+              continue
+            }
+          }
+
           await Activity.findOneAndUpdate(
             { crmId: act.crmId },
             {
@@ -592,7 +714,8 @@ async function syncActivitiesForLead(
                   ? (isNaN(Number(act.reminderDate))
                       ? new Date(act.reminderDate)
                       : new Date(Number(act.reminderDate)))
-                  : undefined,
+                  : null,
+                reminderRead: act.reminderRead || false,
                 crmSynced: true,
                 deleted: false,
               },
@@ -611,6 +734,134 @@ async function syncActivitiesForLead(
   } catch (error) {
     console.error(
       `[syncActivitiesForLead] Error al sincronizar actividades para lead ${leadDoc._id}:`,
+      error,
+    )
+  }
+}
+
+/**
+ * Función auxiliar para sincronizar deals del lead desde HubSpot a MongoDB.
+ */
+async function syncDealsForLead(
+  leadDoc: ILeadSchema,
+  crmLeadCrmId: string,
+  crm: ICRMProvider,
+  userId: string,
+) {
+  try {
+    const crmDeals = await crm.fetchDealsByLead(crmLeadCrmId)
+
+    if (crmDeals.length > 0) {
+      const activeCrmIds = crmDeals.map((d) => d.crmId).filter(Boolean) as string[]
+
+      // 1. Marcar como eliminados en MongoDB los deals de este lead que ya no existen en el CRM
+      await Deal.updateMany(
+        {
+          leadId: leadDoc._id,
+          crmSynced: true,
+          crmId: { $nin: activeCrmIds },
+        },
+        { $set: { deleted: true } },
+      )
+
+      // 2. Realizar upsert de los deals recuperados del CRM
+      for (const d of crmDeals) {
+        if (d.crmId) {
+          const isPendingDelete = await Deal.exists({ crmId: d.crmId, deleted: true, crmSynced: false })
+          if (isPendingDelete) {
+            continue
+          }
+
+          // Evitar sobreescribir con datos obsoletos del CRM si hay cambios locales pendientes de sincronizar o actualizados recientemente
+          const existingDeal = await Deal.findOne({ crmId: d.crmId })
+          if (existingDeal) {
+            if (!existingDeal.crmSynced) {
+              continue
+            }
+            // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de los últimos 20 segundos)
+            const timeSinceLastUpdate = Date.now() - existingDeal.updatedAt.getTime()
+            if (timeSinceLastUpdate < 20000) {
+              continue
+            }
+          }
+
+          let termMonths = 6
+          let interestRate = 0
+          let localStage: string | undefined = undefined
+
+          if (d.description) {
+            const match = d.description.match(/<!-- loan_metadata:(.*?) -->/)
+            if (match) {
+              try {
+                const metadata = JSON.parse(match[1])
+                termMonths = metadata.termMonths ?? 6
+                interestRate = metadata.interestRate ?? 0
+                localStage = metadata.localStage
+              } catch (_) {}
+            }
+          }
+
+          // 1. Obtener la etapa mapeada correspondiente al estado actual en HubSpot
+          const hsStageToLocal: Record<string, string> = {
+            appointmentscheduled: 'draft',
+            'decisionmakerbought-in': 'under_evaluation',
+            contractsent: 'approved',
+            closedwon: 'disbursed',
+            closedlost: 'refused',
+          }
+          const mappedStage = hsStageToLocal[d.stage] || 'draft'
+
+          let resolvedStage = mappedStage
+
+          // 2. Si el metadato localStage existe y coincide en su mapeo general a HubSpot con d.stage,
+          // preservamos el localStage para diferenciar sub-etapas (disbursed vs completed, refused vs overdue).
+          if (localStage) {
+            const localToHs: Record<string, string> = {
+              draft: 'appointmentscheduled',
+              under_evaluation: 'decisionmakerbought-in',
+              approved: 'contractsent',
+              disbursed: 'closedwon',
+              completed: 'closedwon',
+              refused: 'closedlost',
+              overdue: 'closedlost',
+            }
+            if (localToHs[localStage] === d.stage) {
+              resolvedStage = localStage
+            }
+          }
+
+          await Deal.findOneAndUpdate(
+            { crmId: d.crmId },
+            {
+              $setOnInsert: {
+                leadId: leadDoc._id,
+                userId,
+                createdAt: new Date(),
+              },
+              $set: {
+                name: d.name,
+                amount: d.amount,
+                termMonths,
+                interestRate,
+                stage: resolvedStage,
+                notes: d.description ? d.description.split('\n<!--')[0] : '',
+                crmSynced: true,
+                deleted: false,
+              },
+            },
+            { upsert: true, returnDocument: 'after' },
+          )
+        }
+      }
+    } else {
+      await Deal.updateMany(
+        { leadId: leadDoc._id, crmSynced: true },
+        { $set: { deleted: true } },
+      )
+    }
+  } catch (error) {
+    console.error(
+      `[syncDealsForLead] Error al sincronizar deals para lead ${leadDoc._id}:`,
       error,
     )
   }

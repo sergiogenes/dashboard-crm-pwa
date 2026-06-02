@@ -31,6 +31,17 @@ export interface CRMActivity {
   body: string
   timestamp: string // Formato fecha ISO
   reminderDate?: string // Formato fecha ISO
+  reminderRead?: boolean
+}
+
+export interface CRMDeal {
+  crmId?: string
+  name: string
+  amount: number
+  stage: string // Etapa mapeada a HubSpot
+  description?: string
+  closedDate?: string // Formato fecha ISO
+  ownerId?: string
 }
 
 export interface ICRMProvider {
@@ -89,5 +100,26 @@ export interface ICRMProvider {
   /**
    * Elimina/archiva una actividad (nota) en el CRM.
    */
-  deleteActivity(crmId: string): Promise<void>
+  deleteActivity(crmId: string, type?: string): Promise<void>
+
+  /**
+   * Crea o actualiza un negocio (Deal) en el CRM.
+   * Retorna el ID único del CRM.
+   */
+  upsertDeal(deal: CRMDeal): Promise<string>
+
+  /**
+   * Elimina/archiva un negocio en el CRM.
+   */
+  deleteDeal(crmId: string): Promise<void>
+
+  /**
+   * Asocia un negocio (Deal) con un contacto (Lead) en el CRM.
+   */
+  associateDealWithLead(dealCrmId: string, leadCrmId: string): Promise<void>
+
+  /**
+   * Obtiene todos los negocios (Deals) asociados a un contacto desde el CRM.
+   */
+  fetchDealsByLead(leadCrmId: string): Promise<CRMDeal[]>
 }

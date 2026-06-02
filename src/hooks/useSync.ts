@@ -48,21 +48,28 @@ export function useSync(userId: string | undefined) {
         .filter(a => a.synced === false && a.userId === userId)
         .toArray()
 
+      const unsyncedDeals = await localDb.deals
+        .filter(d => d.synced === false && d.userId === userId)
+        .toArray()
+
       const hasPendingChanges =
         unsyncedCompanies.length > 0 ||
         unsyncedLeads.length > 0 ||
-        unsyncedActivities.length > 0
+        unsyncedActivities.length > 0 ||
+        unsyncedDeals.length > 0
 
       let companyMappings: { tempId: string; id: string }[] = []
       let leadMappings: { tempId: string; id: string }[] = []
       let activityMappings: { tempId: string; id: string }[] = []
+      let dealMappings: { tempId: string; id: string }[] = []
 
       // 2. Subir cambios si existen
       if (hasPendingChanges) {
         const response = await pushClientChanges(
           unsyncedLeads.map(({ synced, ...rest }) => rest),
           unsyncedCompanies.map(({ synced, ...rest }) => rest),
-          unsyncedActivities.map(({ synced, ...rest }) => rest)
+          unsyncedActivities.map(({ synced, ...rest }) => rest),
+          unsyncedDeals.map(({ synced, ...rest }) => rest)
         )
 
         if (!response.success) {
@@ -72,6 +79,7 @@ export function useSync(userId: string | undefined) {
         companyMappings = response.companyMappings
         leadMappings = response.leadMappings
         activityMappings = response.activityMappings || []
+        dealMappings = (response as any).dealMappings || []
 
         // Actualizar Dexie aplicando IDs reales y eliminando elementos soft-deleted
         for (const comp of unsyncedCompanies) {
@@ -170,6 +178,46 @@ export function useSync(userId: string | undefined) {
                 }
               }
               await localDb.activities.where('id').equals(act.id).modify({
+                leadId: resolvedLeadId,
+                synced: true,
+              })
+            }
+          }
+        }
+
+        for (const deal of unsyncedDeals) {
+          if (deal.tempId) {
+            const mapping = dealMappings.find(m => m.tempId === deal.tempId)
+            if (mapping) {
+              if (deal.deleted) {
+                await localDb.deals.where('tempId').equals(deal.tempId).delete()
+              } else {
+                let resolvedLeadId = deal.leadId
+                if (deal.leadId) {
+                  const leadMapping = leadMappings.find(m => m.tempId === deal.leadId)
+                  if (leadMapping) {
+                    resolvedLeadId = leadMapping.id
+                  }
+                }
+                await localDb.deals.where('tempId').equals(deal.tempId).modify({
+                  id: mapping.id,
+                  leadId: resolvedLeadId,
+                  synced: true,
+                })
+              }
+            }
+          } else if (deal.id) {
+            if (deal.deleted) {
+              await localDb.deals.where('id').equals(deal.id).delete()
+            } else {
+              let resolvedLeadId = deal.leadId
+              if (deal.leadId) {
+                const leadMapping = leadMappings.find(m => m.tempId === deal.leadId)
+                if (leadMapping) {
+                  resolvedLeadId = leadMapping.id
+                }
+              }
+              await localDb.deals.where('id').equals(deal.id).modify({
                 leadId: resolvedLeadId,
                 synced: true,
               })
@@ -299,9 +347,39 @@ export function useSync(userId: string | undefined) {
               body: serverAct.body,
               timestamp: serverAct.timestamp,
               reminderDate: serverAct.reminderDate,
+              reminderRead: (serverAct as any).reminderRead || false,
               synced: true,
               createdAt: serverAct.createdAt,
               updatedAt: serverAct.updatedAt,
+            })
+          }
+        }
+      }
+
+      // Guardar deals en Dexie (Inbound Sync)
+      if (updates.deals && updates.deals.length > 0) {
+        for (const serverDeal of updates.deals) {
+          if (serverDeal.deleted) {
+            await localDb.deals.where('id').equals(serverDeal.id).delete()
+          } else {
+            let existingLocal = await localDb.deals.where('id').equals(serverDeal.id).first()
+            let localLead = await localDb.leads.where('id').equals(serverDeal.leadId).first()
+            const resolvedLeadId = localLead?.tempId || serverDeal.leadId
+
+            await localDb.deals.put({
+              tempId: existingLocal?.tempId || serverDeal.id,
+              id: serverDeal.id,
+              leadId: resolvedLeadId,
+              userId: serverDeal.userId,
+              name: serverDeal.name,
+              amount: serverDeal.amount,
+              termMonths: serverDeal.termMonths,
+              interestRate: serverDeal.interestRate,
+              stage: serverDeal.stage as any,
+              notes: serverDeal.notes,
+              synced: true,
+              createdAt: serverDeal.createdAt,
+              updatedAt: serverDeal.updatedAt,
             })
           }
         }

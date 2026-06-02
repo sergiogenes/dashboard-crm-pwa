@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, User, LogOut, Settings } from 'lucide-react'
+import { Bell, User, LogOut, Settings, CheckSquare } from 'lucide-react'
 import Link from 'next/link'
 import SyncStatusBadge from './SyncStatusBadge'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -35,11 +35,30 @@ export default function Header() {
 
   const unreadCount = notifications ? notifications.filter((n) => !n.read).length : 0
 
+  const markActivityReminderAsRead = async (activityId?: string) => {
+    if (!activityId) return
+    try {
+      const act = 
+        (await localDb.activities.where('tempId').equals(activityId).first()) ||
+        (await localDb.activities.where('id').equals(activityId).first())
+      if (act && act.tempId && !act.reminderRead) {
+        await localDb.activities.update(act.tempId, {
+          reminderRead: true,
+          synced: false,
+          updatedAt: Date.now(),
+        })
+      }
+    } catch (err) {
+      console.error('[Header] Error al marcar recordatorio como leído en actividad:', err)
+    }
+  }
+
   const handleMarkAllAsRead = async () => {
     if (!notifications) return
     const unread = notifications.filter((n) => !n.read)
     for (const notif of unread) {
       await localDb.notifications.update(notif.id, { read: true })
+      await markActivityReminderAsRead(notif.activityId)
     }
   }
 
@@ -116,28 +135,52 @@ export default function Header() {
                     notifications.map((notif) => (
                       <div
                         key={notif.id}
-                        onClick={async () => {
-                          await localDb.notifications.update(notif.id, { read: true })
-                          setNotifDropdownOpen(false)
-                          router.push(`/contacts?leadId=${notif.leadId}&activityId=${notif.activityId}`)
-                        }}
-                        className={`group flex flex-col gap-1 rounded-lg p-2.5 text-left text-xs transition-colors cursor-pointer border ${
+                        className={`group relative flex flex-col gap-1 rounded-lg p-2.5 text-left text-xs transition-colors border ${
                           notif.read
-                            ? 'border-transparent text-slate-400 hover:bg-slate-900'
+                            ? 'border-transparent text-slate-400 hover:bg-slate-900/40'
                             : 'border-indigo-500/20 bg-indigo-500/5 text-slate-200 hover:bg-indigo-500/10'
                         }`}
                       >
-                        <div className="flex items-start justify-between">
-                          <span className="font-bold truncate pr-2 group-hover:text-indigo-400 transition-colors">
-                            {notif.title}
-                          </span>
-                          <span className="text-[9px] text-slate-500 font-mono flex-shrink-0">
-                            {new Date(notif.scheduledAt).toLocaleDateString()}
-                          </span>
+                        <div 
+                          className="cursor-pointer"
+                          onClick={async () => {
+                            await localDb.notifications.update(notif.id, { read: true })
+                            await markActivityReminderAsRead(notif.activityId)
+                            setNotifDropdownOpen(false)
+                            router.push(`/contacts?leadId=${notif.leadId}&activityId=${notif.activityId}`)
+                            // Disparar evento para que la página de contactos reaccione de inmediato
+                            window.dispatchEvent(new CustomEvent('open-lead-reminder', {
+                              detail: { leadId: notif.leadId, activityId: notif.activityId }
+                            }))
+                          }}
+                        >
+                          <div className="flex items-start justify-between">
+                            <span className="font-bold truncate pr-6 group-hover:text-indigo-400 transition-colors">
+                              {notif.title}
+                            </span>
+                            <span className="text-[9px] text-slate-500 font-mono flex-shrink-0">
+                              {new Date(notif.scheduledAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 whitespace-pre-line leading-relaxed truncate max-w-full">
+                            {notif.body}
+                          </p>
                         </div>
-                        <p className="text-[11px] text-slate-400 whitespace-pre-line leading-relaxed truncate max-w-full">
-                          {notif.body}
-                        </p>
+                        
+                        {!notif.read && (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              await localDb.notifications.update(notif.id, { read: true })
+                              await markActivityReminderAsRead(notif.activityId)
+                            }}
+                            className="absolute bottom-2.5 right-2.5 h-5 w-5 flex items-center justify-center rounded bg-slate-900 border border-slate-800 hover:bg-indigo-500 hover:border-indigo-500 text-slate-400 hover:text-white transition-all"
+                            title="Marcar como leído"
+                          >
+                            <CheckSquare className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     ))
                   ) : (

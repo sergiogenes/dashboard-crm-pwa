@@ -1,10 +1,12 @@
-import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice, CRMActivity } from './interface'
+import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice, CRMActivity, CRMDeal } from './interface'
 
 export class MockCRMProvider implements ICRMProvider {
   private contacts = new Map<string, CRMLead>()
   private companies = new Map<string, CRMCompany>()
   private associations = new Map<string, string>() // contactCrmId -> companyCrmId
   private mockActivities = new Map<string, CRMActivity[]>() // contactCrmId -> CRMActivity[]
+  private mockDeals = new Map<string, CRMDeal>() // crmId -> CRMDeal
+  private dealAssociations = new Map<string, string>() // dealCrmId -> contactCrmId
 
   async upsertLead(lead: CRMLead): Promise<string> {
     const crmId = lead.crmId || `mock_contact_${Math.random().toString(36).substring(2, 9)}`
@@ -142,12 +144,43 @@ export class MockCRMProvider implements ICRMProvider {
     return crmId
   }
 
-  async deleteActivity(crmId: string): Promise<void> {
+  async deleteActivity(crmId: string, type?: string): Promise<void> {
     this.mockActivities.forEach((acts) => {
       const idx = acts.findIndex((a) => a.crmId === crmId)
       if (idx !== -1) {
         acts.splice(idx, 1)
       }
     })
+  }
+
+  async upsertDeal(deal: CRMDeal): Promise<string> {
+    const crmId = deal.crmId || `mock_deal_${Math.random().toString(36).substring(2, 9)}`
+    this.mockDeals.set(crmId, { ...deal, crmId })
+    return crmId
+  }
+
+  async deleteDeal(crmId: string): Promise<void> {
+    this.mockDeals.delete(crmId)
+    this.dealAssociations.delete(crmId)
+  }
+
+  async associateDealWithLead(dealCrmId: string, leadCrmId: string): Promise<void> {
+    if (!this.mockDeals.has(dealCrmId)) {
+      throw new Error(`Deal ${dealCrmId} not found in mock CRM`)
+    }
+    this.dealAssociations.set(dealCrmId, leadCrmId)
+  }
+
+  async fetchDealsByLead(leadCrmId: string): Promise<CRMDeal[]> {
+    const associatedDeals: CRMDeal[] = []
+    this.dealAssociations.forEach((lCrmId, dCrmId) => {
+      if (lCrmId === leadCrmId) {
+        const deal = this.mockDeals.get(dCrmId)
+        if (deal) {
+          associatedDeals.push(deal)
+        }
+      }
+    })
+    return associatedDeals
   }
 }

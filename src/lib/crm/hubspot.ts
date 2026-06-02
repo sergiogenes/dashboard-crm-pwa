@@ -1,4 +1,4 @@
-import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice, CRMActivity } from './interface'
+import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice, CRMActivity, CRMDeal } from './interface'
 
 interface HubSpotContactResponse {
   id: string
@@ -39,10 +39,15 @@ export class HubSpotProvider implements ICRMProvider {
   }
 
   private async request<T>(endpoint: string, options: RequestInit): Promise<T> {
-    const isObjects = !endpoint.startsWith('/owners')
-    const url = isObjects
-      ? `${this.baseUrl}${endpoint}`
-      : `https://api.hubapi.com/crm/v3${endpoint}`
+    let url = ''
+    if (endpoint.startsWith('/crm/v4/')) {
+      url = `https://api.hubapi.com${endpoint}`
+    } else {
+      const isObjects = !endpoint.startsWith('/owners')
+      url = isObjects
+        ? `${this.baseUrl}${endpoint}`
+        : `https://api.hubapi.com/crm/v3${endpoint}`
+    }
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -255,10 +260,28 @@ export class HubSpotProvider implements ICRMProvider {
     })
   }
 
-  async deleteActivity(crmId: string): Promise<void> {
-    await this.request<void>(`/notes/${crmId}`, {
-      method: 'DELETE',
-    })
+  async deleteActivity(crmId: string, type?: string): Promise<void> {
+    if (type) {
+      const endpoint = type === 'TASK' ? `/tasks/${crmId}` : `/notes/${crmId}`
+      await this.request<void>(endpoint, {
+        method: 'DELETE',
+      })
+    } else {
+      // Fallback robusto en caso de que no se proporcione el tipo
+      try {
+        await this.request<void>(`/notes/${crmId}`, {
+          method: 'DELETE',
+        })
+      } catch (err: any) {
+        try {
+          await this.request<void>(`/tasks/${crmId}`, {
+            method: 'DELETE',
+          })
+        } catch (taskErr) {
+          console.warn(`[HubSpot Provider] Falló la eliminación fallback de actividad ${crmId}:`, err, taskErr)
+        }
+      }
+    }
   }
 
   async checkHealth(): Promise<boolean> {
@@ -490,80 +513,127 @@ export class HubSpotProvider implements ICRMProvider {
         results: HubSpotAssociation[]
       }
 
-      const assocResult = await this.request<HubSpotAssociationsResponse>(
-        `/contacts/${leadCrmId}/associations/notes`,
-        { method: 'GET' }
-      )
-
-      const associatedIds = assocResult.results?.map(r => r.id) || []
-      if (associatedIds.length === 0) return []
-
       const activities: CRMActivity[] = []
 
-      for (const noteId of associatedIds) {
-        try {
-          interface HubSpotNoteResponse {
-            id: string
-            properties: {
-              hs_note_body?: string
-              hs_timestamp?: string
-              hs_lastmodifieddate?: string
-            }
-          }
-
-          const noteDetail = await this.request<HubSpotNoteResponse>(
-            `/notes/${noteId}?properties=hs_note_body,hs_timestamp`,
-            { method: 'GET' }
-          )
-
-          if (noteDetail && noteDetail.properties) {
-            const props = noteDetail.properties
-            const bodyHtml = props.hs_note_body || ''
-            
-            let reminderDate: string | undefined = undefined
-            const reminderMatch = bodyHtml.match(/<!-- reminder:([^>]+) -->/)
-            if (reminderMatch) {
-              reminderDate = reminderMatch[1]
-            }
-
-            let type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' = 'NOTE'
-            let title = 'Nota de contacto'
-            let body = bodyHtml
-
-            const match = bodyHtml.match(/\[([^\]]+)\]\s*([^\<]+)/)
-            if (match) {
-              const label = match[1]
-              title = match[2] || 'Actividad de contacto'
-
-              if (label.includes('Llamada')) type = 'CALL'
-              else if (label.includes('Reunión')) type = 'MEETING'
-              else if (label.includes('Email')) type = 'EMAIL'
-              else if (label.includes('Tarea')) type = 'TASK'
-              
-              const bodyMatch = bodyHtml.match(/\<p\>([^\<]+)\<\/p\>/)
-              if (bodyMatch) {
-                body = bodyMatch[1]
-              } else {
-                body = bodyHtml.replace(/<[^>]*>/g, '').replace(/\[[^\]]+\]/, '').replace(title, '').trim()
+      // 1. Obtener y procesar tareas (Tasks) nativas de HubSpot
+      try {
+        const taskAssocResult = await this.request<HubSpotAssociationsResponse>(
+          `/contacts/${leadCrmId}/associations/tasks`,
+          { method: 'GET' }
+        )
+        const taskIds = taskAssocResult.results?.map(r => r.id) || []
+        for (const taskId of taskIds) {
+          try {
+            const taskDetail = await this.request<{
+              id: string
+              properties: {
+                hs_task_subject?: string
+                hs_task_status?: string
+                hs_timestamp?: string
+                hs_task_body?: string
               }
-            } else {
-              const cleanText = bodyHtml.replace(/<[^>]*>/g, '').trim()
-              title = cleanText.substring(0, 40) + (cleanText.length > 40 ? '...' : '')
-              body = cleanText
-            }
+            }>(`/tasks/${taskId}?properties=hs_task_subject,hs_task_status,hs_timestamp,hs_task_body`, { method: 'GET' })
 
-            activities.push({
-              crmId: noteDetail.id,
-              type,
-              title: title || 'Nota de contacto',
-              body: body || '',
-              timestamp: props.hs_timestamp || new Date().toISOString(),
-              reminderDate
-            })
+            if (taskDetail && taskDetail.properties) {
+              const props = taskDetail.properties
+              const subject = props.hs_task_subject || 'Tarea sin asunto'
+              const status = props.hs_task_status || 'NOT_STARTED'
+              const dueDate = props.hs_timestamp || ''
+              const taskBody = props.hs_task_body || ''
+
+              activities.push({
+                crmId: taskDetail.id,
+                type: 'TASK',
+                title: subject,
+                body: taskBody.replace(/<[^>]*>/g, '').trim(),
+                timestamp: dueDate || new Date().toISOString(),
+                reminderDate: dueDate ? String(new Date(dueDate).getTime()) : undefined,
+                reminderRead: status === 'COMPLETED'
+              })
+            }
+          } catch (singleTaskErr: any) {
+            if (singleTaskErr.message?.includes('404')) {
+              console.log(`[HubSpot Provider] Tarea huérfana o eliminada con ID ${taskId} saltada (404)`)
+            } else {
+              console.warn(`[HubSpot Provider] Error al obtener detalles de tarea ${taskId}:`, singleTaskErr)
+            }
           }
-        } catch (singleNoteErr) {
-          console.warn(`[HubSpot Provider] Saltada nota/tarea con ID ${noteId} debido a error:`, singleNoteErr)
         }
+      } catch (tasksAssocErr) {
+        console.warn('[HubSpot Provider] Error al obtener asociaciones de tareas:', tasksAssocErr)
+      }
+
+      // 2. Obtener y procesar notas (Notes, Calls, Meetings, Emails) de HubSpot
+      try {
+        const assocResult = await this.request<HubSpotAssociationsResponse>(
+          `/contacts/${leadCrmId}/associations/notes`,
+          { method: 'GET' }
+        )
+        const associatedIds = assocResult.results?.map(r => r.id) || []
+        for (const noteId of associatedIds) {
+          try {
+            interface HubSpotNoteResponse {
+              id: string
+              properties: {
+                hs_note_body?: string
+                hs_timestamp?: string
+              }
+            }
+            const noteDetail = await this.request<HubSpotNoteResponse>(
+              `/notes/${noteId}?properties=hs_note_body,hs_timestamp`,
+              { method: 'GET' }
+            )
+
+            if (noteDetail && noteDetail.properties) {
+              const props = noteDetail.properties
+              const bodyHtml = props.hs_note_body || ''
+
+              let type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' = 'NOTE'
+              let title = 'Nota de contacto'
+              let body = bodyHtml
+
+              const match = bodyHtml.match(/\[([^\]]+)\]\s*([^\<]+)/)
+              if (match) {
+                const label = match[1]
+                title = match[2] || 'Actividad de contacto'
+
+                if (label.includes('Llamada')) type = 'CALL'
+                else if (label.includes('Reunión')) type = 'MEETING'
+                else if (label.includes('Email')) type = 'EMAIL'
+                else if (label.includes('Tarea')) type = 'TASK'
+                
+                const bodyMatch = bodyHtml.match(/\<p\>([^\<]+)\<\/p\>/)
+                if (bodyMatch) {
+                  body = bodyMatch[1]
+                } else {
+                  body = bodyHtml.replace(/<[^>]*>/g, '').replace(/\[[^\]]+\]/, '').replace(title, '').trim()
+                }
+              } else {
+                const cleanText = bodyHtml.replace(/<[^>]*>/g, '').trim()
+                title = cleanText.substring(0, 40) + (cleanText.length > 40 ? '...' : '')
+                body = cleanText
+              }
+
+              activities.push({
+                crmId: noteDetail.id,
+                type,
+                title: title || 'Nota de contacto',
+                body: body || '',
+                timestamp: props.hs_timestamp || new Date().toISOString(),
+                reminderDate: undefined,
+                reminderRead: false
+              })
+            }
+          } catch (singleNoteErr: any) {
+            if (singleNoteErr.message?.includes('404')) {
+              console.log(`[HubSpot Provider] Nota huérfana o eliminada con ID ${noteId} saltada (404)`)
+            } else {
+              console.warn(`[HubSpot Provider] Saltada nota con ID ${noteId} debido a error:`, singleNoteErr)
+            }
+          }
+        }
+      } catch (notesAssocErr) {
+        console.warn('[HubSpot Provider] Error al obtener asociaciones de notas:', notesAssocErr)
       }
 
       return activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -574,54 +644,33 @@ export class HubSpotProvider implements ICRMProvider {
   }
 
   async createActivity(leadCrmId: string, activity: CRMActivity): Promise<string> {
-    const typeLabels: Record<string, string> = {
-      NOTE: '📝 Nota',
-      CALL: '📞 Llamada',
-      MEETING: '🤝 Reunión',
-      EMAIL: '📧 Email',
-      TASK: '✅ Tarea',
-    }
-    const prefix = typeLabels[activity.type] || '📝 Nota'
-    let htmlBody = `<div><strong>[${prefix}] ${activity.title}</strong><br/><p>${activity.body}</p></div>`
-    if (activity.reminderDate) {
-      htmlBody += `<!-- reminder:${activity.reminderDate} -->`
-    }
+    if (activity.type === 'TASK') {
+      const dueDateIso = activity.reminderDate 
+        ? new Date(Number(activity.reminderDate)).toISOString() 
+        : new Date().toISOString()
 
-    const response = await this.request<{ id: string }>('/notes', {
-      method: 'POST',
-      body: JSON.stringify({
-        properties: {
-          hs_note_body: htmlBody,
-          hs_timestamp: activity.timestamp || new Date().toISOString(),
-        },
-        associations: [
-          {
-            to: { id: leadCrmId },
-            types: [
-              {
-                associationCategory: 'HUBSPOT_DEFINED',
-                associationTypeId: 202, // Note to Contact
-              },
-            ],
-          },
-        ],
-      }),
-    })
-
-    // Si la actividad tiene un recordatorio programado, crear también una tarea (task) nativa en HubSpot
-    if (activity.reminderDate) {
-      try {
-        const timestampNum = parseInt(activity.reminderDate, 10)
-        const dueDateIso = new Date(timestampNum).toISOString()
-        await this.request('/tasks', {
+      if (activity.crmId) {
+        await this.request(`/tasks/${activity.crmId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            properties: {
+              hs_task_subject: activity.title,
+              hs_task_body: activity.body,
+              hs_task_status: activity.reminderRead ? 'COMPLETED' : 'NOT_STARTED',
+              hs_timestamp: dueDateIso,
+            },
+          }),
+        })
+        return activity.crmId
+      } else {
+        const taskResponse = await this.request<{ id: string }>('/tasks', {
           method: 'POST',
           body: JSON.stringify({
             properties: {
-              hs_task_subject: `Recordatorio: ${activity.title}`,
+              hs_task_subject: activity.title,
               hs_task_body: activity.body,
-              hs_task_status: 'NOT_STARTED',
-              hs_timestamp: activity.timestamp || new Date().toISOString(),
-              dueDate: dueDateIso,
+              hs_task_status: activity.reminderRead ? 'COMPLETED' : 'NOT_STARTED',
+              hs_timestamp: dueDateIso,
             },
             associations: [
               {
@@ -636,11 +685,157 @@ export class HubSpotProvider implements ICRMProvider {
             ],
           }),
         })
-      } catch (err) {
-        console.error('[HubSpot Provider] Error al crear la tarea nativa de recordatorio en HubSpot:', err)
+        return taskResponse.id
+      }
+    } else {
+      const typeLabels: Record<string, string> = {
+        NOTE: '📝 Nota',
+        CALL: '📞 Llamada',
+        MEETING: '🤝 Reunión',
+        EMAIL: '📧 Email',
+      }
+      const prefix = typeLabels[activity.type] || '📝 Nota'
+      const htmlBody = `<div><strong>[${prefix}] ${activity.title}</strong><br/><p>${activity.body}</p></div>`
+
+      if (activity.crmId) {
+        await this.request(`/notes/${activity.crmId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            properties: {
+              hs_note_body: htmlBody,
+            },
+          }),
+        })
+        return activity.crmId
+      } else {
+        const noteResponse = await this.request<{ id: string }>('/notes', {
+          method: 'POST',
+          body: JSON.stringify({
+            properties: {
+              hs_note_body: htmlBody,
+              hs_timestamp: activity.timestamp || new Date().toISOString(),
+            },
+            associations: [
+              {
+                to: { id: leadCrmId },
+                types: [
+                  {
+                    associationCategory: 'HUBSPOT_DEFINED',
+                    associationTypeId: 202, // Note to Contact
+                  },
+                ],
+              },
+            ],
+          }),
+        })
+        return noteResponse.id
       }
     }
+  }
 
+
+  private mapStageToHubSpot(localStage: string): string {
+    const stageMap: Record<string, string> = {
+      draft: 'appointmentscheduled',
+      under_evaluation: 'decisionmakerbought-in',
+      approved: 'contractsent',
+      disbursed: 'closedwon',
+      completed: 'closedwon',
+      refused: 'closedlost',
+      overdue: 'closedlost',
+    }
+    return stageMap[localStage] || 'appointmentscheduled'
+  }
+
+  async upsertDeal(deal: CRMDeal): Promise<string> {
+    const hsStage = this.mapStageToHubSpot(deal.stage)
+    const properties = {
+      dealname: deal.name,
+      amount: String(deal.amount),
+      dealstage: hsStage,
+      ...(deal.description ? { description: deal.description } : {}),
+      ...(deal.ownerId ? { hubspot_owner_id: deal.ownerId } : {}),
+    }
+
+    if (deal.crmId) {
+      await this.request<any>(`/deals/${deal.crmId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ properties }),
+      })
+      return deal.crmId
+    }
+
+    const response = await this.request<{ id: string }>('/deals', {
+      method: 'POST',
+      body: JSON.stringify({ properties }),
+    })
     return response.id
+  }
+
+  async deleteDeal(crmId: string): Promise<void> {
+    await this.request<void>(`/deals/${crmId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async associateDealWithLead(dealCrmId: string, leadCrmId: string): Promise<void> {
+    // Asociación Deal -> Contact (Association Type 3: Deal to Contact)
+    await this.request<void>(`/deals/${dealCrmId}/associations/contacts/${leadCrmId}/3`, {
+      method: 'PUT',
+    })
+  }
+
+  async fetchDealsByLead(leadCrmId: string): Promise<CRMDeal[]> {
+    try {
+      // 1. Obtener las asociaciones del contacto con los negocios
+      const assocData = await this.request<{ results: { id: string }[] }>(
+        `/contacts/${leadCrmId}/associations/deals`,
+        { method: 'GET' }
+      )
+
+      if (!assocData.results || assocData.results.length === 0) {
+        return []
+      }
+
+      const deals: CRMDeal[] = []
+
+      // 2. Traer los detalles de cada Deal asociado
+      for (const result of assocData.results) {
+        const dealId = result.id
+        try {
+          const detail = await this.request<{
+            id: string
+            properties: {
+              dealname: string
+              amount: string
+              dealstage: string
+              description?: string
+              closedate?: string
+              hubspot_owner_id?: string
+            }
+          }>(`/deals/${dealId}?properties=dealname,amount,dealstage,description,closedate,hubspot_owner_id`, {
+            method: 'GET'
+          })
+
+          const props = detail.properties
+          deals.push({
+            crmId: detail.id,
+            name: props.dealname,
+            amount: parseFloat(props.amount) || 0,
+            stage: props.dealstage,
+            description: props.description,
+            closedDate: props.closedate,
+            ownerId: props.hubspot_owner_id || undefined,
+          })
+        } catch (singleDealErr) {
+          console.warn(`[HubSpot Provider] Error al obtener detalles del Deal ${dealId}:`, singleDealErr)
+        }
+      }
+
+      return deals
+    } catch (err) {
+      console.error(`[HubSpot Provider] Error en fetchDealsByLead para lead ${leadCrmId}:`, err)
+      return []
+    }
   }
 }

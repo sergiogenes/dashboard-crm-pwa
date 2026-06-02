@@ -63,16 +63,22 @@ export function useNotifications() {
               title: `Recordatorio: ${act.title}`,
               body: `Lead: ${leadName}\n${act.body.substring(0, 80)}`,
               scheduledAt,
-              read: false,
-              notified: false,
+              read: !!act.reminderRead,
+              notified: !!act.reminderRead,
               createdAt: Date.now(),
             }
             await localDb.notifications.put(newNotif)
-          } else if (Number(existingNotif.scheduledAt) !== scheduledAt) {
-            await localDb.notifications.update(existingNotif.id, {
-              scheduledAt,
-              notified: false, // Permitir notificar de nuevo si cambia la fecha
-            })
+          } else {
+            const dateChanged = Number(existingNotif.scheduledAt) !== scheduledAt
+            const readStateChanged = existingNotif.read !== !!act.reminderRead
+            
+            if (dateChanged || readStateChanged) {
+              await localDb.notifications.update(existingNotif.id, {
+                scheduledAt,
+                read: !!act.reminderRead,
+                notified: !!act.reminderRead,
+              })
+            }
           }
         }
 

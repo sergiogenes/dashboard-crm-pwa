@@ -62,6 +62,7 @@ export interface LocalActivity {
   body: string
   timestamp: number    // Timestamp de creación/registro
   reminderDate?: number // Timestamp del recordatorio (opcional)
+  reminderRead?: boolean // Recordatorio marcado como leído (opcional)
   deleted?: boolean    // Soft Delete
   synced: boolean      // Estado de sincronización a MongoDB
   createdAt: number
@@ -81,6 +82,23 @@ export interface LocalNotification {
   createdAt: number
 }
 
+export interface LocalDeal {
+  id?: string          // ID real de MongoDB (ObjectId)
+  tempId?: string      // ID temporal para offline (UUID)
+  leadId: string       // ID de MongoDB o tempId del contacto asociado
+  userId: string       // ID del asesor de la sesión
+  name: string         // Nombre descriptivo de la solicitud (ej. "Crédito Juan Pérez")
+  amount: number       // Monto solicitado
+  termMonths: number   // Plazo en meses (3, 6, 12, 18, 24)
+  interestRate: number // Tasa de interés sugerida (%)
+  stage: 'draft' | 'under_evaluation' | 'approved' | 'disbursed' | 'completed' | 'refused' | 'overdue'
+  notes?: string       // Comentarios del asesor
+  deleted?: boolean    // Soft delete
+  synced: boolean      // Estado de sincronización local -> MongoDB
+  createdAt: number
+  updatedAt: number
+}
+
 export class PWAResilientDatabase extends Dexie {
   leads!: Table<LocalLead>
   companies!: Table<LocalCompany>
@@ -88,6 +106,7 @@ export class PWAResilientDatabase extends Dexie {
   invoices!: Table<LocalInvoice> // Nueva tabla para historial crediticio
   activities!: Table<LocalActivity> // Nueva tabla v4 para actividades
   notifications!: Table<LocalNotification> // Nueva tabla v5 para notificaciones
+  deals!: Table<LocalDeal> // Nueva tabla v6 para microcréditos (Deals)
 
   constructor() {
     super('PWAResilientDB')
@@ -109,6 +128,17 @@ export class PWAResilientDatabase extends Dexie {
       invoices: 'id, crmId, leadId, userId, status',
       activities: 'tempId, id, leadId, userId, type, synced, deleted',
       notifications: 'id, userId, read, notified, scheduledAt, activityId, leadId', // Tabla v5 de notificaciones
+    })
+
+    // Esquema de almacenamiento de IndexedDB (versión 6)
+    this.version(6).stores({
+      leads: 'tempId, id, userId, synced, deleted, companyId, email',
+      companies: 'tempId, id, userId, synced, deleted, name',
+      users: 'id, email',
+      invoices: 'id, crmId, leadId, userId, status',
+      activities: 'tempId, id, leadId, userId, type, synced, deleted',
+      notifications: 'id, userId, read, notified, scheduledAt, activityId, leadId',
+      deals: 'tempId, id, leadId, userId, stage, synced, deleted', // Tabla v6 para microcréditos
     })
   }
 }

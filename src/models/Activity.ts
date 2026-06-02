@@ -10,6 +10,7 @@ export interface IActivitySchema extends Document {
   body: string
   timestamp: Date
   reminderDate?: Date
+  reminderRead?: boolean
   deleted: boolean
   crmSynced: boolean
   createdAt: Date
@@ -32,6 +33,7 @@ const ActivitySchema = new Schema<IActivitySchema>(
     body: { type: String, required: true },
     timestamp: { type: Date, required: true, default: Date.now },
     reminderDate: { type: Date },
+    reminderRead: { type: Boolean, default: false },
     deleted: { type: Boolean, default: false },
     crmSynced: { type: Boolean, default: false },
   },
