@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { Bell, User, LogOut, Settings, CheckSquare } from 'lucide-react'
 import Link from 'next/link'
@@ -15,6 +15,24 @@ export default function Header() {
   const userId = session?.user?.id || ''
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false)
+
+  const notifRef = useRef<HTMLDivElement>(null)
+  const userRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setNotifDropdownOpen(false)
+      }
+      if (userRef.current && !userRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   // Consulta reactiva de notificaciones de recordatorios vencidos
   const notifications = useLiveQuery(
@@ -84,7 +102,7 @@ export default function Header() {
         <SyncStatusBadge userId={session?.user?.id} />
 
         {/* Notificaciones */}
-        <div className="relative">
+        <div className="relative" ref={notifRef}>
           {unreadCount > 0 ? (
             <button
               onClick={() => {
@@ -112,12 +130,7 @@ export default function Header() {
           )}
 
           {notifDropdownOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-25"
-                onClick={() => setNotifDropdownOpen(false)}
-              />
-              <div className="absolute right-0 mt-2 w-80 z-30 rounded-xl border border-slate-800 bg-slate-950 p-2 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="absolute right-0 mt-2 w-80 z-30 rounded-xl border border-slate-800 bg-slate-950 p-2 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
                 <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800/50 mb-2">
                   <span className="text-xs font-bold text-white uppercase tracking-wider">Recordatorios</span>
                   {unreadCount > 0 && (
@@ -143,9 +156,7 @@ export default function Header() {
                       >
                         <div 
                           className="cursor-pointer"
-                          onClick={async () => {
-                            await localDb.notifications.update(notif.id, { read: true })
-                            await markActivityReminderAsRead(notif.activityId)
+                          onClick={() => {
                             setNotifDropdownOpen(false)
                             router.push(`/contacts?leadId=${notif.leadId}&activityId=${notif.activityId}`)
                             // Disparar evento para que la página de contactos reaccione de inmediato
@@ -190,12 +201,11 @@ export default function Header() {
                   )}
                 </div>
               </div>
-            </>
           )}
         </div>
 
         {/* Dropdown del Usuario */}
-        <div className="relative">
+        <div className="relative" ref={userRef}>
           <button
             onClick={() => {
               setDropdownOpen(!dropdownOpen)
@@ -213,12 +223,7 @@ export default function Header() {
 
           {/* Menú desplegable */}
           {dropdownOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-25"
-                onClick={() => setDropdownOpen(false)}
-              />
-              <div className="absolute right-0 mt-2 w-48 z-30 rounded-xl border border-slate-800 bg-slate-950 p-1.5 shadow-xl">
+            <div className="absolute right-0 mt-2 w-48 z-30 rounded-xl border border-slate-800 bg-slate-950 p-1.5 shadow-xl">
                 <div className="px-3 py-2 border-b border-slate-800/50 mb-1 text-[11px] text-slate-500 truncate">
                   {session?.user?.email}
                 </div>
@@ -238,7 +243,6 @@ export default function Header() {
                   Cerrar Sesión
                 </button>
               </div>
-            </>
           )}
         </div>
       </div>
