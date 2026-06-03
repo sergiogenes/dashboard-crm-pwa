@@ -19,7 +19,7 @@ export class CRMProviderFactory {
         g.__mockCrmInstance = new MockCRMProvider()
       }
       this.instance = g.__mockCrmInstance
-      return this.instance
+      return g.__mockCrmInstance
     }
 
     switch (providerType.toLowerCase()) {
@@ -35,6 +35,6 @@ export class CRMProviderFactory {
         throw new Error(`Provider ${providerType} not supported`)
     }
 
-    return this.instance
+    return this.instance!
   }
 }
