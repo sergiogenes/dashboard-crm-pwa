@@ -144,3 +144,7 @@ export class PWAResilientDatabase extends Dexie {
 }
 
 export const localDb = new PWAResilientDatabase()
+
+if (typeof window !== 'undefined') {
+  (window as any).localDb = localDb
+}
