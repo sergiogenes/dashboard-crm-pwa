@@ -43,6 +43,7 @@ const pwaConfig = withPWA({
       handler: 'NetworkFirst',
       options: {
         cacheName: 'auth-session',
+        networkTimeoutSeconds: 2,
         expiration: {
           maxEntries: 1,
           maxAgeSeconds: 7 * 24 * 60 * 60, // 1 semana

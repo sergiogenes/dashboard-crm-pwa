@@ -249,12 +249,8 @@ export default function LeadFormModal({
                 <option value="" className="bg-slate-900">Ninguna empresa asociada</option>
                 {companies &&
                   companies.map((comp) => (
-                    <option
-                      key={comp.id || comp.tempId}
-                      value={comp.id || comp.tempId}
-                      className="bg-slate-900"
-                    >
-                      {comp.name} {comp.synced ? '(Sincronizada)' : '(Local)'}
+                    <option key={comp.id || comp.tempId} value={comp.id || comp.tempId} className="bg-slate-900">
+                      {`${comp.name} ${comp.synced ? '(Sincronizada)' : '(Local)'}`}
                     </option>
                   ))}
               </select>

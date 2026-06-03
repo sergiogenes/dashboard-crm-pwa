@@ -10,7 +10,17 @@ export class CRMProviderFactory {
       return this.instance
     }
 
-    const providerType = process.env.CRM_PROVIDER || 'mock'
+    const isTest = process.env.IS_PLAYWRIGHT_TEST === 'true'
+    const providerType = isTest ? 'mock' : (process.env.CRM_PROVIDER || 'mock')
+
+    if (providerType.toLowerCase() === 'mock') {
+      const g = globalThis as any
+      if (!g.__mockCrmInstance) {
+        g.__mockCrmInstance = new MockCRMProvider()
+      }
+      this.instance = g.__mockCrmInstance
+      return g.__mockCrmInstance
+    }
 
     switch (providerType.toLowerCase()) {
       case 'hubspot':
@@ -21,12 +31,10 @@ export class CRMProviderFactory {
         this.instance = new HubSpotProvider(token)
         break
 
-      case 'mock':
       default:
-        this.instance = new MockCRMProvider()
-        break
+        throw new Error(`Provider ${providerType} not supported`)
     }
 
-    return this.instance
+    return this.instance!
   }
 }

@@ -47,11 +47,10 @@ export const config = {
      * - api/webhooks/crm (HubSpot webhooks)
      * - api/health (Salud del servidor)
      * - auth/signin (Página de login)
-     * - _next/static (archivos estáticos de Next.js)
-     * - _next/image (optimización de imágenes)
+     * - _next (archivos de compilación y HMR de Next.js)
      * - manifest.json, sw.js, workbox-*.js, fallback-*.js (PWA y archivos estáticos)
      * - favicon.ico, favicon.png, apple-touch-icon.png, icon-*.png, vercel.svg, next.svg (iconos y logos)
      */
-    '/((?!api/auth|api/webhooks/crm|api/health|auth/signin|auth/forgot-password|auth/reset-password|_next/static|_next/image|manifest.json|sw.js|workbox-|fallback-|icon-|apple-touch-icon.png|favicon.png|favicon.ico|vercel.svg|next.svg).*)',
+    '/((?!api/auth|api/webhooks/crm|api/health|auth/signin|auth/forgot-password|auth/reset-password|_next|manifest.json|sw.js|workbox-|fallback-|icon-|apple-touch-icon.png|favicon.png|favicon.ico|vercel.svg|next.svg).*)',
   ],
 }
