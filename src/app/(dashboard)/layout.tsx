@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import Sidebar from '@/components/Sidebar'
 import Header from '@/components/Header'
+import { useNotifications } from '@/hooks/useNotifications'
 
 export default function DashboardLayout({
   children,
@@ -13,6 +14,8 @@ export default function DashboardLayout({
 }) {
   const { data: session, status } = useSession()
   const router = useRouter()
+
+  useNotifications()
 
   useEffect(() => {
     // Si la sesión de NextAuth ya resolvió que está autenticada
@@ -48,7 +51,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100 animate-fade-in overflow-x-hidden">
+    <div className="flex min-h-screen md:h-screen bg-slate-950 text-slate-100 animate-fade-in overflow-x-hidden md:overflow-hidden">
       {/* Barra lateral de navegación sticky */}
       <Sidebar />
 
@@ -57,7 +60,7 @@ export default function DashboardLayout({
         <Header />
         
         {/* Panel central de visualización */}
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8 pb-24 md:pb-8">
           {children}
         </main>
       </div>

@@ -1,10 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionProvider } from 'next-auth/react'
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  // Registrar marcador de hidratación para tests E2E
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__hydrated = true
+    }
+  }, [])
+
   // Crear el QueryClient usando useState para garantizar que sea un singleton por sesión de cliente
   const [queryClient] = useState(
     () =>

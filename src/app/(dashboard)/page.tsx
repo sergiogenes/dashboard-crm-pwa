@@ -57,8 +57,11 @@ export default function DashboardHome() {
 
   const syncRate = totalRecords > 0 ? Math.round((totalSynced / totalRecords) * 100) : 100
 
-  // Obtener actividades recientes (últimos 5 leads ordenados por updatedAt desc)
-  const recentLeads = [...(leads || [])]
+  // Obtener cambios locales recientes (últimos 5 leads/empresas ordenados por updatedAt desc)
+  const recentChanges = [
+    ...(leads || []).map((l) => ({ ...l, entityType: 'lead' as const })),
+    ...(companies || []).map((c) => ({ ...c, entityType: 'company' as const })),
+  ]
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, 5)
 
@@ -262,36 +265,71 @@ export default function DashboardHome() {
           </span>
         </div>
 
-        <div className="divide-y divide-slate-800/50">
-          {recentLeads.length > 0 ? (
-            recentLeads.map((lead) => (
-              <div key={lead.id || lead.tempId} className="flex justify-between items-center py-3.5 first:pt-0 last:pb-0">
-                <div className="flex items-center gap-3">
-                  <div className="h-8.5 w-8.5 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-indigo-300">
-                    {lead.firstName[0]}{lead.lastName[0]}
+        <div className="divide-y divide-slate-800/30">
+          {recentChanges.length > 0 ? (
+            recentChanges.map((change) => {
+              const isLead = change.entityType === 'lead'
+              const href = isLead 
+                ? `/contacts?leadId=${change.id || change.tempId}`
+                : `/companies`
+              const name = isLead 
+                ? `${change.firstName} ${change.lastName}`
+                : change.name
+              const subtitle = isLead 
+                ? change.email 
+                : (change.domain || 'Empresa')
+              const initials = isLead 
+                ? `${change.firstName?.[0] || ''}${change.lastName?.[0] || ''}`.toUpperCase()
+                : (change.name?.[0] || 'E').toUpperCase()
+
+              return (
+                <Link
+                  key={change.id || change.tempId}
+                  href={href}
+                  className="flex justify-between items-center py-3.5 first:pt-0 last:pb-0 hover:bg-slate-900/40 px-3 rounded-xl transition-all cursor-pointer group -mx-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`h-8.5 w-8.5 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                      isLead 
+                        ? 'bg-indigo-500/10 text-indigo-300 group-hover:bg-indigo-500/20 group-hover:text-indigo-400' 
+                        : 'bg-violet-500/10 text-violet-300 group-hover:bg-violet-500/20 group-hover:text-violet-400'
+                    }`}>
+                      {initials}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-white group-hover:text-indigo-400 transition-colors">
+                          {name}
+                        </p>
+                        <span className={`inline-flex items-center rounded-md px-1.5 py-0.2 text-[8px] font-semibold border ${
+                          isLead 
+                            ? 'bg-indigo-500/5 text-indigo-400 border-indigo-500/10' 
+                            : 'bg-violet-500/5 text-violet-400 border-violet-500/10'
+                        }`}>
+                          {isLead ? 'Contacto' : 'Empresa'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">{subtitle}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-white">{lead.firstName} {lead.lastName}</p>
-                    <p className="text-[10px] text-slate-500">{lead.email}</p>
+                  <div className="text-right">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      change.synced
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10'
+                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/10 animate-pulse'
+                    }`}>
+                      {change.synced ? 'Sincronizado' : 'Solo Local'}
+                    </span>
+                    <p className="text-[9px] text-slate-500 mt-1">
+                      Actualizado: {new Date(change.updatedAt || Date.now()).toLocaleTimeString()}
+                    </p>
                   </div>
-                </div>
-                <div className="text-right">
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    lead.synced
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10'
-                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/10 animate-pulse'
-                  }`}>
-                    {lead.synced ? 'Sincronizado' : 'Solo Local'}
-                  </span>
-                  <p className="text-[9px] text-slate-500 mt-1">
-                    Actualizado: {new Date(lead.updatedAt || Date.now()).toLocaleTimeString()}
-                  </p>
-                </div>
-              </div>
-            ))
+                </Link>
+              )
+            })
           ) : (
             <p className="text-xs text-center text-slate-500 py-6">
-              No hay actividades de contactos registradas en la base de datos local.
+              No hay cambios locales recientes registrados.
             </p>
           )}
         </div>

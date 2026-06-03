@@ -5,6 +5,7 @@ export interface IInvoiceSchema extends Document {
   leadId: mongoose.Types.ObjectId
   userId: string
   amount: number
+  balanceDue?: number
   status: 'PAID' | 'PENDING' | 'OVERDUE'
   invoiceDate: Date
   dueDate: Date
@@ -19,6 +20,7 @@ const InvoiceSchema = new Schema<IInvoiceSchema>(
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
     userId: { type: String, required: true, index: true },
     amount: { type: Number, required: true },
+    balanceDue: { type: Number, default: 0 },
     status: { type: String, enum: ['PAID', 'PENDING', 'OVERDUE'], required: true, index: true },
     invoiceDate: { type: Date, required: true },
     dueDate: { type: Date, required: true },

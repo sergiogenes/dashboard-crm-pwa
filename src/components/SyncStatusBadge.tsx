@@ -22,7 +22,10 @@ export default function SyncStatusBadge({ userId }: SyncStatusBadgeProps) {
       const leadCount = await localDb.leads
         .filter((l) => l.synced === false && l.userId === userId)
         .count()
-      return compCount + leadCount
+      const activityCount = await localDb.activities
+        .filter((a) => a.synced === false && a.userId === userId)
+        .count()
+      return compCount + leadCount + activityCount
     },
     [userId],
     0

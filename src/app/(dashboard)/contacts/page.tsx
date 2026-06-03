@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { localDb, LocalLead, LocalInvoice } from '@/lib/db'
+import { localDb, LocalLead, LocalInvoice, LocalActivity, LocalDeal } from '@/lib/db'
 import LeadFormModal from '@/components/LeadFormModal'
 import {
   Users,
@@ -18,19 +18,60 @@ import {
   X,
   TrendingUp,
   ShieldAlert,
-  Calendar
+  Calendar,
+  Clock,
+  MessageSquare,
+  Phone,
+  Mail,
+  CheckSquare,
+  Bell,
+  Wallet
 } from 'lucide-react'
+
+// Helper para obtener la fecha de mañana en formato YYYY-MM-DD
+const getTomorrowString = () => {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const year = tomorrow.getFullYear()
+  const month = String(tomorrow.getMonth() + 1).padStart(2, '0')
+  const day = String(tomorrow.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 export default function ContactsPage() {
   const { data: session, status } = useSession()
   const userId = session?.user?.id
 
+  // Referencias para disparar los selectores de fecha/hora
+  const dateInputRef = useRef<HTMLInputElement>(null)
+  const timeInputRef = useRef<HTMLInputElement>(null)
+
   // Estado del Modal de Edición/Creación de Lead
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false)
   const [leadToEdit, setLeadToEdit] = useState<LocalLead | null>(null)
 
-  // Estado del Drawer de Historial Crediticio (Facturas)
+  // Estado del Drawer de Historial Crediticio (Facturas) y Detalles
   const [selectedLeadForInvoice, setSelectedLeadForInvoice] = useState<LocalLead | null>(null)
+
+  // Estado de Pestaña activa en el Drawer
+  const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'deals'>('activities')
+
+  // Estado del Formulario de Nuevo Préstamo (Deal)
+  const [dealAmount, setDealAmount] = useState('')
+  const [dealTermMonths, setDealTermMonths] = useState('12')
+  const [dealInterestRate, setDealInterestRate] = useState('15')
+  const [dealNotes, setDealNotes] = useState('')
+  const [isSubmittingDeal, setIsSubmittingDeal] = useState(false)
+
+  // Estado del Formulario de Actividad
+  const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'>('NOTE')
+  const [activityTitle, setActivityTitle] = useState('')
+  const [activityBody, setActivityBody] = useState('')
+  const [reminderDateOnly, setReminderDateOnly] = useState('')
+  const [reminderTimeOnly, setReminderTimeOnly] = useState('08:00')
+  const [showReminderPicker, setShowReminderPicker] = useState(false)
+  const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null)
+  const [isSubmittingActivity, setIsSubmittingActivity] = useState(false)
 
   // Filtros y Búsqueda
   const [searchTerm, setSearchTerm] = useState('')
@@ -74,6 +115,34 @@ export default function ContactsPage() {
     []
   )
 
+  // 4. Obtener reactivamente las actividades asociadas al lead seleccionado para el Drawer
+  const activities = useLiveQuery(
+    async () => {
+      if (!selectedLeadId) return []
+      return await localDb.activities
+        .where('leadId')
+        .equals(selectedLeadId)
+        .filter((a) => a.deleted !== true)
+        .toArray()
+    },
+    [selectedLeadId],
+    []
+  )
+
+  // 5. Obtener reactivamente los préstamos (deals) asociados al lead seleccionado
+  const deals = useLiveQuery(
+    async () => {
+      if (!selectedLeadId) return []
+      return await localDb.deals
+        .where('leadId')
+        .equals(selectedLeadId)
+        .filter((d) => d.deleted !== true)
+        .toArray()
+    },
+    [selectedLeadId],
+    []
+  )
+
   // Soft Delete del Lead
   const handleDeleteLead = async (lead: LocalLead) => {
     if (!confirm(`¿Estás seguro de que deseas eliminar a ${lead.firstName} ${lead.lastName}?`)) return
@@ -97,6 +166,303 @@ export default function ContactsPage() {
       }
     } catch (err) {
       console.error('[Contacts] Error al eliminar lead:', err)
+    }
+  }
+
+  // Registrar una nueva actividad offline en Dexie
+  const handleAddActivity = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId || !selectedLeadId) return
+    if (!activityTitle.trim() || !activityBody.trim()) return
+
+    setIsSubmittingActivity(true)
+    try {
+      const now = Date.now()
+      let reminderTimestamp: number | undefined = undefined
+      if (showReminderPicker && reminderDateOnly) {
+        const timeVal = reminderTimeOnly || '08:00'
+        const datetimeStr = `${reminderDateOnly}T${timeVal}`
+        const parsedDate = new Date(datetimeStr)
+        if (!isNaN(parsedDate.getTime())) {
+          reminderTimestamp = parsedDate.getTime()
+        }
+      }
+      // 1. Registrar la actividad principal (Nota, Llamada, Reunión, Email)
+      const newMainAct: LocalActivity = {
+        tempId: crypto.randomUUID(),
+        leadId: selectedLeadId,
+        userId,
+        type: activityType,
+        title: activityTitle.trim(),
+        body: activityBody.trim(),
+        timestamp: now,
+        synced: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+      await localDb.activities.put(newMainAct)
+
+      // 2. Si se definió un recordatorio, registrar una actividad separada de tipo TASK (Tarea)
+      if (reminderTimestamp) {
+        const newTaskAct: LocalActivity = {
+          tempId: crypto.randomUUID(),
+          leadId: selectedLeadId,
+          userId,
+          type: 'TASK',
+          title: `Recordatorio: ${activityTitle.trim()}`,
+          body: activityBody.trim(),
+          timestamp: now,
+          reminderDate: reminderTimestamp,
+          synced: false,
+          createdAt: now,
+          updatedAt: now,
+        }
+        await localDb.activities.put(newTaskAct)
+      }
+      
+      // Limpiar formulario
+      setActivityTitle('')
+      setActivityBody('')
+      setActivityType('NOTE')
+      setReminderDateOnly('')
+      setReminderTimeOnly('08:00')
+      setShowReminderPicker(false)
+    } catch (err) {
+      console.error('[Contacts] Error al agregar actividad:', err)
+    } finally {
+      setIsSubmittingActivity(false)
+    }
+  }
+
+  // Soft delete de actividad en Dexie
+  const handleDeleteActivity = async (act: LocalActivity) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta actividad?')) return
+    try {
+      const now = Date.now()
+      if (act.id) {
+        // Marcamos soft-delete local para sincronizar al servidor
+        await localDb.activities.where('id').equals(act.id).modify({
+          deleted: true,
+          synced: false,
+          updatedAt: now,
+        })
+      } else if (act.tempId) {
+        // Creado localmente y no sincronizado: borrar físicamente
+        await localDb.activities.where('tempId').equals(act.tempId).delete()
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al eliminar actividad:', err)
+    }
+  }
+
+  // Marcar recordatorio como leído desde el historial
+  const handleMarkReminderAsRead = async (act: LocalActivity) => {
+    try {
+      const now = Date.now()
+      const actKey = act.tempId || act.id
+      if (actKey) {
+        const notif = await localDb.notifications.where('activityId').equals(actKey).first()
+        if (notif) {
+          await localDb.notifications.update(notif.id, { read: true, notified: true })
+        }
+      }
+
+      if (act.tempId) {
+        await localDb.activities.update(act.tempId, {
+          reminderRead: true,
+          synced: false,
+          updatedAt: now,
+        })
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al marcar recordatorio como leído:', err)
+    }
+  }
+
+  // Eliminar recordatorio de una actividad manteniendo la nota
+  const handleRemoveReminder = async (act: LocalActivity) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar este recordatorio? La nota permanecerá en el historial.')) return
+    try {
+      const now = Date.now()
+      const actKey = act.tempId || act.id
+      if (actKey) {
+        const notif = await localDb.notifications.where('activityId').equals(actKey).first()
+        if (notif) {
+          await localDb.notifications.delete(notif.id)
+        }
+      }
+
+      if (act.tempId) {
+        if (act.type === 'TASK') {
+          // Si es una Tarea independiente (alarma), la eliminamos por completo
+          await localDb.activities.update(act.tempId, {
+            deleted: true,
+            synced: false,
+            updatedAt: now,
+          })
+        } else {
+          // Retrocompatibilidad: Si es una nota antigua con recordatorio embebido, limpiamos el campo
+          await localDb.activities.update(act.tempId, {
+            reminderDate: null as any,
+            reminderRead: false,
+            synced: false,
+            updatedAt: now,
+          })
+        }
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al eliminar recordatorio:', err)
+    }
+  }
+
+  // Registrar una nueva solicitud de préstamo offline en Dexie
+  const handleAddDeal = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId || !selectedLeadId || !selectedLeadForInvoice) return
+    if (!dealAmount.trim()) return
+
+    setIsSubmittingDeal(true)
+    try {
+      const now = Date.now()
+      const amountVal = parseFloat(dealAmount)
+      const termVal = parseInt(dealTermMonths)
+      const rateVal = parseFloat(dealInterestRate)
+
+      if (isNaN(amountVal) || amountVal <= 0) {
+        alert('Por favor ingresa un monto válido.')
+        return
+      }
+
+      const newDeal: LocalDeal = {
+        tempId: crypto.randomUUID(),
+        leadId: selectedLeadId,
+        userId,
+        name: `Préstamo ${selectedLeadForInvoice.firstName} ${selectedLeadForInvoice.lastName}`,
+        amount: amountVal,
+        termMonths: termVal,
+        interestRate: rateVal,
+        stage: 'draft', // El vendedor origina en borrador
+        notes: dealNotes.trim() || undefined,
+        synced: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+
+      await localDb.deals.put(newDeal)
+
+      // Limpiar formulario
+      setDealAmount('')
+      setDealTermMonths('12')
+      setDealInterestRate('15')
+      setDealNotes('')
+    } catch (err) {
+      console.error('[Contacts] Error al registrar préstamo:', err)
+    } finally {
+      setIsSubmittingDeal(false)
+    }
+  }
+
+  // Soft Delete de Deal en Dexie
+  const handleDeleteDeal = async (deal: LocalDeal) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta solicitud de préstamo?')) return
+    try {
+      const now = Date.now()
+      if (deal.id) {
+        // Tiene ID real: marcar soft delete para sincronizar al servidor
+        await localDb.deals.where('id').equals(deal.id).modify({
+          deleted: true,
+          synced: false,
+          updatedAt: now,
+        })
+      } else if (deal.tempId) {
+        // Creado localmente y no sincronizado: borrar físicamente
+        await localDb.deals.where('tempId').equals(deal.tempId).delete()
+      }
+    } catch (err) {
+      console.error('[Contacts] Error al eliminar préstamo:', err)
+    }
+  }
+
+  // Escuchar eventos de recordatorios del Header para abrir Drawer reactivamente
+  useEffect(() => {
+    const handleOpenReminder = (e: Event) => {
+      const customEvent = e as CustomEvent<{ leadId: string; activityId: string }>
+      const { leadId, activityId } = customEvent.detail
+      if (activityId) {
+        setHighlightedActivityId(activityId)
+      }
+      if (leadId && leads.length > 0) {
+        const foundLead = leads.find((l) => l.id === leadId || l.tempId === leadId)
+        if (foundLead) {
+          setSelectedLeadForInvoice(foundLead)
+          setActiveTab('activities')
+        }
+      }
+    }
+    window.addEventListener('open-lead-reminder', handleOpenReminder)
+    return () => {
+      window.removeEventListener('open-lead-reminder', handleOpenReminder)
+    }
+  }, [leads])
+
+  // Auto-seleccionar Lead si viene de un recordatorio en la URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const leadIdParam = params.get('leadId')
+    const activityIdParam = params.get('activityId')
+
+    if (activityIdParam) {
+      setHighlightedActivityId(activityIdParam)
+    }
+
+    if (leadIdParam && leads.length > 0) {
+      const foundLead = leads.find((l) => l.id === leadIdParam || l.tempId === leadIdParam)
+      if (foundLead) {
+        setSelectedLeadForInvoice(foundLead)
+        setActiveTab('activities')
+        const newParams = new URLSearchParams(window.location.search)
+        newParams.delete('leadId')
+        newParams.delete('activityId')
+        const newSearch = newParams.toString()
+        const newUrl = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`
+        window.history.replaceState({}, '', newUrl)
+      }
+    }
+  }, [leads])
+
+  // Efecto para hacer scroll automático a la actividad resaltada
+  useEffect(() => {
+    if (highlightedActivityId) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`activity-${highlightedActivityId}`)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          
+          // Desvanecer el resaltado a los 3 segundos
+          setTimeout(() => {
+            setHighlightedActivityId(null)
+          }, 3000)
+        }
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [highlightedActivityId])
+
+  // Configuración de estilo y visualización según el tipo de actividad
+  const getActivityConfig = (type: LocalActivity['type']) => {
+    switch (type) {
+      case 'CALL':
+        return { icon: Phone, bg: 'bg-blue-500/10', border: 'border-blue-500/20', text: 'text-blue-400' }
+      case 'MEETING':
+        return { icon: Calendar, bg: 'bg-purple-500/10', border: 'border-purple-500/20', text: 'text-purple-400' }
+      case 'EMAIL':
+        return { icon: Mail, bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-400' }
+      case 'TASK':
+        return { icon: CheckSquare, bg: 'bg-rose-500/10', border: 'border-rose-500/20', text: 'text-rose-400' }
+      case 'NOTE':
+      default:
+        return { icon: MessageSquare, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400' }
     }
   }
 
@@ -154,6 +520,7 @@ export default function ContactsPage() {
 
   // Calcular métricas rápidas del Historial de Facturas
   const totalInvoicesAmount = invoices?.reduce((sum, inv) => sum + inv.amount, 0) || 0
+  const totalBalanceDue = invoices?.reduce((sum, inv) => sum + (inv.balanceDue ?? (inv.status === 'PAID' ? 0 : inv.amount)), 0) || 0
   const paidInvoices = invoices?.filter(inv => inv.status === 'PAID') || []
   const pendingInvoices = invoices?.filter(inv => inv.status === 'PENDING') || []
   const overdueInvoices = invoices?.filter(inv => inv.status === 'OVERDUE') || []
@@ -243,7 +610,7 @@ export default function ContactsPage() {
         </div>
 
         {/* Tabla de Leads */}
-        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-md">
+        <div className="hidden md:block overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-md">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm text-slate-300">
               <thead className="bg-slate-900/60 text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
@@ -336,16 +703,96 @@ export default function ContactsPage() {
             </table>
           </div>
         </div>
+
+        {/* Vista móvil (Tarjetas) */}
+        <div className="grid grid-cols-1 gap-4 md:hidden">
+          {filteredLeads.length > 0 ? (
+            filteredLeads.map((lead) => (
+              <div 
+                key={lead.id || lead.tempId}
+                onClick={() => setSelectedLeadForInvoice(lead)}
+                className={`rounded-2xl border p-4 space-y-3 cursor-pointer transition-all duration-300 ${
+                  (selectedLeadForInvoice?.id === lead.id || selectedLeadForInvoice?.tempId === lead.tempId)
+                    ? 'border-indigo-500 bg-slate-900/40 shadow-md ring-1 ring-indigo-500/20'
+                    : 'border-slate-800 bg-slate-900/20'
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-white text-sm">
+                      {lead.firstName} {lead.lastName}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">{lead.email}</p>
+                    {lead.phone && <p className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.phone}</p>}
+                  </div>
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    {lead.synced ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-500/10 p-1 text-emerald-400 border border-emerald-500/20" title="CloudDb">
+                        <Cloud className="h-3.5 w-3.5" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-500/10 p-1 text-amber-400 border border-amber-500/20 animate-pulse" title="LocalDb">
+                        <Database className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                    {getScoringBadge(lead.scoring)}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-slate-850">
+                  <span className="inline-flex items-center rounded bg-slate-950 border border-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400">
+                    {getCompanyName(lead.companyId)}
+                  </span>
+                  
+                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setSelectedLeadForInvoice(lead)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition-colors"
+                      title="Ver Historial Crediticio"
+                    >
+                      <FileText className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setLeadToEdit(lead)
+                        setIsLeadModalOpen(true)
+                      }}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                      title="Editar"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteLead(lead)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                      title="Eliminar"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-xs text-slate-500 py-12">No se encontraron contactos.</p>
+          )}
+        </div>
       </div>
 
-      {/* Slide-over Drawer: Historial Crediticio del Contacto */}
+      {/* Slide-over Drawer: Detalles del Contacto (Finanzas y Actividades) */}
       {selectedLeadForInvoice && (
-        <div className="fixed inset-y-0 right-0 z-30 w-full max-w-md bg-slate-950/95 border-l border-slate-800 shadow-2xl backdrop-blur-xl flex flex-col animate-slide-in">
+        <>
+          {/* Backdrop overlay */}
+          <div 
+            onClick={() => setSelectedLeadForInvoice(null)}
+            className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-300"
+          />
+          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-950/95 border-l border-slate-800 shadow-2xl flex flex-col animate-slide-in">
           
           {/* Cabecera del Drawer */}
           <div className="p-6 border-b border-slate-800 flex items-center justify-between">
             <div>
-              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block">Historial Financiero</span>
+              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block">Detalle del Contacto</span>
               <h3 className="text-lg font-bold text-white mt-1">
                 {selectedLeadForInvoice.firstName} {selectedLeadForInvoice.lastName}
               </h3>
@@ -359,97 +806,620 @@ export default function ContactsPage() {
             </button>
           </div>
 
-          {/* Contenido del Drawer */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            
-            {/* Sección: Resumen de Score */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-400 font-medium">Scoring Crediticio</span>
-                {getScoringBadge(selectedLeadForInvoice.scoring)}
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-800/50">
-                <div>
-                  <span className="text-[9px] text-slate-500 uppercase block">Cumplimiento</span>
-                  <span className="text-sm font-bold text-white flex items-center gap-1.5 mt-0.5">
-                    <TrendingUp className="h-4 w-4 text-emerald-400" />
-                    {paymentRatio}%
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[9px] text-slate-500 uppercase block">Facturas Totales</span>
-                  <span className="text-sm font-bold text-white mt-0.5 block">
-                    {invoices?.length || 0}
-                  </span>
-                </div>
-              </div>
-            </div>
+          {/* Selectores de Pestaña */}
+          <div className="flex border-b border-slate-800 bg-slate-900/10 px-6">
+            <button
+              onClick={() => setActiveTab('finance')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                activeTab === 'finance'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Finanzas
+            </button>
+            <button
+              onClick={() => setActiveTab('activities')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                activeTab === 'activities'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Actividades
+            </button>
+            <button
+              onClick={() => setActiveTab('deals')}
+              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
+                activeTab === 'deals'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Préstamos
+            </button>
+          </div>
 
-            {/* Alertas de Vencimiento si existen facturas pendientes o vencidas */}
-            {overdueInvoices.length > 0 && (
-              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 flex gap-3 text-xs text-rose-300">
-                <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0" />
-                <div>
-                  <span className="font-bold block">¡Facturas Vencidas!</span>
-                  <span>Este lead posee {overdueInvoices.length} factura(s) vencida(s) en HubSpot. Riesgo crediticio activo.</span>
+          {/* Contenido del Drawer */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {activeTab === 'finance' ? (
+              <div className="space-y-6">
+                {/* Sección: Resumen de Score */}
+                <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-400 font-medium">Scoring Crediticio</span>
+                    {getScoringBadge(selectedLeadForInvoice.scoring)}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/50">
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase block">Total Adeudado</span>
+                      <span className="text-xs font-bold text-rose-450 mt-0.5 block truncate">
+                        ${totalBalanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase block">Cumplimiento</span>
+                      <span className="text-xs font-bold text-emerald-400 mt-0.5 block">
+                        {paymentRatio}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase block">Facturas</span>
+                      <span className="text-xs font-bold text-white mt-0.5 block">
+                        {invoices?.length || 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Alertas de Vencimiento si existen facturas pendientes o vencidas */}
+                {overdueInvoices.length > 0 && (
+                  <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 flex gap-3 text-xs text-rose-300">
+                    <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0" />
+                    <div>
+                      <span className="font-bold block">¡Facturas Vencidas!</span>
+                      <span>Este lead posee {overdueInvoices.length} factura(s) vencida(s) en HubSpot. Riesgo crediticio activo.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Listado de Facturas */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Detalle de Facturas</h4>
+                  <div className="space-y-3">
+                    {invoices && invoices.length > 0 ? (
+                      invoices.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="rounded-xl border border-slate-900 bg-slate-950 p-4 flex justify-between items-start"
+                        >
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] text-slate-500 font-mono block">INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}</span>
+                            <span className="text-sm font-bold text-white block">
+                              ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                            </span>
+                            {inv.status !== 'PAID' && inv.balanceDue !== undefined && inv.balanceDue !== inv.amount && (
+                              <span className="text-[10px] text-slate-450 block font-semibold">
+                                Pendiente: ${inv.balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                              </span>
+                            )}
+                            <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                              <Calendar className="h-3 w-3" />
+                              <span>Vencimiento: {new Date(inv.dueDate).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="text-right">
+                            {inv.status === 'PAID' && (
+                              <span className="inline-flex items-center rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/10">
+                                Pagado
+                              </span>
+                            )}
+                            {inv.status === 'PENDING' && (
+                              <span className="inline-flex items-center rounded bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/10">
+                                Pendiente
+                              </span>
+                            )}
+                            {inv.status === 'OVERDUE' && (
+                              <span className="inline-flex items-center rounded bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/10">
+                                Vencido
+                              </span>
+                            )}
+                            {inv.paymentDate && (
+                              <p className="text-[9px] text-slate-500 mt-1">
+                                Pago: {new Date(inv.paymentDate).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-center text-slate-500 py-6">
+                        No se encontraron facturas asociadas a este contacto.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : activeTab === 'activities' ? (
+              <div className="space-y-6">
+                {/* Formulario para registrar actividad */}
+                <form onSubmit={handleAddActivity} className="rounded-xl border border-slate-800 bg-slate-900/20 p-4 space-y-4 backdrop-blur-md">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Registrar Actividad</h4>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Tipo</label>
+                      <select
+                        value={activityType}
+                        onChange={(e) => setActivityType(e.target.value as any)}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-505 transition-colors focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="NOTE">Nota</option>
+                        <option value="CALL">Llamada</option>
+                        <option value="MEETING">Reunión</option>
+                        <option value="EMAIL">Correo</option>
+                        <option value="TASK">Tarea</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Título</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Llamada de seguimiento"
+                        value={activityTitle}
+                        onChange={(e) => setActivityTitle(e.target.value)}
+                        required
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Descripción</label>
+                    <textarea
+                      placeholder="Escribe el resumen o notas de la actividad..."
+                      value={activityBody}
+                      onChange={(e) => setActivityBody(e.target.value)}
+                      required
+                      rows={3}
+                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="enable-reminder"
+                        checked={showReminderPicker}
+                        onChange={(e) => {
+                          setShowReminderPicker(e.target.checked)
+                          if (e.target.checked) {
+                            setReminderDateOnly(getTomorrowString())
+                            setReminderTimeOnly('08:00')
+                          } else {
+                            setReminderDateOnly('')
+                            setReminderTimeOnly('')
+                          }
+                        }}
+                        className="rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                      />
+                      <label htmlFor="enable-reminder" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider select-none cursor-pointer">
+                        Programar recordatorio
+                      </label>
+                    </div>
+                    {showReminderPicker && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Fecha</label>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => {
+                                if (typeof dateInputRef.current?.showPicker === 'function') {
+                                  try {
+                                    dateInputRef.current.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition-colors focus:outline-none"
+                            >
+                              <Calendar className="h-3.5 w-3.5" />
+                            </button>
+                            <input
+                              ref={dateInputRef}
+                              type="date"
+                              value={reminderDateOnly}
+                              onChange={(e) => setReminderDateOnly(e.target.value)}
+                              onClick={(e) => {
+                                if (typeof e.currentTarget.showPicker === 'function') {
+                                  try {
+                                    e.currentTarget.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              required={showReminderPicker}
+                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Hora</label>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => {
+                                if (typeof timeInputRef.current?.showPicker === 'function') {
+                                  try {
+                                    timeInputRef.current.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition-colors focus:outline-none"
+                            >
+                              <Clock className="h-3.5 w-3.5" />
+                            </button>
+                            <input
+                              ref={timeInputRef}
+                              type="time"
+                              value={reminderTimeOnly}
+                              onChange={(e) => setReminderTimeOnly(e.target.value)}
+                              onClick={(e) => {
+                                if (typeof e.currentTarget.showPicker === 'function') {
+                                  try {
+                                    e.currentTarget.showPicker()
+                                  } catch (_) {}
+                                }
+                              }}
+                              required={showReminderPicker}
+                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingActivity}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Registrar Actividad
+                  </button>
+                </form>
+
+                {/* Línea de tiempo de Actividades */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Historial de Actividades</h4>
+                  
+                  <div className="relative border-l border-slate-800 ml-3.5 pl-6 space-y-6">
+                    {activities && activities.length > 0 ? (
+                      [...activities]
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .map((act) => {
+                          const config = getActivityConfig(act.type)
+                          const IconComponent = config.icon
+                          
+                          return (
+                            <div key={act.id || act.tempId} className="relative group">
+                              {/* Punto/Icono en el timeline */}
+                              <div className={`absolute -left-[38px] top-1 rounded-full p-1.5 border ${config.bg} ${config.border} ${config.text} shadow-md`}>
+                                <IconComponent className="h-3.5 w-3.5" />
+                              </div>
+
+                              {/* Card de Actividad */}
+                              <div
+                                id={`activity-${act.id || act.tempId}`}
+                                className={`rounded-xl border p-4 space-y-2 transition-all duration-500 ${
+                                  highlightedActivityId === act.id || highlightedActivityId === act.tempId
+                                    ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20 scale-[1.02]'
+                                    : 'border-slate-900 bg-slate-950/80'
+                                }`}
+                              >
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <span className="text-[9px] text-slate-500 font-mono block">
+                                      {new Date(act.timestamp).toLocaleString()}
+                                    </span>
+                                    <h5 className="text-xs font-bold text-white mt-0.5">
+                                      {act.title}
+                                    </h5>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                    {act.synced ? (
+                                      <span title="Sincronizado con HubSpot">
+                                        <Cloud className="h-3.5 w-3.5 text-slate-600" />
+                                      </span>
+                                    ) : (
+                                      <span title="Guardado localmente, pendiente de sincronización">
+                                        <Database className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => handleDeleteActivity(act)}
+                                      className="rounded p-1 text-slate-600 hover:bg-slate-900 hover:text-red-450 transition-colors"
+                                      title="Eliminar actividad"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <p className="text-xs text-slate-400 whitespace-pre-line leading-relaxed">
+                                  {act.body}
+                                </p>
+                                {act.reminderDate && (
+                                   <div className="flex flex-col gap-1.5 mt-2 rounded-lg bg-indigo-950/40 border border-indigo-500/20 p-2.5 max-w-md">
+                                     <div className="flex items-center gap-1.5 text-[10px] text-indigo-300">
+                                       <Bell className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
+                                       <span className="font-medium">
+                                         Recordatorio: {new Date(act.reminderDate).toLocaleString()}
+                                       </span>
+                                       {act.reminderRead ? (
+                                         <span className="ml-1 text-[8px] bg-indigo-500/20 text-indigo-200 px-1.5 py-0.5 rounded border border-indigo-500/30">
+                                           Leído
+                                         </span>
+                                       ) : (
+                                         <span className="ml-1 text-[8px] bg-amber-500/20 text-amber-200 px-1.5 py-0.5 rounded border border-amber-500/30">
+                                           Activo
+                                         </span>
+                                       )}
+                                     </div>
+                                     <div className="flex items-center gap-2">
+                                       {!act.reminderRead && (
+                                         <button
+                                           type="button"
+                                           onClick={() => handleMarkReminderAsRead(act)}
+                                           className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 hover:text-indigo-200 bg-indigo-500/20 hover:bg-indigo-500/30 px-2 py-1 rounded transition-colors border border-indigo-500/30"
+                                         >
+                                           <CheckSquare className="h-3 w-3" />
+                                           Marcar Leído
+                                         </button>
+                                       )}
+                                       <button
+                                         type="button"
+                                         onClick={() => handleRemoveReminder(act)}
+                                         className="flex items-center gap-1 text-[9px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 rounded transition-colors border border-red-500/20"
+                                       >
+                                         <X className="h-3 w-3" />
+                                         Quitar Alarma
+                                       </button>
+                                     </div>
+                                   </div>
+                                 )}
+                              </div>
+                            </div>
+                          )
+                        })
+                    ) : (
+                      <p className="text-xs text-center text-slate-500 py-6 -ml-3.5">
+                        No se encontraron actividades registradas para este contacto.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Formulario de creación */}
+                <form onSubmit={handleAddDeal} className="rounded-xl border border-slate-800 bg-slate-900/20 p-4 space-y-4 backdrop-blur-md">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Nueva Solicitud de Préstamo</h4>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Monto (USD)</label>
+                      <input
+                        type="number"
+                        placeholder="Ej. 5000"
+                        value={dealAmount}
+                        onChange={(e) => setDealAmount(e.target.value)}
+                        required
+                        min="1"
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Plazo (Meses)</label>
+                      <select
+                        value={dealTermMonths}
+                        onChange={(e) => setDealTermMonths(e.target.value)}
+                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white transition-colors focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="3">3 meses</option>
+                        <option value="6">6 meses</option>
+                        <option value="12">12 meses</option>
+                        <option value="18">18 meses</option>
+                        <option value="24">24 meses</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Tasa de Interés (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="Ej. 15"
+                      value={dealInterestRate}
+                      onChange={(e) => setDealInterestRate(e.target.value)}
+                      required
+                      min="0"
+                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Notas / Justificación</label>
+                    <textarea
+                      placeholder="Escribe comentarios u observaciones del préstamo..."
+                      value={dealNotes}
+                      onChange={(e) => setDealNotes(e.target.value)}
+                      rows={3}
+                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingDeal}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Enviar Solicitud
+                  </button>
+                </form>
+
+                {/* Listado de Préstamos Activos */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Solicitudes de Préstamos</h4>
+                  <div className="space-y-4">
+                    {deals && deals.length > 0 ? (
+                      deals.map((deal) => {
+                        const steps = [
+                          { stage: 'draft', label: 'Borrador' },
+                          { stage: 'under_evaluation', label: 'Riesgo' },
+                          { stage: 'approved', label: 'Aprobado' },
+                          { stage: 'disbursed', label: 'Desembolsado' },
+                        ]
+
+                        const getStepStatus = (dealStage: string, stepStage: string) => {
+                          const stageOrder = ['draft', 'under_evaluation', 'approved', 'disbursed', 'completed']
+                          const currentIdx = stageOrder.indexOf(dealStage)
+                          const stepIdx = stageOrder.indexOf(stepStage)
+                          
+                          if (dealStage === 'refused' || dealStage === 'overdue') {
+                            return 'disabled'
+                          }
+                          if (currentIdx >= 3 && dealStage === 'completed') {
+                            return 'completed'
+                          }
+                          if (stepIdx < currentIdx) return 'completed'
+                          if (stepIdx === currentIdx) return 'active'
+                          return 'upcoming'
+                        }
+
+                        return (
+                          <div key={deal.id || deal.tempId} className="rounded-xl border border-slate-900 bg-slate-950 p-4 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[10px] text-slate-500 font-mono block">
+                                  Creado: {new Date(deal.createdAt).toLocaleDateString()}
+                                </span>
+                                <h5 className="text-sm font-bold text-white mt-0.5">
+                                  ${deal.amount.toLocaleString()} USD
+                                </h5>
+                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                  Plazo: {deal.termMonths} meses | Tasa: {deal.interestRate}%
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                {deal.synced ? (
+                                  <span title="Sincronizado con el CRM">
+                                    <Cloud className="h-3.5 w-3.5 text-slate-600" />
+                                  </span>
+                                ) : (
+                                  <span title="Pendiente de sincronización">
+                                    <Database className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteDeal(deal)}
+                                  className="rounded p-1 text-slate-600 hover:bg-slate-900 hover:text-red-450 transition-colors"
+                                  title="Eliminar préstamo"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {deal.notes && (
+                              <p className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded border border-slate-900 leading-relaxed font-mono">
+                                {deal.notes}
+                              </p>
+                            )}
+
+                            {/* Stepper Horizontal */}
+                            {deal.stage !== 'refused' && deal.stage !== 'overdue' && deal.stage !== 'completed' ? (
+                              <div className="relative flex items-center justify-between mt-4 px-2 pt-2 pb-1">
+                                <div className="absolute left-4 right-4 top-1/2 -translate-y-[10px] h-0.5 bg-slate-800 -z-10" />
+                                <div 
+                                  className="absolute left-4 top-1/2 -translate-y-[10px] h-0.5 bg-emerald-500 transition-all duration-500 -z-10"
+                                  style={{
+                                    width: 
+                                      deal.stage === 'draft' ? '0%' :
+                                      deal.stage === 'under_evaluation' ? '33.33%' :
+                                      deal.stage === 'approved' ? '66.66%' : '100%'
+                                  }}
+                                />
+                                {steps.map((step, idx) => {
+                                  const status = getStepStatus(deal.stage, step.stage)
+                                  return (
+                                    <div key={step.stage} className="flex flex-col items-center z-10">
+                                      <div 
+                                        className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold border transition-all ${
+                                          status === 'completed' 
+                                            ? 'bg-emerald-500 border-emerald-500 text-slate-950'
+                                            : status === 'active'
+                                            ? 'bg-indigo-950 border-indigo-500 text-indigo-400 ring-2 ring-indigo-500/20'
+                                            : 'bg-slate-950 border-slate-850 text-slate-500'
+                                        }`}
+                                      >
+                                        {status === 'completed' ? '✓' : idx + 1}
+                                      </div>
+                                      <span className={`text-[8px] font-semibold mt-1.5 ${
+                                        status === 'completed' ? 'text-emerald-400' :
+                                        status === 'active' ? 'text-indigo-400 font-bold' : 'text-slate-500'
+                                      }`}>
+                                        {step.label}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : null}
+
+                            {deal.stage === 'refused' && (
+                              <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 p-2 flex items-center gap-2 text-red-400 text-xs font-semibold">
+                                <ShieldAlert className="h-4 w-4 shrink-0" />
+                                <span>Solicitud Rechazada por Riesgos</span>
+                              </div>
+                            )}
+
+                            {deal.stage === 'overdue' && (
+                              <div className="mt-2 rounded-lg bg-rose-500/10 border border-rose-500/20 p-2 flex items-center gap-2 text-rose-400 text-xs font-semibold">
+                                <ShieldAlert className="h-4 w-4 shrink-0" />
+                                <span>Crédito en Mora (Vencido)</span>
+                              </div>
+                            )}
+
+                            {deal.stage === 'completed' && (
+                              <div className="mt-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2 flex items-center gap-2 text-emerald-400 text-xs font-semibold">
+                                <CheckSquare className="h-4 w-4 shrink-0" />
+                                <span>Crédito Completado (Pagado)</span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <p className="text-xs text-center text-slate-500 py-6">
+                        No hay solicitudes de préstamos registradas para este contacto.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
-
-            {/* Listado de Facturas */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Detalle de Facturas</h4>
-              <div className="space-y-3">
-                {invoices && invoices.length > 0 ? (
-                  invoices.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="rounded-xl border border-slate-900 bg-slate-950 p-4 flex justify-between items-start"
-                    >
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] text-slate-500 font-mono block">INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}</span>
-                        <span className="text-sm font-bold text-white block">
-                          ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
-                        </span>
-                        <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                          <Calendar className="h-3 w-3" />
-                          <span>Vencimiento: {new Date(inv.dueDate).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        {inv.status === 'PAID' && (
-                          <span className="inline-flex items-center rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/10">
-                            Pagado
-                          </span>
-                        )}
-                        {inv.status === 'PENDING' && (
-                          <span className="inline-flex items-center rounded bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/10">
-                            Pendiente
-                          </span>
-                        )}
-                        {inv.status === 'OVERDUE' && (
-                          <span className="inline-flex items-center rounded bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/10">
-                            Vencido
-                          </span>
-                        )}
-                        {inv.paymentDate && (
-                          <p className="text-[9px] text-slate-500 mt-1">
-                            Pago: {new Date(inv.paymentDate).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-center text-slate-500 py-6">
-                    No se encontraron facturas asociadas a este contacto.
-                  </p>
-                )}
-              </div>
-            </div>
           </div>
         </div>
+        </>
       )}
 
       {/* Formulario Modal para Leads */}

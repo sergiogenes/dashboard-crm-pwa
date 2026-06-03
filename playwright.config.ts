@@ -7,6 +7,8 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.test') })
 process.env.IS_PLAYWRIGHT_TEST = 'true'
 
 export default defineConfig({
+  globalSetup: require.resolve('./tests/global-setup'),
+  globalTeardown: require.resolve('./tests/global-teardown'),
   testDir: './tests',
   /* Límite de tiempo por test (60 segundos por latencia de red y compilación) */
   timeout: 60 * 1000,
@@ -22,7 +24,7 @@ export default defineConfig({
   reporter: 'html',
   /* Configuración global del navegador */
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://localhost:3001',
     /* Traza al fallar el primer intento */
     trace: 'on-first-retry',
     /* Captura de pantalla en caso de error */
@@ -38,16 +40,16 @@ export default defineConfig({
 
   /* Configuración del servidor web de desarrollo antes de ejecutar tests */
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    command: 'node ./tests/pre-test-env.js && npx next dev -p 3001',
+    url: 'http://localhost:3001',
+    reuseExistingServer: false,
     timeout: 120 * 1000,
     env: {
       MONGODB_URI:
-        process.env.MONGODB_URI || 'mongodb://localhost:27017/testdb',
+        process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/testdb',
       CRM_PROVIDER: 'mock',
-      NEXTAUTH_SECRET: 'secreto_criptografico_seguro_para_pruebas_locales',
-      NEXTAUTH_URL: 'http://localhost:3000',
+      NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'wFEBL8fzJO0ZyAFMUS+ChOBbZ8yXkmk4bXxoz93dDrU=',
+      NEXTAUTH_URL: 'http://localhost:3001',
       NODE_ENV: 'test',
       IS_PLAYWRIGHT_TEST: 'true',
     },
