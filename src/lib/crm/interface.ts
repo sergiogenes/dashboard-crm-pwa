@@ -122,4 +122,14 @@ export interface ICRMProvider {
    * Obtiene todos los negocios (Deals) asociados a un contacto desde el CRM.
    */
   fetchDealsByLead(leadCrmId: string): Promise<CRMDeal[]>
+
+  /**
+   * Obtiene los detalles de una factura específica por su ID.
+   */
+  fetchInvoiceById(invoiceCrmId: string): Promise<CRMInvoice | null>
+
+  /**
+   * Obtiene el ID del contacto (Lead) asociado a una factura en el CRM.
+   */
+  fetchLeadIdAssociatedWithInvoice(invoiceCrmId: string): Promise<string | null>
 }

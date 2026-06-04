@@ -183,4 +183,21 @@ export class MockCRMProvider implements ICRMProvider {
     })
     return associatedDeals
   }
+
+  async fetchInvoiceById(invoiceCrmId: string): Promise<CRMInvoice | null> {
+    const parts = invoiceCrmId.split('_')
+    const leadCrmId = parts.length > 2 ? parts[2] : 'mock_contact_default'
+    const invoices = await this.fetchInvoicesByLead(leadCrmId)
+    const inv = invoices.find(i => i.crmId === invoiceCrmId) || invoices[0] || null
+    return inv
+  }
+
+  async fetchLeadIdAssociatedWithInvoice(invoiceCrmId: string): Promise<string | null> {
+    const parts = invoiceCrmId.split('_')
+    if (parts.length > 2) {
+      return parts[2]
+    }
+    const firstLead = Array.from(this.contacts.keys())[0] || null
+    return firstLead
+  }
 }

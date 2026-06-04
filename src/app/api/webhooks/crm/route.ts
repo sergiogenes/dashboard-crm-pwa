@@ -4,6 +4,8 @@ import dbConnect from '@/lib/mongodb'
 import Lead from '@/models/Lead'
 import Company from '@/models/Company'
 import User from '@/models/User'
+import Invoice from '@/models/Invoice'
+import { CRMProviderFactory } from '@/lib/crm/factory'
 
 interface HubSpotWebhookEvent {
   eventId: number
@@ -212,6 +214,142 @@ export async function POST(req: Request) {
         company.crmLastSyncAt = new Date()
         await company.save()
         console.log(`[Webhook CRM] Empresa crmId ${crmId} guardada/actualizada.`)
+
+      } else if (
+        subscriptionType.startsWith('invoice.') ||
+        subscriptionType.startsWith('custom_object.') ||
+        subscriptionType.startsWith('customObject.')
+      ) {
+        // --- FLUJO DE FACTURAS (INVOICES) ---
+        if (
+          subscriptionType === 'invoice.deletion' ||
+          subscriptionType === 'custom_object.deletion' ||
+          subscriptionType === 'customObject.deletion'
+        ) {
+          // Buscar factura para obtener el lead y recalcular scoring antes de borrar
+          const invToDelete = await Invoice.findOne({ crmId })
+          if (invToDelete) {
+            const leadId = invToDelete.leadId
+            await Invoice.deleteOne({ crmId })
+            console.log(`[Webhook CRM] Factura crmId ${crmId} eliminada.`)
+
+            // Recalcular scoring del lead asociado
+            const lead = await Lead.findById(leadId)
+            if (lead) {
+              const leadInvoices = await Invoice.find({ leadId: lead._id })
+              const hasOverdue = leadInvoices.some((inv: any) => inv.status === 'OVERDUE')
+              const hasPending = leadInvoices.some((inv: any) => inv.status === 'PENDING')
+              lead.scoring = hasOverdue ? 'D - Deudor' : (hasPending ? 'B - Bueno' : 'A - Excelente')
+              lead.crmSynced = true
+              await lead.save()
+            }
+          }
+          continue
+        }
+
+        let invoice = await Invoice.findOne({ crmId })
+        let leadDoc = null
+
+        const crm = CRMProviderFactory.getProvider()
+
+        if (!invoice) {
+          // Es una nueva factura, buscar su asociación con el contacto (Lead) en HubSpot
+          const leadCrmId = await crm.fetchLeadIdAssociatedWithInvoice(crmId)
+          if (!leadCrmId) {
+            console.warn(`[Webhook CRM] No se encontró contacto asociado en HubSpot para factura crmId ${crmId}`)
+            continue
+          }
+
+          leadDoc = await Lead.findOne({ crmId: leadCrmId })
+          if (!leadDoc) {
+            console.warn(`[Webhook CRM] Lead local no encontrado para leadCrmId ${leadCrmId} de factura crmId ${crmId}`)
+            continue
+          }
+
+          invoice = new Invoice({
+            crmId,
+            leadId: leadDoc._id,
+            userId: leadDoc.userId || defaultUserId,
+            amount: 0,
+            balanceDue: 0,
+            status: 'PENDING',
+            invoiceDate: new Date(),
+            dueDate: new Date(),
+          })
+
+          // Descargar detalles completos para inserción inicial limpia
+          const fullInvoice = await crm.fetchInvoiceById(crmId)
+          if (fullInvoice) {
+            invoice.amount = fullInvoice.amount
+            invoice.balanceDue = fullInvoice.balanceDue ?? (fullInvoice.status === 'PAID' ? 0 : fullInvoice.amount)
+            invoice.status = fullInvoice.status
+            invoice.invoiceDate = new Date(fullInvoice.invoiceDate)
+            invoice.dueDate = new Date(fullInvoice.dueDate)
+            if (fullInvoice.paymentDate) {
+              invoice.paymentDate = new Date(fullInvoice.paymentDate)
+            }
+          }
+        } else {
+          // Cargar el lead asociado para recalcular scoring después
+          leadDoc = await Lead.findById(invoice.leadId)
+        }
+
+        // Aplicar propiedades individuales si vienen en el evento
+        if (event.propertyName && event.propertyValue !== undefined) {
+          const val = event.propertyValue
+          switch (event.propertyName) {
+            case 'hs_amount_billed':
+            case 'amount_billed':
+            case 'hs_total_amount_billed':
+            case 'hs_total_amount':
+            case 'invoice_amount':
+            case 'hs_invoice_amount':
+            case 'amount':
+              invoice.amount = parseFloat(val || '0') || 0
+              break
+            case 'balance_due':
+            case 'hs_balance_due':
+              invoice.balanceDue = parseFloat(val || '0') || 0
+              break
+            case 'hs_invoice_status':
+            case 'invoice_status':
+            case 'status':
+              const statusUpper = val.toUpperCase()
+              if (statusUpper === 'PAID') {
+                invoice.status = 'PAID'
+              } else if (statusUpper === 'OVERDUE') {
+                invoice.status = 'OVERDUE'
+              } else {
+                invoice.status = 'PENDING'
+              }
+              break
+            case 'hs_invoice_date':
+            case 'invoice_date':
+              invoice.invoiceDate = new Date(val)
+              break
+            case 'hs_due_date':
+              invoice.dueDate = new Date(val)
+              break
+            case 'hs_payment_date':
+            case 'payment_date':
+              invoice.paymentDate = val ? new Date(val) : undefined
+              break
+          }
+        }
+
+        await invoice.save()
+        console.log(`[Webhook CRM] Factura crmId ${crmId} guardada/actualizada.`)
+
+        // Recalcular scoring del contacto asociado
+        if (leadDoc) {
+          const leadInvoices = await Invoice.find({ leadId: leadDoc._id })
+          const hasOverdue = leadInvoices.some((inv: any) => inv.status === 'OVERDUE')
+          const hasPending = leadInvoices.some((inv: any) => inv.status === 'PENDING')
+          leadDoc.scoring = hasOverdue ? 'D - Deudor' : (hasPending ? 'B - Bueno' : 'A - Excelente')
+          leadDoc.crmSynced = true
+          await leadDoc.save()
+          console.log(`[Webhook CRM] Scoring de Lead ${leadDoc.crmId} recalculado: ${leadDoc.scoring}`)
+        }
 
       } else if (subscriptionType === 'association.creation') {
         // --- FLUJO DE ASOCIACIONES ---
