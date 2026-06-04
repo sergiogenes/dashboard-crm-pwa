@@ -499,7 +499,7 @@ export class HubSpotProvider implements ICRMProvider {
       return invoices
     } catch (err) {
       console.error(`[HubSpot Provider] Error al obtener facturas para el contacto ${leadCrmId}:`, err)
-      return []
+      throw err
     }
   }
 
@@ -639,7 +639,7 @@ export class HubSpotProvider implements ICRMProvider {
       return activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     } catch (err) {
       console.error(`[HubSpot Provider] Error al obtener actividades para el contacto ${leadCrmId}:`, err)
-      return []
+      throw err
     }
   }
 
@@ -835,7 +835,100 @@ export class HubSpotProvider implements ICRMProvider {
       return deals
     } catch (err) {
       console.error(`[HubSpot Provider] Error en fetchDealsByLead para lead ${leadCrmId}:`, err)
-      return []
+      throw err
+    }
+  }
+
+  async fetchInvoiceById(invoiceCrmId: string): Promise<CRMInvoice | null> {
+    const objectTypeId = process.env.HUBSPOT_INVOICE_OBJECT_TYPE_ID
+    if (!objectTypeId) {
+      console.warn('[HubSpot Provider] HUBSPOT_INVOICE_OBJECT_TYPE_ID no configurado.')
+      return null
+    }
+
+    try {
+      const propertiesQuery = [
+        'hs_amount_billed', 'amount_billed', 'balance_due', 'hs_total_amount_billed', 'hs_balance_due', 'hs_total_amount', 'invoice_amount', 'hs_invoice_amount', 'amount',
+        'hs_invoice_status', 'invoice_status', 'status',
+        'hs_invoice_date', 'invoice_date',
+        'hs_due_date', 'due_date',
+        'hs_payment_date', 'payment_date',
+        'hs_invoice_number'
+      ].join(',')
+
+      interface HubSpotCustomObjectResponse {
+        id: string
+        properties: Record<string, string | undefined>
+      }
+
+      const invDetail = await this.request<HubSpotCustomObjectResponse>(
+        `/${objectTypeId}/${invoiceCrmId}?properties=${propertiesQuery}`,
+        { method: 'GET' }
+      )
+
+      if (!invDetail || !invDetail.properties) return null
+
+      const props = invDetail.properties
+      const amountRaw = props.hs_amount_billed || props.amount_billed || props.hs_total_amount_billed || props.hs_total_amount || props.invoice_amount || props.hs_invoice_amount || props.amount || '0'
+      const statusRaw = props.hs_invoice_status || props.invoice_status || props.status || 'PENDING'
+      let normalizedStatus: 'PAID' | 'PENDING' | 'OVERDUE' = 'PENDING'
+      const statusUpper = statusRaw.toUpperCase()
+
+      if (statusUpper === 'PAID') {
+        normalizedStatus = 'PAID'
+      } else if (statusUpper === 'OVERDUE') {
+        normalizedStatus = 'OVERDUE'
+      }
+
+      const balanceDueRaw = props.balance_due || props.hs_balance_due || (normalizedStatus === 'PAID' ? '0' : amountRaw)
+      const invoiceDateRaw = props.hs_invoice_date || props.invoice_date
+      const dueDateRaw = props.hs_due_date || props.due_date
+      const paymentDateRaw = props.hs_payment_date || props.payment_date
+      const invoiceNumber = props.hs_invoice_number || invDetail.id
+
+      return {
+        crmId: invoiceNumber,
+        amount: parseFloat(amountRaw || '0') || 0,
+        balanceDue: parseFloat(balanceDueRaw || '0') || 0,
+        status: normalizedStatus,
+        invoiceDate: invoiceDateRaw || new Date().toISOString(),
+        dueDate: dueDateRaw || new Date().toISOString(),
+        paymentDate: paymentDateRaw || undefined
+      }
+    } catch (err) {
+      console.error(`[HubSpot Provider] Error al obtener factura individual ${invoiceCrmId}:`, err)
+      return null
+    }
+  }
+
+  async fetchLeadIdAssociatedWithInvoice(invoiceCrmId: string): Promise<string | null> {
+    const objectTypeId = process.env.HUBSPOT_INVOICE_OBJECT_TYPE_ID
+    if (!objectTypeId) {
+      console.warn('[HubSpot Provider] HUBSPOT_INVOICE_OBJECT_TYPE_ID no configurado.')
+      return null
+    }
+
+    try {
+      interface HubSpotAssociation {
+        id: string
+        type: string
+      }
+      interface HubSpotAssociationsResponse {
+        results: HubSpotAssociation[]
+      }
+
+      const assocResult = await this.request<HubSpotAssociationsResponse>(
+        `/${objectTypeId}/${invoiceCrmId}/associations/contacts`,
+        { method: 'GET' }
+      )
+
+      if (assocResult.results && assocResult.results.length > 0) {
+        return assocResult.results[0].id
+      }
+      return null
+    } catch (err) {
+      console.error(`[HubSpot Provider] Error al obtener contactos asociados para la factura ${invoiceCrmId}:`, err)
+      return null
     }
   }
 }

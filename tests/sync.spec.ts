@@ -60,7 +60,7 @@ async function loginWithMfa(page: any, email: string) {
   await expect(page.getByRole('heading', { name: 'Verificación de Seguridad' })).toBeVisible()
 
   // Buscar el secreto MFA del usuario en MongoDB
-  const user = await mongoose.connection.db.collection('users').findOne({ email: email.toLowerCase() })
+  const user = await mongoose.connection.db!.collection('users').findOne({ email: email.toLowerCase() })
   if (!user || !user.twoFactorSecret) {
     throw new Error(`No se encontró Two Factor Secret para el usuario ${email}`)
   }
@@ -201,7 +201,7 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
   // 7. Verificar persistencia física y metadatos de sincronización en MongoDB (con reintentos para dar tiempo al background sync)
   let dbCompany = null
   for (let i = 0; i < 10; i++) {
-    dbCompany = await mongoose.connection.db.collection('companies').findOne({ name: testCompany })
+    dbCompany = await mongoose.connection.db!.collection('companies').findOne({ name: testCompany })
     if (dbCompany && dbCompany.crmSynced === true) {
       break
     }
@@ -213,7 +213,7 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
 
   let dbLead = null
   for (let i = 0; i < 10; i++) {
-    dbLead = await mongoose.connection.db.collection('leads').findOne({ email: 'jane.doe@example.com' })
+    dbLead = await mongoose.connection.db!.collection('leads').findOne({ email: 'jane.doe@example.com' })
     if (dbLead && dbLead.crmSynced === true) {
       break
     }
