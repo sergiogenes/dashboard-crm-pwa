@@ -787,7 +787,7 @@ async function syncActivitiesForLead(
               },
               $set: {
                 type: act.type,
-                title: act.title,
+                title: (existingAct && existingAct.type === 'WHATSAPP') ? existingAct.title : act.title,
                 body: act.body,
                 timestamp: new Date(act.timestamp),
                 reminderDate: act.reminderDate

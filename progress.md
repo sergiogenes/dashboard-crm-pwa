@@ -287,3 +287,40 @@ _Última actualización: 2026-06-03_
 - **Visualización en UI Desktop y Móvil**:
   - **Tabla Desktop**: Incorporada una columna nueva **Estado** con chips coloreados estilizados siguiendo la paleta premium (Nuevo en azul, En Proceso en amarillo, Aprobado en verde, Rechazado en rojo).
   - **Vista Móvil**: Agregado el badge de estado directamente al lado del nombre de la empresa asociada en el pie de cada tarjeta de contacto móvil.
+
+## Fases del 17 de junio de 2026 (Integración de WhatsApp con Infobip y HubSpot)
+
+- **Capa de Persistencia y Modelos**:
+  - Modificado el esquema Mongoose `Activity.ts` y la interfaz de IndexedDB local `LocalActivity` en `src/lib/db.ts` para soportar el nuevo tipo de actividad `'WHATSAPP'`.
+  - Actualizada la interfaz de comunicación `CRMActivity` en `src/lib/crm/interface.ts` con soporte para `'WHATSAPP'`.
+- **Capa de Mensajería Desacoplada (Messaging Layer)**:
+  - Creado el contrato unificado `IMessagingProvider` en `src/lib/messaging/interface.ts` que permite el envío abstracto de mensajes y plantillas de WhatsApp.
+  - Creada la factoría `MessagingProviderFactory` en `src/lib/messaging/factory.ts` para inyectar dinámicamente el proveedor activo basado en la variable de entorno `NEXT_PUBLIC_MESSAGING_PROVIDER`.
+  - Creado el proveedor simulado `MockMessagingProvider` en `src/lib/messaging/providers/mock.ts` para pruebas y desarrollo ágil offline.
+  - Creado el proveedor real `InfobipMessagingProvider` en `src/lib/messaging/providers/infobip.ts` consumiendo los endpoints `/whatsapp/1/message/text` y `/whatsapp/1/message/template` de la API de Infobip.
+- **Mapeo y Sincronización con HubSpot**:
+  - Modificado `src/lib/crm/hubspot.ts` para que `fetchActivitiesByLead` descargue los objetos de tipo `communication` de HubSpot con tipo de canal WhatsApp e incorpore estos mensajes al timeline local.
+  - Modificada la creación de actividades `createActivity` en `hubspot.ts` para que, cuando el tipo de actividad sea `'WHATSAPP'`, cree y registre el objeto de comunicación correspondiente en la nube de HubSpot asociándolo mediante la relación por defecto `81` (Communication to Contact).
+- **Webhook de Respuestas de WhatsApp en Tiempo Real**:
+  - Creado el endpoint receptor de webhooks `src/app/api/webhooks/whatsapp/route.ts` que recibe notificaciones de mensajes entrantes de Infobip.
+  - Implementado un algoritmo de comparación de teléfonos flexible (por sufijo `endsWith` con números limpios de caracteres especiales) para enlazar de forma resiliente el remitente con los Leads de la base de datos local y guardar el mensaje en MongoDB.
+- **Interfaz de Usuario y Envío desde el Dashboard**:
+  - Creada la Server Action `sendWhatsAppMessage` en `src/app/actions/whatsapp.ts` para despachar mensajes a través del proveedor configurado e insertarlos reactivamente en IndexedDB.
+  - Modificado `contacts/page.tsx` para incorporar el soporte visual de WhatsApp (icono `MessageCircle` con color esmeralda) en el timeline del contacto.
+  - Refactorizado el formulario de actividades en el Drawer de contactos para habilitar la opción de tipo "WhatsApp". Si se selecciona, el formulario oculta condicionalmente los campos innecesarios (Título y Recordatorios), habilita el botón contextual "Enviar WhatsApp" (con el icono `Send`), y despacha el mensaje llamando a la Server Action de forma instantánea.
+  - **Selector Dinámico de Plantillas y Corriente de Chat**:
+    - Implementado un selector de plantillas homologadas (`WHATSAPP_TEMPLATES`) que se activa condicionalmente cuando la ventana de 24 horas está cerrada (`wsActive === false`).
+    - Diseñado un cargador de variables de plantilla que pre-llena la primera variable (`{{1}}`) con el nombre del lead de forma automática y muestra una vista previa del mensaje en tiempo real.
+    - Movido el estado y cálculo de la ventana de 24 horas (`wsActive` y `wsText`) al cuerpo del componente principal para que sea compartido y evaluado correctamente tanto al enviar el mensaje como en el formulario.
+    - Eliminados los bloques duplicados de sintaxis obsoleta en `contacts/page.tsx` para resolver errores de compilación JSX.
+
+## Fases del 17 de junio de 2026 (Corrección de Sincronización de WhatsApp, Ventana de 24 hs e Indicador Reactivo)
+
+- **Preservación del Sentido del Mensaje en HubSpot y MongoDB (Inbound/Outbound)**:
+  - Modificado [src/lib/crm/hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts) para enviar `hs_communication_logged_from: 'CRM'` de manera obligatoria en todas las comunicaciones de WhatsApp, cumpliendo con las reglas estrictas de validación HTTP 400 del CRM.
+  - Modificado [src/app/actions/sync.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/actions/sync.ts) en `syncActivitiesForLead` para que, al sincronizar desde HubSpot, si la actividad de WhatsApp ya existe localmente en MongoDB, se preserve su título original (`existingAct.title`) en lugar de sobrescribirse por el mapeo genérico del CRM. Esto blinda permanentemente el estado de ventana activa.
+- **Reloj Reactivo y Contadores en Tiempo Real**:
+  - Incorporado el estado `nowTime` y un timer `setInterval` de 10 segundos en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx). Esto actualiza todos los contadores de la ventana de chat libre de WhatsApp en tiempo real sin requerir interacción o recargas manuales.
+- **Indicador Visual de Ventana Activa en Lista de Contactos**:
+  - Implementada la función `getWhatsAppWindowStatus(lead)` en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx) para evaluar reactivamente si la ventana de 24 horas está activa a partir del último mensaje entrante del contacto (incluyendo soporte resiliente para leads ajenos buscando en `foreignDetails`).
+  - Añadido un badge visual interactivo debajo del número de teléfono en el listado de contactos (un círculo verde parpadeante con el tiempo restante, o un círculo gris con la etiqueta "Expirada" si finalizó) tanto en la vista de escritorio (tabla) como en la móvil (tarjetas).

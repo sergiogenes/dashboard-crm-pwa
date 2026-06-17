@@ -5,7 +5,7 @@ export interface IActivitySchema extends Document {
   tempId?: string
   leadId: mongoose.Types.ObjectId
   userId: string
-  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
+  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'
   title: string
   body: string
   timestamp: Date
@@ -25,7 +25,7 @@ const ActivitySchema = new Schema<IActivitySchema>(
     userId: { type: String, required: true },
     type: {
       type: String,
-      enum: ['NOTE', 'CALL', 'MEETING', 'EMAIL', 'TASK'],
+      enum: ['NOTE', 'CALL', 'MEETING', 'EMAIL', 'TASK', 'WHATSAPP'],
       default: 'NOTE',
       required: true,
     },

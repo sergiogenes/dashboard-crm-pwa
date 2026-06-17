@@ -27,7 +27,7 @@ export interface CRMInvoice {
 
 export interface CRMActivity {
   crmId?: string
-  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
+  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'
   title: string
   body: string
   timestamp: string // Formato fecha ISO

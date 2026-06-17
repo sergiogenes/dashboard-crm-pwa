@@ -782,6 +782,71 @@ export class HubSpotProvider implements ICRMProvider {
         )
       }
 
+      // 3. Obtener y procesar comunicaciones (WhatsApp / SMS) de HubSpot
+      try {
+        const commAssocResult = await this.request<HubSpotAssociationsResponse>(
+          `/contacts/${leadCrmId}/associations/communications`,
+          { method: 'GET' },
+        )
+        const commIds = commAssocResult.results?.map((r) => r.id) || []
+        for (const commId of commIds) {
+          try {
+            interface HubSpotCommunicationResponse {
+              id: string
+              properties: {
+                hs_communication_channel_type?: string
+                hs_communication_logged_from?: string
+                hs_communication_body?: string
+                hs_timestamp?: string
+              }
+            }
+            const commDetail = await this.request<HubSpotCommunicationResponse>(
+              `/communications/${commId}?properties=hs_communication_channel_type,hs_communication_logged_from,hs_communication_body,hs_timestamp`,
+              { method: 'GET' },
+            )
+
+            if (commDetail && commDetail.properties) {
+              const props = commDetail.properties
+              const channel = props.hs_communication_channel_type || 'WHATS_APP'
+              const loggedFrom = props.hs_communication_logged_from || ''
+              const body = props.hs_communication_body || ''
+              const timestamp = props.hs_timestamp || new Date().toISOString()
+
+              if (channel === 'WHATS_APP' || channel === 'SMS') {
+                const isOutbound = loggedFrom === 'CRM'
+                activities.push({
+                  crmId: commDetail.id,
+                  type: 'WHATSAPP',
+                  title: channel === 'WHATS_APP'
+                    ? (isOutbound ? 'WhatsApp Enviado' : 'WhatsApp Recibido')
+                    : 'Mensaje SMS',
+                  body: body.replace(/<[^>]*>/g, '').trim(),
+                  timestamp,
+                  reminderDate: undefined,
+                  reminderRead: false,
+                })
+              }
+            }
+          } catch (singleCommErr: any) {
+            if (singleCommErr.message?.includes('404')) {
+              console.log(
+                `[HubSpot Provider] Comunicación huérfana o de otro canal con ID ${commId} saltada (404)`,
+              )
+            } else {
+              console.warn(
+                `[HubSpot Provider] Error al obtener detalles de comunicación ${commId}:`,
+                singleCommErr,
+              )
+            }
+          }
+        }
+      } catch (commAssocErr) {
+        console.warn(
+          '[HubSpot Provider] Error al obtener asociaciones de comunicaciones:',
+          commAssocErr,
+        )
+      }
+
       return activities.sort(
         (a, b) =>
           new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
@@ -845,6 +910,42 @@ export class HubSpotProvider implements ICRMProvider {
           }),
         })
         return taskResponse.id
+      }
+    } else if (activity.type === 'WHATSAPP') {
+      if (activity.crmId) {
+        await this.request(`/communications/${activity.crmId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            properties: {
+              hs_communication_body: activity.body,
+            },
+          }),
+        })
+        return activity.crmId
+      } else {
+        const commResponse = await this.request<{ id: string }>('/communications', {
+          method: 'POST',
+          body: JSON.stringify({
+            properties: {
+              hs_communication_channel_type: 'WHATS_APP',
+              hs_communication_logged_from: 'CRM',
+              hs_communication_body: activity.body,
+              hs_timestamp: activity.timestamp || new Date().toISOString(),
+            },
+            associations: [
+              {
+                to: { id: leadCrmId },
+                types: [
+                  {
+                    associationCategory: 'HUBSPOT_DEFINED',
+                    associationTypeId: 81, // Communication to Contact
+                  },
+                ],
+              },
+            ],
+          }),
+        })
+        return commResponse.id
       }
     } else {
       const typeLabels: Record<string, string> = {

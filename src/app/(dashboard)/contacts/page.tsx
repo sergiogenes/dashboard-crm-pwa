@@ -12,6 +12,7 @@ import {
 } from '@/lib/db'
 import LeadFormModal from '@/components/LeadFormModal'
 import { searchGlobalLeads, getGlobalLeadDetails } from '@/app/actions/sync'
+import { sendWhatsAppMessage, getWhatsAppTemplates } from '@/app/actions/whatsapp'
 import {
   Users,
   Plus,
@@ -27,6 +28,7 @@ import {
   ShieldAlert,
   Calendar,
   Clock,
+  MessageCircle,
   MessageSquare,
   Phone,
   Mail,
@@ -34,6 +36,7 @@ import {
   Bell,
   Wallet,
   Loader2,
+  Send,
 } from 'lucide-react'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
@@ -45,6 +48,16 @@ const getTomorrowString = () => {
   const day = String(tomorrow.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+interface WhatsAppTemplate {
+  name: string
+  label: string
+  language: string
+  text: string
+  placeholders: string[]
+}
+
+// Las plantillas se cargan dinámicamente desde Infobip/Mock mediante la Server Action getWhatsAppTemplates
 
 export default function ContactsPage() {
   const { data: session, status } = useSession()
@@ -76,7 +89,7 @@ export default function ContactsPage() {
 
   // Estado del Formulario de Actividad
   const [activityType, setActivityType] = useState<
-    'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
+    'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'
   >('NOTE')
   const [activityTitle, setActivityTitle] = useState('')
   const [activityBody, setActivityBody] = useState('')
@@ -87,6 +100,39 @@ export default function ContactsPage() {
     string | null
   >(null)
   const [isSubmittingActivity, setIsSubmittingActivity] = useState(false)
+
+  // Estado para plantillas de WhatsApp
+  const [whatsappTemplates, setWhatsappTemplates] = useState<WhatsAppTemplate[]>([])
+  const [selectedTemplateName, setSelectedTemplateName] = useState('')
+  const [placeholderValues, setPlaceholderValues] = useState<string[]>([])
+
+  // Reloj de control reactivo para actualizar los contadores y estados de ventana en tiempo real
+  const [nowTime, setNowTime] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTime(Date.now())
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Cargar plantillas dinámicas desde Infobip / Mock al iniciar
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        const res = await getWhatsAppTemplates()
+        if (res.success && res.templates) {
+          setWhatsappTemplates(res.templates)
+          // Pre-seleccionar la primera plantilla si existe
+          if (res.templates.length > 0) {
+            setSelectedTemplateName(res.templates[0].name)
+          }
+        }
+      } catch (err) {
+        console.error('Error al cargar plantillas de WhatsApp:', err)
+      }
+    }
+    loadTemplates()
+  }, [])
 
   // Filtros y Búsqueda
   const [searchTerm, setSearchTerm] = useState('')
@@ -190,6 +236,20 @@ export default function ContactsPage() {
     deals: LocalDeal[]
   } | null>(null)
   const [isLoadingForeign, setIsLoadingForeign] = useState(false)
+
+  const activeTemplate = whatsappTemplates.find(t => t.name === selectedTemplateName) || whatsappTemplates[0] || { name: '', label: '', language: 'es', text: '', placeholders: [] }
+
+  useEffect(() => {
+    if (selectedLeadForInvoice) {
+      const vals = activeTemplate.placeholders.map((ph, idx) => {
+        if (idx === 0) {
+          return selectedLeadForInvoice.firstName || ''
+        }
+        return ''
+      })
+      setPlaceholderValues(vals)
+    }
+  }, [selectedTemplateName, selectedLeadForInvoice, activeTemplate.placeholders])
 
   const isForeign = selectedLeadForInvoice
     ? selectedLeadForInvoice.userId !== userId
@@ -312,11 +372,70 @@ export default function ContactsPage() {
     e.preventDefault()
     if (!userId || !selectedLeadId || selectedLeadForInvoice?.userId !== userId)
       return
-    if (!activityTitle.trim() || !activityBody.trim()) return
+
+    const titleVal = (activityType as string) === 'WHATSAPP' ? 'Mensaje de WhatsApp' : activityTitle.trim()
+    let bodyVal = activityBody.trim()
+
+    if ((activityType as string) === 'WHATSAPP') {
+      const activeTemplate = whatsappTemplates.find(t => t.name === selectedTemplateName) || whatsappTemplates[0] || { name: '', label: '', language: 'es', text: '', placeholders: [] }
+      if (!wsActive) {
+        // En modo plantilla, el body es el texto con los placeholders reemplazados
+        let filledText = activeTemplate.text
+        activeTemplate.placeholders.forEach((ph, idx) => {
+          const val = placeholderValues[idx] || ''
+          filledText = filledText.replace(`{{${idx + 1}}}`, val)
+        })
+        bodyVal = filledText
+      }
+    }
+
+    if (!titleVal || !bodyVal) return
 
     setIsSubmittingActivity(true)
     try {
       const now = Date.now()
+
+      if ((activityType as string) === 'WHATSAPP') {
+        let result
+        if (wsActive) {
+          result = await sendWhatsAppMessage(selectedLeadId, bodyVal)
+        } else {
+          const activeTemplate = whatsappTemplates.find(t => t.name === selectedTemplateName) || whatsappTemplates[0] || { name: '', label: '', language: 'es', text: '', placeholders: [] }
+          result = await sendWhatsAppMessage(selectedLeadId, bodyVal, {
+            templateName: activeTemplate.name,
+            language: activeTemplate.language,
+            placeholders: placeholderValues,
+          })
+        }
+
+        if (!result.success) {
+          alert(`Error al enviar WhatsApp: ${result.error}`)
+          setIsSubmittingActivity(false)
+          return
+        }
+
+        if (result.activity) {
+          const localAct: LocalActivity = {
+            id: result.activity.id,
+            tempId: result.activity.tempId,
+            leadId: result.activity.leadId,
+            userId: result.activity.userId,
+            type: 'WHATSAPP',
+            title: result.activity.title,
+            body: result.activity.body,
+            timestamp: result.activity.timestamp,
+            synced: false, // El motor saliente consolidará crmSynced: true
+            createdAt: now,
+            updatedAt: now,
+          }
+          await localDb.activities.put(localAct)
+        }
+
+        setActivityBody('')
+        setIsSubmittingActivity(false)
+        return
+      }
+
       let reminderTimestamp: number | undefined = undefined
       if (showReminderPicker && reminderDateOnly) {
         const timeVal = reminderTimeOnly || '08:00'
@@ -332,8 +451,8 @@ export default function ContactsPage() {
         leadId: selectedLeadId,
         userId,
         type: activityType,
-        title: activityTitle.trim(),
-        body: activityBody.trim(),
+        title: titleVal,
+        body: bodyVal,
         timestamp: now,
         synced: false,
         createdAt: now,
@@ -348,8 +467,8 @@ export default function ContactsPage() {
           leadId: selectedLeadId,
           userId,
           type: 'TASK',
-          title: `Recordatorio: ${activityTitle.trim()}`,
-          body: activityBody.trim(),
+          title: `Recordatorio: ${titleVal}`,
+          body: bodyVal,
           timestamp: now,
           reminderDate: reminderTimestamp,
           synced: false,
@@ -655,6 +774,13 @@ export default function ContactsPage() {
           border: 'border-rose-500/20',
           text: 'text-rose-400',
         }
+      case 'WHATSAPP':
+        return {
+          icon: MessageCircle,
+          bg: 'bg-emerald-500/10',
+          border: 'border-emerald-500/20',
+          text: 'text-emerald-400',
+        }
       case 'NOTE':
       default:
         return {
@@ -848,6 +974,67 @@ export default function ContactsPage() {
     : activities || []
   const dealsToShow = isForeign ? foreignDetails?.deals || [] : deals || []
 
+  // Calcular si la ventana de WhatsApp está activa (24 horas desde el último mensaje recibido)
+  const wsIncoming = [...(activitiesToShow || [])]
+    .filter(act => act.type === 'WHATSAPP' && act.title === 'WhatsApp Recibido')
+    .sort((a, b) => b.timestamp - a.timestamp)[0]
+
+  let wsActive = false
+  let wsText = 'Ventana Cerrada (Requiere plantilla para iniciar)'
+
+  if (wsIncoming) {
+    const timeElapsed = nowTime - wsIncoming.timestamp
+    const twentyFourHours = 24 * 60 * 60 * 1000
+    if (timeElapsed < twentyFourHours) {
+      wsActive = true
+      const timeLeft = twentyFourHours - timeElapsed
+      const hoursLeft = Math.floor(timeLeft / (3600 * 1000))
+      const minutesLeft = Math.floor((timeLeft % (3600 * 1000)) / 60000)
+      wsText = `Chat Libre Activo (Quedan ${hoursLeft}h ${minutesLeft}m)`
+    } else {
+      const hoursAgo = Math.floor(timeElapsed / (3600 * 1000))
+      wsText = `Ventana Cerrada (Expiró hace ${hoursAgo - 24}h. Requiere plantilla)`
+    }
+  }
+
+  // Calcular el estado de la ventana de WhatsApp para cualquier lead en el listado de forma reactiva
+  const getWhatsAppWindowStatus = (lead: LocalLead) => {
+    // Si es un lead ajeno seleccionado en el Drawer, buscar sus actividades en foreignDetails
+    const isLeadForeign = lead.userId !== userId
+    const sourceActivities = (isLeadForeign && selectedLeadForInvoice?.id === lead.id)
+      ? (foreignDetails?.activities || [])
+      : (allActivities || [])
+
+    const leadActivities = sourceActivities.filter(
+      (a) =>
+        (a.leadId === lead.id || (lead.tempId && a.leadId === lead.tempId)) &&
+        a.type === 'WHATSAPP' &&
+        a.title === 'WhatsApp Recibido'
+    )
+
+    if (leadActivities.length === 0) return null
+
+    const sorted = [...leadActivities].sort((a, b) => b.timestamp - a.timestamp)
+    const latestIncoming = sorted[0]
+    const timeElapsed = nowTime - latestIncoming.timestamp
+    const twentyFourHours = 24 * 60 * 60 * 1000
+
+    if (timeElapsed < twentyFourHours) {
+      const timeLeft = twentyFourHours - timeElapsed
+      const hoursLeft = Math.floor(timeLeft / (3600 * 1000))
+      const minutesLeft = Math.floor((timeLeft % (3600 * 1000)) / 60000)
+      return {
+        active: true,
+        text: `Restan ${hoursLeft}h ${minutesLeft}m`,
+      }
+    }
+
+    return {
+      active: false,
+      text: 'Expirada',
+    }
+  }
+
   // Calcular métricas rápidas del Historial de Facturas
   const totalInvoicesAmount =
     invoicesToShow?.reduce((sum, inv) => sum + inv.amount, 0) || 0
@@ -1012,7 +1199,27 @@ export default function ContactsPage() {
                       </td>
                       <td className="px-6 py-4 text-slate-300">{lead.email}</td>
                       <td className="px-6 py-4 text-slate-400">
-                        {lead.phone || '-'}
+                        <div>{lead.phone || '-'}</div>
+                        {(() => {
+                          const status = getWhatsAppWindowStatus(lead)
+                          if (!status) return null
+                          return (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <span className={`h-1.5 w-1.5 rounded-full ${
+                                status.active 
+                                  ? 'bg-emerald-500 animate-pulse' 
+                                  : 'bg-slate-600'
+                              }`} />
+                              <span className={`text-[10px] font-semibold tracking-wide ${
+                                status.active 
+                                  ? 'text-emerald-400' 
+                                  : 'text-slate-500'
+                              }`}>
+                                WA: {status.text}
+                              </span>
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1 rounded border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs text-slate-300">
@@ -1133,9 +1340,31 @@ export default function ContactsPage() {
                       </p>
                     )}
                     {lead.phone && (
-                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                        {lead.phone}
-                      </p>
+                      <div>
+                        <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                          {lead.phone}
+                        </p>
+                        {(() => {
+                          const status = getWhatsAppWindowStatus(lead)
+                          if (!status) return null
+                          return (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <span className={`h-1.5 w-1.5 rounded-full ${
+                                status.active 
+                                  ? 'bg-emerald-500 animate-pulse' 
+                                  : 'bg-slate-600'
+                              }`} />
+                              <span className={`text-[10px] font-semibold tracking-wide ${
+                                status.active 
+                                  ? 'text-emerald-400' 
+                                  : 'text-slate-500'
+                              }`}>
+                                WA: {status.text}
+                              </span>
+                            </div>
+                          )
+                        })()}
+                      </div>
                     )}
                   </div>
                   <div
@@ -1462,7 +1691,7 @@ export default function ContactsPage() {
                         Registrar Actividad
                       </h4>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className={activityType === 'WHATSAPP' ? "block" : "grid grid-cols-2 gap-3"}>
                         <div>
                           <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
                             Tipo
@@ -1479,163 +1708,270 @@ export default function ContactsPage() {
                             <option value="MEETING">Reunión</option>
                             <option value="EMAIL">Correo</option>
                             <option value="TASK">Tarea</option>
+                            <option value="WHATSAPP">WhatsApp</option>
                           </select>
                         </div>
-                        <div>
-                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            Título
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Ej. Llamada de seguimiento"
-                            value={activityTitle}
-                            onChange={(e) => setActivityTitle(e.target.value)}
-                            required
-                            className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          Descripción
-                        </label>
-                        <textarea
-                          placeholder="Escribe el resumen o notas de la actividad..."
-                          value={activityBody}
-                          onChange={(e) => setActivityBody(e.target.value)}
-                          required
-                          rows={3}
-                          className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="enable-reminder"
-                            checked={showReminderPicker}
-                            onChange={(e) => {
-                              setShowReminderPicker(e.target.checked)
-                              if (e.target.checked) {
-                                setReminderDateOnly(getTomorrowString())
-                                setReminderTimeOnly('08:00')
-                              } else {
-                                setReminderDateOnly('')
-                                setReminderTimeOnly('')
-                              }
-                            }}
-                            className="h-3.5 w-3.5 cursor-pointer rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500"
-                          />
-                          <label
-                            htmlFor="enable-reminder"
-                            className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-slate-400"
-                          >
-                            Programar recordatorio
-                          </label>
-                        </div>
-                        {showReminderPicker && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                              <label className="text-[9px] font-bold uppercase text-slate-500">
-                                Fecha
-                              </label>
-                              <div className="relative">
-                                <button
-                                  type="button"
-                                  tabIndex={-1}
-                                  onClick={() => {
-                                    if (
-                                      typeof dateInputRef.current
-                                        ?.showPicker === 'function'
-                                    ) {
-                                      try {
-                                        dateInputRef.current.showPicker()
-                                      } catch (_) {}
-                                    }
-                                  }}
-                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
-                                >
-                                  <Calendar className="h-3.5 w-3.5" />
-                                </button>
-                                <input
-                                  ref={dateInputRef}
-                                  type="date"
-                                  value={reminderDateOnly}
-                                  onChange={(e) =>
-                                    setReminderDateOnly(e.target.value)
-                                  }
-                                  onClick={(e) => {
-                                    if (
-                                      typeof e.currentTarget.showPicker ===
-                                      'function'
-                                    ) {
-                                      try {
-                                        e.currentTarget.showPicker()
-                                      } catch (_) {}
-                                    }
-                                  }}
-                                  required={showReminderPicker}
-                                  className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[9px] font-bold uppercase text-slate-500">
-                                Hora
-                              </label>
-                              <div className="relative">
-                                <button
-                                  type="button"
-                                  tabIndex={-1}
-                                  onClick={() => {
-                                    if (
-                                      typeof timeInputRef.current
-                                        ?.showPicker === 'function'
-                                    ) {
-                                      try {
-                                        timeInputRef.current.showPicker()
-                                      } catch (_) {}
-                                    }
-                                  }}
-                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
-                                >
-                                  <Clock className="h-3.5 w-3.5" />
-                                </button>
-                                <input
-                                  ref={timeInputRef}
-                                  type="time"
-                                  value={reminderTimeOnly}
-                                  onChange={(e) =>
-                                    setReminderTimeOnly(e.target.value)
-                                  }
-                                  onClick={(e) => {
-                                    if (
-                                      typeof e.currentTarget.showPicker ===
-                                      'function'
-                                    ) {
-                                      try {
-                                        e.currentTarget.showPicker()
-                                      } catch (_) {}
-                                    }
-                                  }}
-                                  required={showReminderPicker}
-                                  className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                                />
-                              </div>
-                            </div>
+                        {activityType !== 'WHATSAPP' && (
+                          <div>
+                            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Título
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ej. Llamada de seguimiento"
+                              value={activityTitle}
+                              onChange={(e) => setActivityTitle(e.target.value)}
+                              required
+                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                            />
                           </div>
                         )}
                       </div>
 
+                      {/* Campos dinámicos si es WhatsApp */}
+                      {activityType === 'WHATSAPP' ? (
+                        <div className="space-y-4">
+                          {/* Banner de estado de la ventana de sesión de WhatsApp */}
+                          <div className={`rounded-lg p-2.5 text-center text-xs font-semibold border ${
+                            wsActive 
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                              : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                          }`}>
+                            {wsText}
+                          </div>
+
+                          {!wsActive ? (
+                            // Modo plantilla si la ventana está cerrada
+                            <div className="space-y-3">
+                              <div>
+                                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                  Plantilla Homologada
+                                </label>
+                                <select
+                                  value={selectedTemplateName}
+                                  onChange={(e) => setSelectedTemplateName(e.target.value)}
+                                  className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                                >
+                                  {whatsappTemplates.map((tmpl) => (
+                                    <option key={tmpl.name} value={tmpl.name}>
+                                      {tmpl.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Inputs dinámicos para las variables de plantilla */}
+                              {activeTemplate.placeholders.map((ph, idx) => (
+                                <div key={idx}>
+                                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                    Variable {`{{${idx + 1}}}`} ({ph})
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={placeholderValues[idx] || ''}
+                                    onChange={(e) => {
+                                      const newVals = [...placeholderValues]
+                                      newVals[idx] = e.target.value
+                                      setPlaceholderValues(newVals)
+                                    }}
+                                    required
+                                    className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                                  />
+                                </div>
+                              ))}
+
+                              {/* Vista previa del mensaje */}
+                              <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+                                <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                  Vista Previa del Mensaje (Solo Lectura)
+                                </span>
+                                <p className="text-xs text-slate-300 whitespace-pre-wrap">
+                                  {(() => {
+                                    let preview = activeTemplate.text
+                                    activeTemplate.placeholders.forEach((ph, idx) => {
+                                      const val = placeholderValues[idx] || `{{${idx + 1}}}`
+                                      preview = preview.replace(`{{${idx + 1}}}`, val)
+                                    })
+                                    return preview
+                                  })()}
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            // Modo Texto Libre si la ventana de 24 hs está activa
+                            <div>
+                              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Mensaje de WhatsApp (Texto Libre)
+                              </label>
+                              <textarea
+                                placeholder="Escribe un mensaje de WhatsApp libre..."
+                                value={activityBody}
+                                onChange={(e) => setActivityBody(e.target.value)}
+                                required
+                                rows={3}
+                                className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        // Formulario regular para Nota/Llamada/Reunión/Correo/Tarea
+                        <>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Descripción
+                            </label>
+                            <textarea
+                              placeholder="Escribe el resumen o notas de la actividad..."
+                              value={activityBody}
+                              onChange={(e) => setActivityBody(e.target.value)}
+                              required
+                              rows={3}
+                              className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id="enable-reminder"
+                                checked={showReminderPicker}
+                                onChange={(e) => {
+                                  setShowReminderPicker(e.target.checked)
+                                  if (e.target.checked) {
+                                    setReminderDateOnly(getTomorrowString())
+                                    setReminderTimeOnly('08:00')
+                                  } else {
+                                    setReminderDateOnly('')
+                                    setReminderTimeOnly('')
+                                  }
+                                }}
+                                className="h-3.5 w-3.5 cursor-pointer rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500"
+                              />
+                              <label
+                                htmlFor="enable-reminder"
+                                className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                              >
+                                Programar recordatorio
+                              </label>
+                            </div>
+                            {showReminderPicker && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold uppercase text-slate-500">
+                                    Fecha
+                                  </label>
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      tabIndex={-1}
+                                      onClick={() => {
+                                        if (
+                                          typeof dateInputRef.current
+                                            ?.showPicker === 'function'
+                                        ) {
+                                          try {
+                                            dateInputRef.current.showPicker()
+                                          } catch (_) {}
+                                        }
+                                      }}
+                                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
+                                    >
+                                      <Calendar className="h-3.5 w-3.5" />
+                                    </button>
+                                    <input
+                                      ref={dateInputRef}
+                                      type="date"
+                                      value={reminderDateOnly}
+                                      onChange={(e) =>
+                                        setReminderDateOnly(e.target.value)
+                                      }
+                                      onClick={(e) => {
+                                        if (
+                                          typeof e.currentTarget.showPicker ===
+                                          'function'
+                                        ) {
+                                          try {
+                                            e.currentTarget.showPicker()
+                                          } catch (_) {}
+                                        }
+                                      }}
+                                      required={showReminderPicker}
+                                      className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold uppercase text-slate-500">
+                                    Hora
+                                  </label>
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      tabIndex={-1}
+                                      onClick={() => {
+                                        if (
+                                          typeof timeInputRef.current
+                                            ?.showPicker === 'function'
+                                        ) {
+                                          try {
+                                            timeInputRef.current.showPicker()
+                                          } catch (_) {}
+                                        }
+                                      }}
+                                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
+                                    >
+                                      <Clock className="h-3.5 w-3.5" />
+                                    </button>
+                                    <input
+                                      ref={timeInputRef}
+                                      type="time"
+                                      value={reminderTimeOnly}
+                                      onChange={(e) =>
+                                        setReminderTimeOnly(e.target.value)
+                                      }
+                                      onClick={(e) => {
+                                        if (
+                                          typeof e.currentTarget.showPicker ===
+                                          'function'
+                                        ) {
+                                          try {
+                                            e.currentTarget.showPicker()
+                                          } catch (_) {}
+                                        }
+                                      }}
+                                      required={showReminderPicker}
+                                      className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
                       <button
                         type="submit"
                         disabled={isSubmittingActivity}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                        className={`flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${
+                          activityType === 'WHATSAPP'
+                            ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/20'
+                            : 'bg-indigo-500 hover:bg-indigo-600 shadow-lg shadow-indigo-500/20'
+                        }`}
                       >
-                        <Plus className="h-3.5 w-3.5" />
-                        Registrar Actividad
+                        {activityType === 'WHATSAPP' ? (
+                          <>
+                            <Send className="h-3.5 w-3.5" />
+                            Enviar WhatsApp
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-3.5 w-3.5" />
+                            Registrar Actividad
+                          </>
+                        )}
                       </button>
                     </form>
                   ) : (
