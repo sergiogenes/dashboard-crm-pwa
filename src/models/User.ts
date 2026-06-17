@@ -8,7 +8,9 @@ export interface IUserSchema extends Document {
   twoFactorEnabled: boolean
   twoFactorSecret?: string
   twoFactorBackupCodes: string[]
-  role: 'admin' | 'user'
+  roles: ('admin' | 'supervisor' | 'user')[]
+  supervisorId?: string
+  disbursementGoal?: number
   createdAt: Date
   updatedAt: Date
 }
@@ -22,9 +24,12 @@ const UserSchema = new Schema<IUserSchema>(
     twoFactorEnabled: { type: Boolean, default: false, required: true },
     twoFactorSecret: { type: String },
     twoFactorBackupCodes: { type: [String], default: [] },
-    role: { type: String, enum: ['admin', 'user'], default: 'user', required: true },
+    roles: { type: [String], enum: ['admin', 'supervisor', 'user'], default: ['user'], required: true },
+    supervisorId: { type: String, index: true },
+    disbursementGoal: { type: Number, default: 100000 },
   },
   { timestamps: true },
 )
 
-export default mongoose.models.User || mongoose.model<IUserSchema>('User', UserSchema)
+export default mongoose.models.User ||
+  mongoose.model<IUserSchema>('User', UserSchema)

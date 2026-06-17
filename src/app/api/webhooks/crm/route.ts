@@ -41,7 +41,10 @@ export async function POST(req: Request) {
     if (clientSecret) {
       if (!signature && !signatureV3) {
         console.error('[Webhook CRM] Error: Falta cabecera de firma de HubSpot')
-        return NextResponse.json({ error: 'Faltan cabeceras de firma' }, { status: 401 })
+        return NextResponse.json(
+          { error: 'Faltan cabeceras de firma' },
+          { status: 401 },
+        )
       }
 
       // Reconstruir la URL absoluta
@@ -64,47 +67,60 @@ export async function POST(req: Request) {
           .update(sourceStringV3)
           .digest('base64')
 
-        v3Valid = (signatureV3 === expectedSignatureV3)
+        v3Valid = signatureV3 === expectedSignatureV3
         console.log('[Webhook CRM] Diagnóstico V3:', {
           signatureV3,
           expectedSignatureV3,
-          v3Valid
+          v3Valid,
         })
       }
 
       // --- VALIDACIÓN V2 (SHA-256) ---
       if (signature) {
         const sourceStringV2 = clientSecret + method + uri + rawBody
-        const expectedSignatureV2 = crypto.createHash('sha256').update(sourceStringV2).digest('hex')
-        v2Valid = (signature === expectedSignatureV2)
+        const expectedSignatureV2 = crypto
+          .createHash('sha256')
+          .update(sourceStringV2)
+          .digest('hex')
+        v2Valid = signature === expectedSignatureV2
 
         // Fallback V1 (MD5)
         const sourceStringV1 = clientSecret + rawBody
-        const expectedSignatureV1 = crypto.createHash('md5').update(sourceStringV1).digest('hex')
-        v1Valid = (signature === expectedSignatureV1)
+        const expectedSignatureV1 = crypto
+          .createHash('md5')
+          .update(sourceStringV1)
+          .digest('hex')
+        v1Valid = signature === expectedSignatureV1
 
         console.log('[Webhook CRM] Diagnóstico V2/V1:', {
           signature,
           expectedSignatureV2,
           v2Valid,
           expectedSignatureV1,
-          v1Valid
+          v1Valid,
         })
       }
 
       // Validar si al menos un método es exitoso
       if (!v3Valid && !v2Valid && !v1Valid) {
-        console.error('[Webhook CRM] Error: Todas las firmas de HubSpot fallaron la validación.')
-        return NextResponse.json({ error: 'Firma de webhook inválida' }, { status: 401 })
+        console.error(
+          '[Webhook CRM] Error: Todas las firmas de HubSpot fallaron la validación.',
+        )
+        return NextResponse.json(
+          { error: 'Firma de webhook inválida' },
+          { status: 401 },
+        )
       }
 
       console.log('[Webhook CRM] Firma validada exitosamente mediante:', {
         v3: v3Valid,
         v2: v2Valid,
-        v1: v1Valid
+        v1: v1Valid,
       })
     } else {
-      console.warn('[Webhook CRM] Advertencia: HUBSPOT_CLIENT_SECRET no configurado. Procesando webhook sin verificar firma.')
+      console.warn(
+        '[Webhook CRM] Advertencia: HUBSPOT_CLIENT_SECRET no configurado. Procesando webhook sin verificar firma.',
+      )
     }
 
     await dbConnect()
@@ -113,7 +129,9 @@ export async function POST(req: Request) {
 
     // Obtener un usuario de respaldo por si el contacto se creó primero en el CRM y no tiene userId
     const defaultUserDoc = await User.findOne()
-    const defaultUserId = defaultUserDoc ? String(defaultUserDoc._id) : 'system_fallback'
+    const defaultUserId = defaultUserDoc
+      ? String(defaultUserDoc._id)
+      : 'system_fallback'
 
     for (const event of events) {
       const { subscriptionType, objectId } = event
@@ -123,7 +141,9 @@ export async function POST(req: Request) {
         // --- FLUJO DE LEADS (CONTACTOS) ---
         if (subscriptionType === 'contact.deletion') {
           await Lead.deleteOne({ crmId })
-          console.log(`[Webhook CRM] Lead crmId ${crmId} eliminado por acción en CRM.`)
+          console.log(
+            `[Webhook CRM] Lead crmId ${crmId} eliminado por acción en CRM.`,
+          )
           continue
         }
 
@@ -135,7 +155,9 @@ export async function POST(req: Request) {
         }
 
         if (lead && lead.deleted) {
-          console.log(`[Webhook CRM] Ignorando evento para lead crmId ${crmId} marcado como eliminado.`)
+          console.log(
+            `[Webhook CRM] Ignorando evento para lead crmId ${crmId} marcado como eliminado.`,
+          )
           continue
         }
 
@@ -144,7 +166,8 @@ export async function POST(req: Request) {
             crmId,
             firstName: '',
             lastName: '',
-            email: event.propertyName === 'email' ? event.propertyValue || '' : '',
+            email:
+              event.propertyName === 'email' ? event.propertyValue || '' : '',
             userId: defaultUserId,
             crmSynced: true,
             crmLastSyncAt: new Date(),
@@ -166,6 +189,9 @@ export async function POST(req: Request) {
             case 'phone':
               lead.phone = event.propertyValue
               break
+            case 'national_id_number':
+              lead.documentId = event.propertyValue
+              break
           }
         }
 
@@ -173,26 +199,32 @@ export async function POST(req: Request) {
         lead.crmLastSyncAt = new Date()
         await lead.save()
         console.log(`[Webhook CRM] Lead crmId ${crmId} guardado/actualizado.`)
-
       } else if (subscriptionType.startsWith('company.')) {
         // --- FLUJO DE EMPRESAS ---
         if (subscriptionType === 'company.deletion') {
           await Company.deleteOne({ crmId })
-          console.log(`[Webhook CRM] Empresa crmId ${crmId} eliminada por acción en CRM.`)
+          console.log(
+            `[Webhook CRM] Empresa crmId ${crmId} eliminada por acción en CRM.`,
+          )
           continue
         }
 
         let company = await Company.findOne({ crmId })
 
         if (company && company.deleted) {
-          console.log(`[Webhook CRM] Ignorando evento para empresa crmId ${crmId} marcada como eliminada.`)
+          console.log(
+            `[Webhook CRM] Ignorando evento para empresa crmId ${crmId} marcada como eliminada.`,
+          )
           continue
         }
 
         if (!company) {
           company = new Company({
             crmId,
-            name: event.propertyName === 'name' ? event.propertyValue || 'Nueva Empresa' : 'Nueva Empresa',
+            name:
+              event.propertyName === 'name'
+                ? event.propertyValue || 'Nueva Empresa'
+                : 'Nueva Empresa',
             userId: defaultUserId,
             crmSynced: true,
             crmLastSyncAt: new Date(),
@@ -213,8 +245,9 @@ export async function POST(req: Request) {
         company.crmSynced = true
         company.crmLastSyncAt = new Date()
         await company.save()
-        console.log(`[Webhook CRM] Empresa crmId ${crmId} guardada/actualizada.`)
-
+        console.log(
+          `[Webhook CRM] Empresa crmId ${crmId} guardada/actualizada.`,
+        )
       } else if (
         subscriptionType.startsWith('invoice.') ||
         subscriptionType.startsWith('custom_object.') ||
@@ -237,9 +270,17 @@ export async function POST(req: Request) {
             const lead = await Lead.findById(leadId)
             if (lead) {
               const leadInvoices = await Invoice.find({ leadId: lead._id })
-              const hasOverdue = leadInvoices.some((inv: any) => inv.status === 'OVERDUE')
-              const hasPending = leadInvoices.some((inv: any) => inv.status === 'PENDING')
-              lead.scoring = hasOverdue ? 'D - Deudor' : (hasPending ? 'B - Bueno' : 'A - Excelente')
+              const hasOverdue = leadInvoices.some(
+                (inv: any) => inv.status === 'OVERDUE',
+              )
+              const hasPending = leadInvoices.some(
+                (inv: any) => inv.status === 'PENDING',
+              )
+              lead.scoring = hasOverdue
+                ? 'D - Deudor'
+                : hasPending
+                  ? 'B - Bueno'
+                  : 'A - Excelente'
               lead.crmSynced = true
               await lead.save()
             }
@@ -256,13 +297,17 @@ export async function POST(req: Request) {
           // Es una nueva factura, buscar su asociación con el contacto (Lead) en HubSpot
           const leadCrmId = await crm.fetchLeadIdAssociatedWithInvoice(crmId)
           if (!leadCrmId) {
-            console.warn(`[Webhook CRM] No se encontró contacto asociado en HubSpot para factura crmId ${crmId}`)
+            console.warn(
+              `[Webhook CRM] No se encontró contacto asociado en HubSpot para factura crmId ${crmId}`,
+            )
             continue
           }
 
           leadDoc = await Lead.findOne({ crmId: leadCrmId })
           if (!leadDoc) {
-            console.warn(`[Webhook CRM] Lead local no encontrado para leadCrmId ${leadCrmId} de factura crmId ${crmId}`)
+            console.warn(
+              `[Webhook CRM] Lead local no encontrado para leadCrmId ${leadCrmId} de factura crmId ${crmId}`,
+            )
             continue
           }
 
@@ -281,7 +326,9 @@ export async function POST(req: Request) {
           const fullInvoice = await crm.fetchInvoiceById(crmId)
           if (fullInvoice) {
             invoice.amount = fullInvoice.amount
-            invoice.balanceDue = fullInvoice.balanceDue ?? (fullInvoice.status === 'PAID' ? 0 : fullInvoice.amount)
+            invoice.balanceDue =
+              fullInvoice.balanceDue ??
+              (fullInvoice.status === 'PAID' ? 0 : fullInvoice.amount)
             invoice.status = fullInvoice.status
             invoice.invoiceDate = new Date(fullInvoice.invoiceDate)
             invoice.dueDate = new Date(fullInvoice.dueDate)
@@ -338,19 +385,30 @@ export async function POST(req: Request) {
         }
 
         await invoice.save()
-        console.log(`[Webhook CRM] Factura crmId ${crmId} guardada/actualizada.`)
+        console.log(
+          `[Webhook CRM] Factura crmId ${crmId} guardada/actualizada.`,
+        )
 
         // Recalcular scoring del contacto asociado
         if (leadDoc) {
           const leadInvoices = await Invoice.find({ leadId: leadDoc._id })
-          const hasOverdue = leadInvoices.some((inv: any) => inv.status === 'OVERDUE')
-          const hasPending = leadInvoices.some((inv: any) => inv.status === 'PENDING')
-          leadDoc.scoring = hasOverdue ? 'D - Deudor' : (hasPending ? 'B - Bueno' : 'A - Excelente')
+          const hasOverdue = leadInvoices.some(
+            (inv: any) => inv.status === 'OVERDUE',
+          )
+          const hasPending = leadInvoices.some(
+            (inv: any) => inv.status === 'PENDING',
+          )
+          leadDoc.scoring = hasOverdue
+            ? 'D - Deudor'
+            : hasPending
+              ? 'B - Bueno'
+              : 'A - Excelente'
           leadDoc.crmSynced = true
           await leadDoc.save()
-          console.log(`[Webhook CRM] Scoring de Lead ${leadDoc.crmId} recalculado: ${leadDoc.scoring}`)
+          console.log(
+            `[Webhook CRM] Scoring de Lead ${leadDoc.crmId} recalculado: ${leadDoc.scoring}`,
+          )
         }
-
       } else if (subscriptionType === 'association.creation') {
         // --- FLUJO DE ASOCIACIONES ---
         const fromId = String(event.fromObjectId)
@@ -363,9 +421,10 @@ export async function POST(req: Request) {
           lead.companyId = company._id as any
           lead.crmSynced = true
           await lead.save()
-          console.log(`[Webhook CRM] Lead ${fromId} asociado a empresa ${toId} en MongoDB.`)
+          console.log(
+            `[Webhook CRM] Lead ${fromId} asociado a empresa ${toId} en MongoDB.`,
+          )
         }
-
       } else if (subscriptionType === 'association.deletion') {
         const fromId = String(event.fromObjectId)
         const lead = await Lead.findOne({ crmId: fromId })
@@ -374,7 +433,9 @@ export async function POST(req: Request) {
           lead.companyId = null
           lead.crmSynced = true
           await lead.save()
-          console.log(`[Webhook CRM] Asociación removida del lead ${fromId} en MongoDB.`)
+          console.log(
+            `[Webhook CRM] Asociación removida del lead ${fromId} en MongoDB.`,
+          )
         }
       }
     }
@@ -382,6 +443,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true }, { status: 200 })
   } catch (error: any) {
     console.error('[Webhook CRM] Error en procesamiento de webhook:', error)
-    return NextResponse.json({ error: error.message || 'Server Error' }, { status: 500 })
+    return NextResponse.json(
+      { error: error.message || 'Server Error' },
+      { status: 500 },
+    )
   }
 }

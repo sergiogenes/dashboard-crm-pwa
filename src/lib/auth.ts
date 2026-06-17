@@ -9,10 +9,17 @@ import crypto from 'crypto'
  * Genera un token firmado de un solo uso para indicar la verificación exitosa de MFA.
  */
 export function signMfaToken(userId: string): string {
-  const payload = JSON.stringify({ userId, verified: true, exp: Date.now() + 60000 }) // 1 minuto de validez
+  const payload = JSON.stringify({
+    userId,
+    verified: true,
+    exp: Date.now() + 60000,
+  }) // 1 minuto de validez
   const base64Payload = Buffer.from(payload).toString('base64url')
   const signature = crypto
-    .createHmac('sha256', process.env.JWT_MFA_SECRET || 'default-fallback-secret-mfa-2026')
+    .createHmac(
+      'sha256',
+      process.env.JWT_MFA_SECRET || 'default-fallback-secret-mfa-2026',
+    )
     .update(base64Payload)
     .digest('base64url')
   return `${base64Payload}.${signature}`
@@ -27,14 +34,23 @@ function verifyMfaToken(token: string, expectedUserId: string): boolean {
     if (!base64Payload || !signature) return false
 
     const expectedSignature = crypto
-      .createHmac('sha256', process.env.JWT_MFA_SECRET || 'default-fallback-secret-mfa-2026')
+      .createHmac(
+        'sha256',
+        process.env.JWT_MFA_SECRET || 'default-fallback-secret-mfa-2026',
+      )
       .update(base64Payload)
       .digest('base64url')
 
     if (signature !== expectedSignature) return false
 
-    const payload = JSON.parse(Buffer.from(base64Payload, 'base64url').toString('utf8'))
-    if (payload.userId !== expectedUserId || !payload.verified || Date.now() > payload.exp) {
+    const payload = JSON.parse(
+      Buffer.from(base64Payload, 'base64url').toString('utf8'),
+    )
+    if (
+      payload.userId !== expectedUserId ||
+      !payload.verified ||
+      Date.now() > payload.exp
+    ) {
       return false
     }
     return true
@@ -53,20 +69,31 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('El correo electrónico o la contraseña son incorrectos')
+          throw new Error(
+            'El correo electrónico o la contraseña son incorrectos',
+          )
         }
 
         await dbConnect()
-        const user = await User.findOne({ email: credentials.email.toLowerCase() })
+        const user = await User.findOne({
+          email: credentials.email.toLowerCase(),
+        })
 
         if (!user) {
-          throw new Error('El correo electrónico o la contraseña son incorrectos')
+          throw new Error(
+            'El correo electrónico o la contraseña son incorrectos',
+          )
         }
 
-        const isValid = await bcrypt.compare(credentials.password, user.passwordHash)
+        const isValid = await bcrypt.compare(
+          credentials.password,
+          user.passwordHash,
+        )
 
         if (!isValid) {
-          throw new Error('El correo electrónico o la contraseña son incorrectos')
+          throw new Error(
+            'El correo electrónico o la contraseña son incorrectos',
+          )
         }
 
         // Emitimos la sesión con mfaVerified en false inicialmente.
@@ -78,6 +105,7 @@ export const authOptions: NextAuthOptions = {
           mfaRequired: true,
           mfaVerified: false,
           twoFactorEnabled: user.twoFactorEnabled === true,
+          roles: user.roles || [user.role || 'user'],
         }
       },
     }),
@@ -89,6 +117,7 @@ export const authOptions: NextAuthOptions = {
         token.mfaRequired = user.mfaRequired
         token.mfaVerified = user.mfaVerified
         token.twoFactorEnabled = user.twoFactorEnabled
+        token.roles = user.roles || ['user']
       }
 
       // Si el cliente solicita actualizar la sesión (NextAuth Session Update)
@@ -110,6 +139,7 @@ export const authOptions: NextAuthOptions = {
         session.user.mfaRequired = token.mfaRequired
         session.user.mfaVerified = token.mfaVerified
         session.user.twoFactorEnabled = token.twoFactorEnabled
+        session.user.roles = token.roles || ['user']
       }
       return session
     },

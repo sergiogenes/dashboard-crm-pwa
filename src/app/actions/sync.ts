@@ -9,7 +9,12 @@ import Lead, { ILeadSchema } from '@/models/Lead'
 import User from '@/models/User'
 import Invoice from '@/models/Invoice'
 import { LocalLead, LocalCompany, LocalActivity, LocalDeal } from '@/lib/db'
-import { ICRMProvider, CRMInvoice, CRMActivity, CRMDeal } from '@/lib/crm/interface'
+import {
+  ICRMProvider,
+  CRMInvoice,
+  CRMActivity,
+  CRMDeal,
+} from '@/lib/crm/interface'
 import Activity from '@/models/Activity'
 import Deal from '@/models/Deal'
 
@@ -30,8 +35,14 @@ export async function pushClientChanges(
   const userId = await getUserIdOrThrow()
   await dbConnect()
 
-  console.log(`[pushClientChanges] Recibidas ${companies.length} empresas:`, JSON.stringify(companies))
-  console.log(`[pushClientChanges] Recibidos ${leads.length} leads:`, JSON.stringify(leads))
+  console.log(
+    `[pushClientChanges] Recibidas ${companies.length} empresas:`,
+    JSON.stringify(companies),
+  )
+  console.log(
+    `[pushClientChanges] Recibidos ${leads.length} leads:`,
+    JSON.stringify(leads),
+  )
 
   const companyMappings: { tempId: string; id: string }[] = []
   const leadMappings: { tempId: string; id: string }[] = []
@@ -100,8 +111,13 @@ export async function pushClientChanges(
     }
 
     // Sanitizar companyId: si no es un ObjectId válido (ej. un UUID huérfano), se asigna a null
-    if (resolvedCompanyId && !mongoose.Types.ObjectId.isValid(resolvedCompanyId)) {
-      console.warn(`[pushClientChanges] Advertencia: companyId "${resolvedCompanyId}" no es un ObjectId válido. Seteando a null.`)
+    if (
+      resolvedCompanyId &&
+      !mongoose.Types.ObjectId.isValid(resolvedCompanyId)
+    ) {
+      console.warn(
+        `[pushClientChanges] Advertencia: companyId "${resolvedCompanyId}" no es un ObjectId válido. Seteando a null.`,
+      )
       resolvedCompanyId = null
     }
 
@@ -119,6 +135,7 @@ export async function pushClientChanges(
             lastName: clientLead.lastName,
             email: clientLead.email,
             phone: clientLead.phone,
+            documentId: clientLead.documentId,
             companyId: resolvedCompanyId,
             crmSynced: false,
           },
@@ -138,6 +155,7 @@ export async function pushClientChanges(
           lastName: clientLead.lastName,
           email: clientLead.email,
           phone: clientLead.phone,
+          documentId: clientLead.documentId,
           companyId: resolvedCompanyId,
           userId,
           crmSynced: false,
@@ -149,6 +167,7 @@ export async function pushClientChanges(
         existingLead.firstName = clientLead.firstName
         existingLead.lastName = clientLead.lastName
         existingLead.phone = clientLead.phone
+        existingLead.documentId = clientLead.documentId
         existingLead.companyId = resolvedCompanyId
         existingLead.crmSynced = false
         if (clientLead.deleted) {
@@ -169,7 +188,7 @@ export async function pushClientChanges(
     let resolvedLeadId: string | null = null
 
     if (clientAct.leadId) {
-      const mapping = leadMappings.find(m => m.tempId === clientAct.leadId)
+      const mapping = leadMappings.find((m) => m.tempId === clientAct.leadId)
       if (mapping) {
         resolvedLeadId = mapping.id
       } else {
@@ -178,7 +197,9 @@ export async function pushClientChanges(
     }
 
     if (resolvedLeadId && !mongoose.Types.ObjectId.isValid(resolvedLeadId)) {
-      console.warn(`[pushClientChanges] Advertencia: leadId "${resolvedLeadId}" no es un ObjectId válido. Saltando actividad.`)
+      console.warn(
+        `[pushClientChanges] Advertencia: leadId "${resolvedLeadId}" no es un ObjectId válido. Saltando actividad.`,
+      )
       continue
     }
 
@@ -196,7 +217,9 @@ export async function pushClientChanges(
             title: clientAct.title,
             body: clientAct.body,
             timestamp: new Date(clientAct.timestamp),
-            reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : null,
+            reminderDate: clientAct.reminderDate
+              ? new Date(clientAct.reminderDate)
+              : null,
             reminderRead: clientAct.reminderRead || false,
             crmSynced: false,
           },
@@ -205,7 +228,7 @@ export async function pushClientChanges(
     } else if (clientAct.tempId) {
       // Evitar duplicación si falló el ACK de la sincronización previa
       let existingAct = await Activity.findOne({ tempId: clientAct.tempId })
-      
+
       if (!existingAct) {
         existingAct = new Activity({
           tempId: clientAct.tempId,
@@ -215,7 +238,9 @@ export async function pushClientChanges(
           title: clientAct.title,
           body: clientAct.body,
           timestamp: new Date(clientAct.timestamp),
-          reminderDate: clientAct.reminderDate ? new Date(clientAct.reminderDate) : null,
+          reminderDate: clientAct.reminderDate
+            ? new Date(clientAct.reminderDate)
+            : null,
           reminderRead: clientAct.reminderRead || false,
           deleted: clientAct.deleted || false,
           crmSynced: false,
@@ -228,7 +253,9 @@ export async function pushClientChanges(
         existingAct.title = clientAct.title
         existingAct.body = clientAct.body
         existingAct.timestamp = new Date(clientAct.timestamp)
-        existingAct.reminderDate = clientAct.reminderDate ? new Date(clientAct.reminderDate) : null
+        existingAct.reminderDate = clientAct.reminderDate
+          ? new Date(clientAct.reminderDate)
+          : null
         existingAct.reminderRead = clientAct.reminderRead || false
         if (clientAct.deleted) {
           existingAct.deleted = true
@@ -236,7 +263,7 @@ export async function pushClientChanges(
         existingAct.crmSynced = false
         await existingAct.save()
       }
-      
+
       const realId = existingAct._id.toString()
       activityMappings.push({ tempId: clientAct.tempId, id: realId })
     }
@@ -249,7 +276,7 @@ export async function pushClientChanges(
     let resolvedLeadId: string | null = null
 
     if (clientDeal.leadId) {
-      const mapping = leadMappings.find(m => m.tempId === clientDeal.leadId)
+      const mapping = leadMappings.find((m) => m.tempId === clientDeal.leadId)
       if (mapping) {
         resolvedLeadId = mapping.id
       } else {
@@ -258,7 +285,9 @@ export async function pushClientChanges(
     }
 
     if (resolvedLeadId && !mongoose.Types.ObjectId.isValid(resolvedLeadId)) {
-      console.warn(`[pushClientChanges] Advertencia: leadId "${resolvedLeadId}" no es un ObjectId válido para Deal. Saltando.`)
+      console.warn(
+        `[pushClientChanges] Advertencia: leadId "${resolvedLeadId}" no es un ObjectId válido para Deal. Saltando.`,
+      )
       continue
     }
 
@@ -338,11 +367,22 @@ export async function pullServerUpdates(lastSyncTime: number) {
   const userId = await getUserIdOrThrow()
   await dbConnect()
 
+  const user = await User.findById(userId)
+
+  // Si el usuario es supervisor, obtenemos los IDs de los vendedores a su cargo para sincronizar también sus datos
+  let userIdsToSync = [userId]
+  const userRoles =
+    user?.roles && user.roles.length > 0 ? user.roles : [user?.role || 'user']
+  if (userRoles.includes('supervisor')) {
+    const salespeople = await User.find({ supervisorId: userId }, '_id')
+    const salespeopleIds = salespeople.map((sp) => sp._id.toString())
+    userIdsToSync = [userId, ...salespeopleIds]
+  }
+
   // Comprobar si la base de datos intermedia (MongoDB) está vacía de empresas o leads (contando activos y eliminados)
   const companyCount = await Company.countDocuments()
-  const user = await User.findById(userId)
   const leadCount = user?.crmOwnerId
-    ? await Lead.countDocuments({ userId })
+    ? await Lead.countDocuments({ userId: { $in: userIdsToSync } })
     : 0
 
   const needsImport =
@@ -406,6 +446,16 @@ export async function pullServerUpdates(lastSyncTime: number) {
 
           for (const crmLead of crmLeads) {
             if (crmLead.crmId) {
+              // Buscar si ya existe el contacto en MongoDB para verificar cambios locales pendientes
+              const existingLead = await Lead.findOne({
+                $or: [
+                  { crmId: crmLead.crmId },
+                  { email: crmLead.email, userId, deleted: false },
+                ],
+              })
+
+              const hasPendingChanges = existingLead?.crmSynced === false
+
               const leadDoc = await Lead.findOneAndUpdate(
                 {
                   $or: [
@@ -415,10 +465,6 @@ export async function pullServerUpdates(lastSyncTime: number) {
                 },
                 {
                   $setOnInsert: {
-                    firstName: crmLead.firstName,
-                    lastName: crmLead.lastName,
-                    email: crmLead.email,
-                    phone: crmLead.phone,
                     userId: userId,
                     crmLastSyncAt: new Date(),
                     deleted: false,
@@ -426,6 +472,16 @@ export async function pullServerUpdates(lastSyncTime: number) {
                   $set: {
                     crmId: crmLead.crmId,
                     crmSynced: true,
+                    // Si no tiene cambios locales pendientes, actualizamos los campos desde HubSpot a MongoDB
+                    ...(hasPendingChanges
+                      ? {}
+                      : {
+                          firstName: crmLead.firstName,
+                          lastName: crmLead.lastName,
+                          email: crmLead.email,
+                          phone: crmLead.phone,
+                          documentId: crmLead.documentId,
+                        }),
                   },
                 },
                 { upsert: true, returnDocument: 'after' },
@@ -441,8 +497,8 @@ export async function pullServerUpdates(lastSyncTime: number) {
           if (leadDocsToSync.length > 0) {
             await Promise.all(
               leadDocsToSync.map(({ doc, crmId }) =>
-                syncInvoicesForLead(doc, crmId, crm, userId)
-              )
+                syncInvoicesForLead(doc, crmId, crm, userId),
+              ),
             )
           }
         }
@@ -466,55 +522,70 @@ export async function pullServerUpdates(lastSyncTime: number) {
   })
 
   const updatedLeads = await Lead.find({
-    userId,
+    userId: { $in: userIdsToSync },
     updatedAt: { $gt: sinceDate },
   })
 
   // Sincronizar facturas, actividades y deals para todos los leads activos en segundo plano para reflejar cambios externos del CRM
-  const activeLeads = await Lead.find({ userId, deleted: false })
+  const activeLeads = await Lead.find({
+    userId: { $in: userIdsToSync },
+    deleted: false,
+  })
   if (activeLeads.length > 0) {
-    import('@/lib/crm/factory').then(({ CRMProviderFactory }) => {
-      const crm = CRMProviderFactory.getProvider()
-      crm.checkHealth().then(async (isOnline) => {
-        if (isOnline) {
-          await Promise.all([
-            ...activeLeads.map(lead => {
-              if (lead.crmId) {
-                return syncInvoicesForLead(lead, lead.crmId, crm, userId)
-              }
-              return Promise.resolve()
-            }),
-            ...activeLeads.map(lead => {
-              if (lead.crmId) {
-                return syncActivitiesForLead(lead, lead.crmId, crm, userId)
-              }
-              return Promise.resolve()
-            }),
-            ...activeLeads.map(lead => {
-              if (lead.crmId) {
-                return syncDealsForLead(lead, lead.crmId, crm, userId)
-              }
-              return Promise.resolve()
-            })
-          ])
-        }
-      }).catch(err => console.error('[Sync Action Background] Error al validar salud del CRM:', err))
-    }).catch(err => console.error('[Sync Action Background] Error al cargar factory:', err))
+    import('@/lib/crm/factory')
+      .then(({ CRMProviderFactory }) => {
+        const crm = CRMProviderFactory.getProvider()
+        crm
+          .checkHealth()
+          .then(async (isOnline) => {
+            if (isOnline) {
+              await Promise.all([
+                ...activeLeads.map((lead) => {
+                  if (lead.crmId) {
+                    return syncInvoicesForLead(lead, lead.crmId, crm, userId)
+                  }
+                  return Promise.resolve()
+                }),
+                ...activeLeads.map((lead) => {
+                  if (lead.crmId) {
+                    return syncActivitiesForLead(lead, lead.crmId, crm, userId)
+                  }
+                  return Promise.resolve()
+                }),
+                ...activeLeads.map((lead) => {
+                  if (lead.crmId) {
+                    return syncDealsForLead(lead, lead.crmId, crm, userId)
+                  }
+                  return Promise.resolve()
+                }),
+              ])
+            }
+          })
+          .catch((err) =>
+            console.error(
+              '[Sync Action Background] Error al validar salud del CRM:',
+              err,
+            ),
+          )
+      })
+      .catch((err) =>
+        console.error('[Sync Action Background] Error al cargar factory:', err),
+      )
   }
 
   // Obtener facturas, actividades y deals actualizados desde la última sincronización
   const updatedInvoices = await Invoice.find({
-    userId,
+    userId: { $in: userIdsToSync },
     updatedAt: { $gt: sinceDate },
   })
 
   const updatedActivities = await Activity.find({
-    userId,
+    userId: { $in: userIdsToSync },
     updatedAt: { $gt: sinceDate },
   })
 
   const updatedDeals = await Deal.find({
-    userId,
+    userId: { $in: userIdsToSync },
     updatedAt: { $gt: sinceDate },
   })
 
@@ -540,6 +611,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
       lastName: l.lastName,
       email: l.email,
       phone: l.phone,
+      documentId: l.documentId,
       companyId: l.companyId?.toString() || undefined,
       deleted: l.deleted,
       userId: l.userId,
@@ -624,10 +696,14 @@ async function syncInvoicesForLead(
     }
 
     // 3. Calcular scoring de crédito en base a las facturas
-    const hasOverdue = crmInvoices.some((inv: CRMInvoice) => inv.status === 'OVERDUE')
-    const hasPending = crmInvoices.some((inv: CRMInvoice) => inv.status === 'PENDING')
+    const hasOverdue = crmInvoices.some(
+      (inv: CRMInvoice) => inv.status === 'OVERDUE',
+    )
+    const hasPending = crmInvoices.some(
+      (inv: CRMInvoice) => inv.status === 'PENDING',
+    )
     let scoring = 'A - Excelente'
-    
+
     if (hasOverdue) {
       scoring = 'D - Deudor'
     } else if (hasPending) {
@@ -636,10 +712,7 @@ async function syncInvoicesForLead(
 
     // 4. Actualizar el scoring en el lead de MongoDB
     if (leadDoc.scoring !== scoring) {
-      await Lead.updateOne(
-        { _id: leadDoc._id },
-        { $set: { scoring } },
-      )
+      await Lead.updateOne({ _id: leadDoc._id }, { $set: { scoring } })
       leadDoc.scoring = scoring
     }
   } catch (error) {
@@ -663,7 +736,9 @@ async function syncActivitiesForLead(
     const crmActivities = await crm.fetchActivitiesByLead(crmLeadCrmId)
 
     if (crmActivities.length > 0) {
-      const activeCrmIds = crmActivities.map((act) => act.crmId).filter(Boolean) as string[]
+      const activeCrmIds = crmActivities
+        .map((act) => act.crmId)
+        .filter(Boolean) as string[]
 
       // 1. Marcar como eliminadas en MongoDB las actividades de este lead que ya no existen en el CRM (y que ya se habían sincronizado)
       await Activity.updateMany(
@@ -679,7 +754,11 @@ async function syncActivitiesForLead(
       for (const act of crmActivities) {
         if (act.crmId) {
           // Si la actividad fue eliminada y la eliminación está pendiente de sincronizarse, evitar resucitarla
-          const isPendingDelete = await Activity.exists({ crmId: act.crmId, deleted: true, crmSynced: false })
+          const isPendingDelete = await Activity.exists({
+            crmId: act.crmId,
+            deleted: true,
+            crmSynced: false,
+          })
           if (isPendingDelete) {
             continue
           }
@@ -691,7 +770,8 @@ async function syncActivitiesForLead(
               continue
             }
             // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de los últimos 20 segundos)
-            const timeSinceLastUpdate = Date.now() - existingAct.updatedAt.getTime()
+            const timeSinceLastUpdate =
+              Date.now() - existingAct.updatedAt.getTime()
             if (timeSinceLastUpdate < 20000) {
               continue
             }
@@ -711,9 +791,9 @@ async function syncActivitiesForLead(
                 body: act.body,
                 timestamp: new Date(act.timestamp),
                 reminderDate: act.reminderDate
-                  ? (isNaN(Number(act.reminderDate))
-                      ? new Date(act.reminderDate)
-                      : new Date(Number(act.reminderDate)))
+                  ? isNaN(Number(act.reminderDate))
+                    ? new Date(act.reminderDate)
+                    : new Date(Number(act.reminderDate))
                   : null,
                 reminderRead: act.reminderRead || false,
                 crmSynced: true,
@@ -752,7 +832,9 @@ async function syncDealsForLead(
     const crmDeals = await crm.fetchDealsByLead(crmLeadCrmId)
 
     if (crmDeals.length > 0) {
-      const activeCrmIds = crmDeals.map((d) => d.crmId).filter(Boolean) as string[]
+      const activeCrmIds = crmDeals
+        .map((d) => d.crmId)
+        .filter(Boolean) as string[]
 
       // 1. Marcar como eliminados en MongoDB los deals de este lead que ya no existen en el CRM
       await Deal.updateMany(
@@ -767,7 +849,11 @@ async function syncDealsForLead(
       // 2. Realizar upsert de los deals recuperados del CRM
       for (const d of crmDeals) {
         if (d.crmId) {
-          const isPendingDelete = await Deal.exists({ crmId: d.crmId, deleted: true, crmSynced: false })
+          const isPendingDelete = await Deal.exists({
+            crmId: d.crmId,
+            deleted: true,
+            crmSynced: false,
+          })
           if (isPendingDelete) {
             continue
           }
@@ -779,7 +865,8 @@ async function syncDealsForLead(
               continue
             }
             // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de los últimos 20 segundos)
-            const timeSinceLastUpdate = Date.now() - existingDeal.updatedAt.getTime()
+            const timeSinceLastUpdate =
+              Date.now() - existingDeal.updatedAt.getTime()
             if (timeSinceLastUpdate < 20000) {
               continue
             }
@@ -864,5 +951,187 @@ async function syncDealsForLead(
       `[syncDealsForLead] Error al sincronizar deals para lead ${leadDoc._id}:`,
       error,
     )
+  }
+}
+
+export async function searchGlobalLeads(query: string) {
+  await getUserIdOrThrow()
+  await dbConnect()
+
+  const cleanQuery = query.trim()
+  if (!cleanQuery) return []
+
+  // 1. Buscar en MongoDB local primero
+  const isNumeric = /^\d+$/.test(cleanQuery)
+  const mongoQuery: any = { deleted: false }
+
+  if (isNumeric) {
+    mongoQuery.documentId = cleanQuery
+  } else {
+    const regex = new RegExp(cleanQuery, 'i')
+    mongoQuery.$or = [
+      { firstName: regex },
+      { lastName: regex },
+      { email: regex },
+      { documentId: cleanQuery },
+    ]
+  }
+
+  let localLeads = await Lead.find(mongoQuery).limit(20)
+
+  // 2. Buscar en HubSpot e importar en caliente
+  try {
+    const { CRMProviderFactory } = await import('@/lib/crm/factory')
+    const crm = CRMProviderFactory.getProvider()
+    const isCrmOnline = await crm.checkHealth()
+
+    if (isCrmOnline) {
+      const crmLeads = await crm.searchLeads(cleanQuery)
+      for (const crmLead of crmLeads) {
+        if (crmLead.crmId) {
+          // Determinar dueño local
+          let assignedUserId = 'system_fallback'
+          if (crmLead.ownerId) {
+            const matchedUser = await User.findOne({
+              crmOwnerId: crmLead.ownerId,
+            })
+            if (matchedUser) {
+              assignedUserId = String(matchedUser._id)
+            }
+          }
+
+          const existingLead = await Lead.findOne({
+            $or: [
+              { crmId: crmLead.crmId },
+              { email: crmLead.email, deleted: false },
+            ],
+          })
+
+          const hasPendingChanges = existingLead?.crmSynced === false
+
+          await Lead.findOneAndUpdate(
+            { crmId: crmLead.crmId },
+            {
+              $setOnInsert: {
+                userId: assignedUserId,
+                crmLastSyncAt: new Date(),
+                deleted: false,
+              },
+              $set: {
+                crmSynced: true,
+                ...(hasPendingChanges
+                  ? {}
+                  : {
+                      firstName: crmLead.firstName,
+                      lastName: crmLead.lastName,
+                      email: crmLead.email,
+                      phone: crmLead.phone,
+                      documentId: crmLead.documentId,
+                    }),
+              },
+            },
+            { upsert: true },
+          )
+        }
+      }
+
+      // Volver a consultar MongoDB para incluir los leads recién importados
+      localLeads = await Lead.find(mongoQuery).limit(20)
+    }
+  } catch (err) {
+    console.error(
+      '[Global Search] Error al buscar y descargar contactos del CRM:',
+      err,
+    )
+  }
+
+  return localLeads.map((lead) => ({
+    id: lead._id.toString(),
+    firstName: lead.firstName,
+    lastName: lead.lastName,
+    email: lead.email,
+    phone: lead.phone,
+    documentId: lead.documentId,
+    companyId: lead.companyId?.toString() || null,
+    userId: lead.userId,
+    scoring: lead.scoring,
+    createdAt: lead.createdAt.getTime(),
+    updatedAt: lead.updatedAt.getTime(),
+  }))
+}
+
+export async function getGlobalLeadDetails(leadId: string) {
+  const currentUserId = await getUserIdOrThrow()
+  await dbConnect()
+
+  const lead = await Lead.findById(leadId)
+  if (lead && lead.crmId) {
+    try {
+      const { CRMProviderFactory } = await import('@/lib/crm/factory')
+      const crm = CRMProviderFactory.getProvider()
+      const isCrmOnline = await crm.checkHealth()
+      if (isCrmOnline) {
+        // Sincronizar sub-entidades del lead desde HubSpot
+        await Promise.all([
+          syncInvoicesForLead(lead, lead.crmId, crm, lead.userId),
+          syncActivitiesForLead(lead, lead.crmId, crm, lead.userId),
+          syncDealsForLead(lead, lead.crmId, crm, lead.userId),
+        ])
+      }
+    } catch (err) {
+      console.error(
+        '[Global Details] Error al sincronizar subentidades del lead:',
+        err,
+      )
+    }
+  }
+
+  const invoices = await Invoice.find({ leadId })
+  const activities = await Activity.find({ leadId, deleted: false })
+  const deals = await Deal.find({ leadId, deleted: false })
+
+  return {
+    invoices: invoices.map((inv) => ({
+      id: inv._id.toString(),
+      crmId: inv.crmId,
+      leadId: inv.leadId.toString(),
+      userId: inv.userId,
+      amount: inv.amount,
+      balanceDue: inv.balanceDue,
+      status: inv.status,
+      invoiceDate: inv.invoiceDate.getTime(),
+      dueDate: inv.dueDate.getTime(),
+      paymentDate: inv.paymentDate ? inv.paymentDate.getTime() : undefined,
+      createdAt: inv.createdAt.getTime(),
+      updatedAt: inv.updatedAt.getTime(),
+    })),
+    activities: activities.map((act) => ({
+      id: act._id.toString(),
+      crmId: act.crmId,
+      leadId: act.leadId.toString(),
+      userId: act.userId,
+      type: act.type,
+      title: act.title,
+      body: act.body,
+      timestamp: act.timestamp.getTime(),
+      reminderDate: act.reminderDate ? act.reminderDate.getTime() : undefined,
+      reminderRead: act.reminderRead,
+      createdAt: act.createdAt.getTime(),
+      updatedAt: act.updatedAt.getTime(),
+    })),
+    deals: deals.map((d) => ({
+      id: d._id.toString(),
+      crmId: d.crmId,
+      leadId: d.leadId.toString(),
+      userId: d.userId,
+      name: d.name,
+      amount: d.amount,
+      termMonths: d.termMonths,
+      interestRate: d.interestRate,
+      stage: d.stage,
+      notes: d.notes,
+      createdAt: d.createdAt.getTime(),
+      updatedAt: d.updatedAt.getTime(),
+    })),
   }
 }

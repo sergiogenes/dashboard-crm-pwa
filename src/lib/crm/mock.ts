@@ -1,4 +1,11 @@
-import { ICRMProvider, CRMLead, CRMCompany, CRMInvoice, CRMActivity, CRMDeal } from './interface'
+import {
+  ICRMProvider,
+  CRMLead,
+  CRMCompany,
+  CRMInvoice,
+  CRMActivity,
+  CRMDeal,
+} from './interface'
 
 export class MockCRMProvider implements ICRMProvider {
   private contacts = new Map<string, CRMLead>()
@@ -9,18 +16,24 @@ export class MockCRMProvider implements ICRMProvider {
   private dealAssociations = new Map<string, string>() // dealCrmId -> contactCrmId
 
   async upsertLead(lead: CRMLead): Promise<string> {
-    const crmId = lead.crmId || `mock_contact_${Math.random().toString(36).substring(2, 9)}`
+    const crmId =
+      lead.crmId || `mock_contact_${Math.random().toString(36).substring(2, 9)}`
     this.contacts.set(crmId, { ...lead, crmId })
     return crmId
   }
 
   async upsertCompany(company: CRMCompany): Promise<string> {
-    const crmId = company.crmId || `mock_company_${Math.random().toString(36).substring(2, 9)}`
+    const crmId =
+      company.crmId ||
+      `mock_company_${Math.random().toString(36).substring(2, 9)}`
     this.companies.set(crmId, { ...company, crmId })
     return crmId
   }
 
-  async associateLeadWithCompany(leadCrmId: string, companyCrmId: string): Promise<void> {
+  async associateLeadWithCompany(
+    leadCrmId: string,
+    companyCrmId: string,
+  ): Promise<void> {
     if (!this.contacts.has(leadCrmId)) {
       throw new Error(`Contact ${leadCrmId} not found in mock CRM`)
     }
@@ -55,14 +68,16 @@ export class MockCRMProvider implements ICRMProvider {
 
   async fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]> {
     // Retornar la lista en memoria que coincida con el ownerId, calculando su scoring
-    const leads = Array.from(this.contacts.values()).filter(lead => lead.ownerId === ownerId)
-    
+    const leads = Array.from(this.contacts.values()).filter(
+      (lead) => lead.ownerId === ownerId,
+    )
+
     for (const lead of leads) {
       if (lead.crmId) {
         const invoices = await this.fetchInvoicesByLead(lead.crmId)
-        const hasOverdue = invoices.some(inv => inv.status === 'OVERDUE')
-        const hasPending = invoices.some(inv => inv.status === 'PENDING')
-        
+        const hasOverdue = invoices.some((inv) => inv.status === 'OVERDUE')
+        const hasPending = invoices.some((inv) => inv.status === 'PENDING')
+
         if (hasOverdue) {
           lead.scoring = 'D - Deudor'
         } else if (hasPending) {
@@ -76,6 +91,18 @@ export class MockCRMProvider implements ICRMProvider {
     return leads
   }
 
+  async searchLeads(query: string): Promise<CRMLead[]> {
+    const cleanQuery = query.trim().toLowerCase()
+    return Array.from(this.contacts.values()).filter((lead) => {
+      const fullName = `${lead.firstName} ${lead.lastName}`.toLowerCase()
+      return (
+        fullName.includes(cleanQuery) ||
+        lead.email.toLowerCase().includes(cleanQuery) ||
+        (lead.documentId && lead.documentId.includes(cleanQuery))
+      )
+    })
+  }
+
   async fetchAllCompanies(): Promise<CRMCompany[]> {
     // Retornar todas las empresas en memoria
     return Array.from(this.companies.values())
@@ -87,16 +114,20 @@ export class MockCRMProvider implements ICRMProvider {
 
   async fetchInvoicesByLead(leadCrmId: string): Promise<CRMInvoice[]> {
     // Generar facturas deterministas según el leadCrmId para consistencia visual
-    const hash = leadCrmId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    const hash = leadCrmId
+      .split('')
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0)
     const count = (hash % 3) + 2 // 2 a 4 facturas
 
     const invoices: CRMInvoice[] = []
     const baseDate = new Date('2026-01-15T12:00:00.000Z')
 
     for (let i = 0; i < count; i++) {
-      const invoiceDate = new Date(baseDate.getTime() + i * 30 * 24 * 60 * 60 * 1000)
+      const invoiceDate = new Date(
+        baseDate.getTime() + i * 30 * 24 * 60 * 60 * 1000,
+      )
       const dueDate = new Date(invoiceDate.getTime() + 15 * 24 * 60 * 60 * 1000)
-      
+
       // Estado de factura basado en el índice y hash
       let status: 'PAID' | 'PENDING' | 'OVERDUE' = 'PAID'
       let paymentDate: string | undefined = undefined
@@ -109,11 +140,15 @@ export class MockCRMProvider implements ICRMProvider {
           status = 'PENDING'
         } else {
           status = 'PAID'
-          paymentDate = new Date(dueDate.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString()
+          paymentDate = new Date(
+            dueDate.getTime() - 2 * 24 * 60 * 60 * 1000,
+          ).toISOString()
         }
       } else {
         status = 'PAID'
-        paymentDate = new Date(dueDate.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString()
+        paymentDate = new Date(
+          dueDate.getTime() - 3 * 24 * 60 * 60 * 1000,
+        ).toISOString()
       }
 
       const amountVal = ((hash + i * 17) % 500) + 100 // montos deterministas entre $100 y $600
@@ -124,7 +159,7 @@ export class MockCRMProvider implements ICRMProvider {
         status,
         invoiceDate: invoiceDate.toISOString(),
         dueDate: dueDate.toISOString(),
-        paymentDate
+        paymentDate,
       })
     }
 
@@ -135,8 +170,12 @@ export class MockCRMProvider implements ICRMProvider {
     return this.mockActivities.get(leadCrmId) || []
   }
 
-  async createActivity(leadCrmId: string, activity: CRMActivity): Promise<string> {
-    const crmId = activity.crmId || `mock_act_${Math.random().toString(36).substring(2, 9)}`
+  async createActivity(
+    leadCrmId: string,
+    activity: CRMActivity,
+  ): Promise<string> {
+    const crmId =
+      activity.crmId || `mock_act_${Math.random().toString(36).substring(2, 9)}`
     const list = this.mockActivities.get(leadCrmId) || []
     const newActivity = { ...activity, crmId }
     list.push(newActivity)
@@ -154,7 +193,8 @@ export class MockCRMProvider implements ICRMProvider {
   }
 
   async upsertDeal(deal: CRMDeal): Promise<string> {
-    const crmId = deal.crmId || `mock_deal_${Math.random().toString(36).substring(2, 9)}`
+    const crmId =
+      deal.crmId || `mock_deal_${Math.random().toString(36).substring(2, 9)}`
     this.mockDeals.set(crmId, { ...deal, crmId })
     return crmId
   }
@@ -164,7 +204,10 @@ export class MockCRMProvider implements ICRMProvider {
     this.dealAssociations.delete(crmId)
   }
 
-  async associateDealWithLead(dealCrmId: string, leadCrmId: string): Promise<void> {
+  async associateDealWithLead(
+    dealCrmId: string,
+    leadCrmId: string,
+  ): Promise<void> {
     if (!this.mockDeals.has(dealCrmId)) {
       throw new Error(`Deal ${dealCrmId} not found in mock CRM`)
     }
@@ -188,11 +231,14 @@ export class MockCRMProvider implements ICRMProvider {
     const parts = invoiceCrmId.split('_')
     const leadCrmId = parts.length > 2 ? parts[2] : 'mock_contact_default'
     const invoices = await this.fetchInvoicesByLead(leadCrmId)
-    const inv = invoices.find(i => i.crmId === invoiceCrmId) || invoices[0] || null
+    const inv =
+      invoices.find((i) => i.crmId === invoiceCrmId) || invoices[0] || null
     return inv
   }
 
-  async fetchLeadIdAssociatedWithInvoice(invoiceCrmId: string): Promise<string | null> {
+  async fetchLeadIdAssociatedWithInvoice(
+    invoiceCrmId: string,
+  ): Promise<string | null> {
     const parts = invoiceCrmId.split('_')
     if (parts.length > 2) {
       return parts[2]
