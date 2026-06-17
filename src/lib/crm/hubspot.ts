@@ -273,7 +273,12 @@ export class HubSpotProvider implements ICRMProvider {
 
   async deleteActivity(crmId: string, type?: string): Promise<void> {
     if (type) {
-      const endpoint = type === 'TASK' ? `/tasks/${crmId}` : `/notes/${crmId}`
+      let endpoint = `/notes/${crmId}`
+      if (type === 'TASK') {
+        endpoint = `/tasks/${crmId}`
+      } else if (type === 'WHATSAPP') {
+        endpoint = `/communications/${crmId}`
+      }
       await this.request<void>(endpoint, {
         method: 'DELETE',
       })
@@ -289,11 +294,18 @@ export class HubSpotProvider implements ICRMProvider {
             method: 'DELETE',
           })
         } catch (taskErr) {
-          console.warn(
-            `[HubSpot Provider] Falló la eliminación fallback de actividad ${crmId}:`,
-            err,
-            taskErr,
-          )
+          try {
+            await this.request<void>(`/communications/${crmId}`, {
+              method: 'DELETE',
+            })
+          } catch (commErr) {
+            console.warn(
+              `[HubSpot Provider] Falló la eliminación fallback de actividad ${crmId}:`,
+              err,
+              taskErr,
+              commErr,
+            )
+          }
         }
       }
     }

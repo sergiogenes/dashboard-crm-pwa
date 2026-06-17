@@ -360,3 +360,18 @@ _Última actualización: 2026-06-03_
     - **Sección Admin**:
       - Creado el custom hook [useAdmin.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useAdmin.ts) y refactorizado [admin/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/admin/page.tsx) a **229 líneas** de puros componentes visuales.
 
+## Fases del 17 de junio de 2026 (Rediseño de la UI del Chat de WhatsApp en Timeline)
+
+- **Rediseño Visual de Mensajes en [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx)**:
+  - Implementado renderizado condicional si la actividad es de tipo `'WHATSAPP'`.
+  - Diseñadas burbujas estilo chat de WhatsApp asimétricas (`rounded-tr-none` para enviados y `rounded-tl-none` para recibidos).
+  - Alineado binario según remitente: enviados a la derecha (`justify-end` en verde translúcido esmeralda) y recibidos a la izquierda (`justify-start` en gris oscuro).
+  - Ocultados títulos repetitivos redundantes ("WhatsApp Enviado" / "WhatsApp Recibido") para mejorar el flujo de lectura.
+  - Implementado formateo de fechas inteligente: solo muestra la hora para mensajes de hoy y añade fecha abreviada para días previos.
+  - Ocultados en hover los controles de sincronización de base de datos/nube y el botón de borrado (`Trash2`) para mantener la interfaz despejada.
+  - Actualizados los colores de los iconos Cloud de sincronización a verde esmeralda (`text-emerald-400` / `text-emerald-500`) en WhatsApp, actividades estándar y préstamos (deals) cuando están en estado sincronizado.
+- **Corrección de Borrado de WhatsApp en HubSpot ([hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts))**:
+  - Corregida la función `deleteActivity` para direccionar adecuadamente el borrado de actividades de tipo `'WHATSAPP'` hacia el endpoint `/communications/{crmId}` en HubSpot en lugar del endpoint genérico `/notes/{crmId}`.
+  - Actualizado el fallback de borrado sin tipo de `deleteActivity` para que intente eliminar de manera secuencial en `/notes`, `/tasks` y finalmente en `/communications`, evitando que los mensajes eliminados localmente "resuciten" al volver a sincronizar desde el CRM.
+
+_Última actualización: 2026-06-17_

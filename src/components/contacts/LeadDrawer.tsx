@@ -898,99 +898,163 @@ export default function LeadDrawer({
                       .map((act) => {
                         const config = getActivityConfig(act.type)
                         const IconComponent = config.icon
+                        const isWhatsApp = act.type === 'WHATSAPP'
+                        const isOutgoing = act.title === 'WhatsApp Enviado'
+
+                        // Formateo inteligente de fecha y hora
+                        const dateObj = new Date(act.timestamp)
+                        const isToday = dateObj.toDateString() === new Date().toDateString()
+                        const formattedTime = isToday
+                          ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : dateObj.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
                         return (
                           <div key={act.id || act.tempId} className="group relative">
                             {/* Icono en timeline */}
-                            <div className={`absolute -left-[38px] top-1 rounded-full border p-1.5 ${config.bg} ${config.border} ${config.text} shadow-md`}>
+                            <div className={`absolute -left-[38px] top-1.5 rounded-full border p-1 ${
+                              isWhatsApp
+                                ? isOutgoing
+                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                  : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                                : `${config.bg} ${config.border} ${config.text}`
+                            } shadow-md`}>
                               <IconComponent className="h-3.5 w-3.5" />
                             </div>
 
-                            {/* Card de Actividad */}
-                            <div
-                              id={`activity-${act.id || act.tempId}`}
-                              className={`space-y-2 rounded-xl border p-4 transition-all duration-500 ${
-                                highlightedActivityId === act.id || highlightedActivityId === act.tempId
-                                  ? 'scale-[1.02] border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20'
-                                  : 'border-slate-900 bg-slate-950/80'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <span className="block font-mono text-[9px] text-slate-500">
-                                    {new Date(act.timestamp).toLocaleString()}
-                                  </span>
-                                  <h5 className="mt-0.5 text-xs font-bold text-white">
-                                    {act.title}
-                                  </h5>
-                                </div>
+                            {isWhatsApp ? (
+                              /* Renderizado Estilo WhatsApp Chat Bubble */
+                              <div className={`flex w-full ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
+                                <div
+                                  id={`activity-${act.id || act.tempId}`}
+                                  className={`relative max-w-[85%] rounded-xl px-3 py-2 border transition-all duration-300 ${
+                                    isOutgoing
+                                      ? 'bg-emerald-950/40 border-emerald-500/20 text-slate-100 rounded-tr-none'
+                                      : 'bg-slate-900 border-slate-850 text-slate-100 rounded-tl-none'
+                                  } ${
+                                    highlightedActivityId === act.id || highlightedActivityId === act.tempId
+                                      ? 'ring-2 ring-indigo-500 scale-[1.02]'
+                                      : ''
+                                  }`}
+                                >
+                                  {/* Mensaje */}
+                                  <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
+                                    {act.body}
+                                  </p>
 
-                                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                  {act.synced ? (
-                                    <span title="Sincronizado con HubSpot">
-                                      <Cloud className="h-3.5 w-3.5 text-slate-600" />
-                                    </span>
-                                  ) : (
-                                    <span title="Guardado localmente, pendiente de sincronización">
-                                      <Database className="h-3.5 w-3.5 animate-pulse text-amber-500" />
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => handleDeleteActivity(act)}
-                                    className="rounded p-1 text-slate-600 transition-colors hover:bg-slate-900 hover:text-red-400"
-                                    title="Eliminar actividad"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              </div>
+                                  {/* Meta: Hora y Estados */}
+                                  <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[9px] text-slate-500">
+                                    <span className="font-mono">{formattedTime}</span>
 
-                              <p className="whitespace-pre-line text-xs leading-relaxed text-slate-400">
-                                {act.body}
-                              </p>
-
-                              {act.reminderDate && (
-                                <div className="mt-2 flex max-w-md flex-col gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-950/40 p-2.5">
-                                  <div className="flex items-center gap-1.5 text-[10px] text-indigo-300">
-                                    <Bell className="h-3.5 w-3.5 animate-pulse text-indigo-400" />
-                                    <span className="font-medium">
-                                      Recordatorio: {new Date(act.reminderDate).toLocaleString()}
-                                    </span>
-                                    {act.reminderRead ? (
-                                      <span className="ml-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-1.5 py-0.5 text-[8px] text-indigo-200">
-                                        Leído
-                                      </span>
-                                    ) : (
-                                      <span className="ml-1 rounded border border-amber-500/30 bg-amber-500/20 px-1.5 py-0.5 text-[8px] text-amber-200">
-                                        Activo
-                                      </span>
-                                    )}
-                                  </div>
-                                  {!isForeign && (
-                                    <div className="flex items-center gap-2">
-                                      {!act.reminderRead && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleMarkReminderAsRead(act)}
-                                          className="flex items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-2 py-1 text-[9px] font-bold text-indigo-300 transition-colors hover:bg-indigo-500/30 hover:text-indigo-200"
-                                        >
-                                          <CheckSquare className="h-3 w-3" />
-                                          Marcar Leído
-                                        </button>
+                                    {/* Indicadores de Sincronización y Borrado */}
+                                    <div className="flex items-center gap-1 opacity-40 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                                      {act.synced ? (
+                                        <span title="Sincronizado con HubSpot">
+                                          <Cloud className="h-3 w-3 text-emerald-400" />
+                                        </span>
+                                      ) : (
+                                        <span title="Guardado localmente, pendiente de sincronización">
+                                          <Database className="h-3 w-3 animate-pulse text-amber-500" />
+                                        </span>
                                       )}
+
                                       <button
-                                        type="button"
-                                        onClick={() => handleRemoveReminder(act)}
-                                        className="flex items-center gap-1 rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[9px] font-bold text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-350"
+                                        onClick={() => handleDeleteActivity(act)}
+                                        className="rounded p-0.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-red-400"
+                                        title="Eliminar mensaje de WhatsApp"
                                       >
-                                        <X className="h-3 w-3" />
-                                        Quitar Alarma
+                                        <Trash2 className="h-2.5 w-2.5" />
                                       </button>
                                     </div>
-                                  )}
+                                  </div>
                                 </div>
-                              )}
-                            </div>
+                              </div>
+                            ) : (
+                              /* Renderizado estándar para otras actividades */
+                              <div
+                                id={`activity-${act.id || act.tempId}`}
+                                className={`space-y-2 rounded-xl border p-4 transition-all duration-500 ${
+                                  highlightedActivityId === act.id || highlightedActivityId === act.tempId
+                                    ? 'scale-[1.02] border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20'
+                                    : 'border-slate-900 bg-slate-950/80'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <span className="block font-mono text-[9px] text-slate-500">
+                                      {new Date(act.timestamp).toLocaleString()}
+                                    </span>
+                                    <h5 className="mt-0.5 text-xs font-bold text-white">
+                                      {act.title}
+                                    </h5>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                    {act.synced ? (
+                                      <span title="Sincronizado con HubSpot">
+                                        <Cloud className="h-3.5 w-3.5 text-emerald-500" />
+                                      </span>
+                                    ) : (
+                                      <span title="Guardado localmente, pendiente de sincronización">
+                                        <Database className="h-3.5 w-3.5 animate-pulse text-amber-500" />
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => handleDeleteActivity(act)}
+                                      className="rounded p-1 text-slate-600 transition-colors hover:bg-slate-900 hover:text-red-400"
+                                      title="Eliminar actividad"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <p className="whitespace-pre-line text-xs leading-relaxed text-slate-400">
+                                  {act.body}
+                                </p>
+
+                                {act.reminderDate && (
+                                  <div className="mt-2 flex max-w-md flex-col gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-950/40 p-2.5">
+                                    <div className="flex items-center gap-1.5 text-[10px] text-indigo-300">
+                                      <Bell className="h-3.5 w-3.5 animate-pulse text-indigo-400" />
+                                      <span className="font-medium">
+                                        Recordatorio: {new Date(act.reminderDate).toLocaleString()}
+                                      </span>
+                                      {act.reminderRead ? (
+                                        <span className="ml-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-1.5 py-0.5 text-[8px] text-indigo-200">
+                                          Leído
+                                        </span>
+                                      ) : (
+                                        <span className="ml-1 rounded border border-amber-500/30 bg-amber-500/20 px-1.5 py-0.5 text-[8px] text-amber-200">
+                                          Activo
+                                        </span>
+                                      )}
+                                    </div>
+                                    {!isForeign && (
+                                      <div className="flex items-center gap-2">
+                                        {!act.reminderRead && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleMarkReminderAsRead(act)}
+                                            className="flex items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-2 py-1 text-[9px] font-bold text-indigo-300 transition-colors hover:bg-indigo-500/30 hover:text-indigo-200"
+                                          >
+                                            <CheckSquare className="h-3 w-3" />
+                                            Marcar Leído
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveReminder(act)}
+                                          className="flex items-center gap-1 rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[9px] font-bold text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-350"
+                                        >
+                                          <X className="h-3 w-3" />
+                                          Quitar Alarma
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )
                       })
@@ -1136,7 +1200,7 @@ export default function LeadDrawer({
                             <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                               {deal.synced ? (
                                 <span title="Sincronizado con el CRM">
-                                  <Cloud className="h-3.5 w-3.5 text-slate-600" />
+                                  <Cloud className="h-3.5 w-3.5 text-emerald-500" />
                                 </span>
                               ) : (
                                 <span title="Pendiente de Sincronización">
