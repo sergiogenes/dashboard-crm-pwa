@@ -1,33 +1,18 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { localDb } from '@/lib/db'
+import React from 'react'
 import {
   Settings,
   User,
   Shield,
-  Database,
   CheckCircle,
   HelpCircle,
   HardDrive
 } from 'lucide-react'
+import { useSettings } from '@/hooks/useSettings'
 
 export default function SettingsPage() {
-  const { data: session, status } = useSession()
-  const userId = session?.user?.id
-
-  // Obtener estadísticas de la base de datos local para la sección de almacenamiento
-  const localStats = useLiveQuery(
-    async () => {
-      if (!userId) return { leads: 0, companies: 0 }
-      const leads = await localDb.leads.filter((l) => l.userId === userId && l.deleted !== true).count()
-      const companies = await localDb.companies.filter((c) => c.deleted !== true).count()
-      return { leads, companies }
-    },
-    [userId],
-    { leads: 0, companies: 0 }
-  )
+  const { status, userId, session, localStats, isMfaActive } = useSettings()
 
   // Carga inicial
   if (status === 'loading' || !userId) {
@@ -38,8 +23,6 @@ export default function SettingsPage() {
       </div>
     )
   }
-
-  const isMfaActive = session?.user?.twoFactorEnabled !== false
 
   return (
     <div className="space-y-8 max-w-4xl">

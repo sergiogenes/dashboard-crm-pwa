@@ -324,3 +324,39 @@ _Última actualización: 2026-06-03_
 - **Indicador Visual de Ventana Activa en Lista de Contactos**:
   - Implementada la función `getWhatsAppWindowStatus(lead)` en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx) para evaluar reactivamente si la ventana de 24 horas está activa a partir del último mensaje entrante del contacto (incluyendo soporte resiliente para leads ajenos buscando en `foreignDetails`).
   - Añadido un badge visual interactivo debajo del número de teléfono en el listado de contactos (un círculo verde parpadeante con el tiempo restante, o un círculo gris con la etiqueta "Expirada" si finalizó) tanto en la vista de escritorio (tabla) como en la móvil (tarjetas).
+- **Inicio de Clean Architecture (Fase 1 y Fase 2)**:
+  - Creadas las entidades puras de dominio (`Company`, `Lead`, `Activity`, `Deal`, `Invoice`) en `src/core/entities/` para desacoplar el modelo del framework y de Mongoose.
+  - Creadas las interfaces de repositorio (`ICompanyRepository`, `ILeadRepository`, `IActivityRepository`, `IDealRepository`, `IInvoiceRepository`) en `src/core/repositories/`.
+  - Implementados los repositorios concretos para MongoDB usando Mongoose (`MongoDBCompanyRepository`, `MongoDBLeadRepository`, `MongoDBActivityRepository`, `MongoDBDealRepository`, `MongoDBInvoiceRepository`) en `src/infrastructure/repositories/mongodb/`.
+  - Diseñada la factoría centralizada `RepositoryFactory` en `src/infrastructure/repositories/RepositoryFactory.ts` para resolver dinámicamente las instancias concretas, aislando la lógica de base de datos de la UI y de las Server Actions.
+
+## Fases del 17 de junio de 2026 (Modularización y Reemplazo de UI en Contactos y Deals)
+
+- **Modularización del UI de Contactos (Fase 2 del Blueprint)**:
+  - Completado el reemplazo de la interfaz inline del Drawer lateral en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx) por el componente modularizado [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx).
+  - Actualizado [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx) para aceptar y gestionar reactivamente las props de resaltado de notificaciones (`highlightedActivityId`, `setHighlightedActivityId`) y el spinner de carga al consultar datos externos (`isLoadingForeign`).
+  - Removidos estados obsoletos y handlers redundantes en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx), reduciendo su tamaño de más de 2000 líneas a solo 1134 líneas.
+- **Modularización de la UI de Deals (Fase 3 del Blueprint)**:
+  - Creados los componentes modulares [DealTable.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/deals/DealTable.tsx) (para escritorio, hidden md:block) y [DealCard.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/deals/DealCard.tsx) (para móviles, md:hidden).
+  - Extraído el helper de estilos y estados de préstamos `getStageConfig` para hacerlo autocontenido dentro de los componentes.
+  - Refactorizado [deals/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/deals/page.tsx) para importar y utilizar ambos subcomponentes, reduciendo su tamaño original de 544 líneas a solo 306 líneas y logrando una separación de responsabilidades limpia en el listado de préstamos.
+  - **Modularización Extrema y Clean Architecture en todo el Dashboard (Hito de Consistencia)**:
+    - **Sección Contactos**: 
+      - Creado el componente [LeadCard.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadCard.tsx) (tarjetas móviles).
+      - Creado el custom hook [useContacts.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useContacts.ts) conteniendo todo el estado, base de datos y efectos.
+      - Reducido [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx) a solo **192 líneas** (código 100% declarativo y visual).
+    - **Sección Empresas**:
+      - Creados los componentes modularizados [CompanyTable.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/companies/CompanyTable.tsx) (desktop) y [CompanyCard.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/companies/CompanyCard.tsx) (móvil).
+      - Creado el custom hook [useCompanies.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useCompanies.ts) para la lógica de IndexedDB y soft delete de empresas.
+      - Reducido [companies/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/companies/page.tsx) a solo **85 líneas**.
+    - **Sección Préstamos (Deals)**:
+      - Creado el custom hook [useDeals.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useDeals.ts) encapsulando los filtros y las métricas de créditos.
+      - Reducido [deals/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/deals/page.tsx) a solo **155 líneas** delegando a `DealTable` y `DealCard`.
+    - **Dashboard Home**:
+      - Creado el custom hook [useDashboard.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useDashboard.ts) para el agrupamiento de estados y cálculo del embudo de ventas.
+      - Reducido [page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/page.tsx) a un markup declarativo y limpio.
+    - **Sección Configuración**:
+      - Creado el custom hook [useSettings.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useSettings.ts) y simplificado [settings/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/settings/page.tsx).
+    - **Sección Admin**:
+      - Creado el custom hook [useAdmin.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useAdmin.ts) y refactorizado [admin/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/admin/page.tsx) a **229 líneas** de puros componentes visuales.
+
