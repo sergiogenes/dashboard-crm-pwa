@@ -6,6 +6,7 @@ export interface CRMLead {
   phone?: string
   ownerId?: string
   scoring?: string
+  documentId?: string
 }
 
 export interface CRMCompany {
@@ -62,7 +63,10 @@ export interface ICRMProvider {
   /**
    * Asocia un contacto (lead) a una empresa en el CRM utilizando la relación standard de HubSpot.
    */
-  associateLeadWithCompany(leadCrmId: string, companyCrmId: string): Promise<void>
+  associateLeadWithCompany(
+    leadCrmId: string,
+    companyCrmId: string,
+  ): Promise<void>
 
   /**
    * Elimina/archiva un contacto en el CRM.
@@ -81,6 +85,7 @@ export interface ICRMProvider {
   fetchLeadsByOwner(ownerId: string): Promise<CRMLead[]>
   fetchAllCompanies(): Promise<CRMCompany[]>
   fetchOwnerIdByEmail(email: string): Promise<string | undefined>
+  searchLeads(query: string): Promise<CRMLead[]>
 
   /**
    * Obtiene el historial de facturas de un contacto (Custom Object) desde el CRM.

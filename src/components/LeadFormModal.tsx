@@ -3,7 +3,15 @@
 import { useState, useEffect } from 'react'
 import { localDb, LocalLead, LocalCompany } from '@/lib/db'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { X, User, Mail, Phone, Building2, Save } from 'lucide-react'
+import {
+  X,
+  User,
+  Mail,
+  Phone,
+  Building2,
+  Save,
+  Fingerprint,
+} from 'lucide-react'
 
 interface LeadFormModalProps {
   isOpen: boolean
@@ -22,6 +30,7 @@ export default function LeadFormModal({
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [documentId, setDocumentId] = useState('')
   const [companyId, setCompanyId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +42,7 @@ export default function LeadFormModal({
       return await localDb.companies.filter((c) => c.deleted !== true).toArray()
     },
     [userId],
-    []
+    [],
   )
 
   useEffect(() => {
@@ -42,12 +51,14 @@ export default function LeadFormModal({
       setLastName(leadToEdit.lastName)
       setEmail(leadToEdit.email)
       setPhone(leadToEdit.phone || '')
+      setDocumentId(leadToEdit.documentId || '')
       setCompanyId(leadToEdit.companyId || '')
     } else {
       setFirstName('')
       setLastName('')
       setEmail('')
       setPhone('')
+      setDocumentId('')
       setCompanyId('')
     }
     setError(null)
@@ -60,8 +71,15 @@ export default function LeadFormModal({
     setError(null)
     setLoading(true)
 
-    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
-      setError('El nombre, apellido y correo electrónico son obligatorios.')
+    if (
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !email.trim() ||
+      !documentId.trim()
+    ) {
+      setError(
+        'El nombre, apellido, correo electrónico y cédula/DNI son obligatorios.',
+      )
       setLoading(false)
       return
     }
@@ -80,9 +98,33 @@ export default function LeadFormModal({
           (leadToEdit.tempId !== existing.tempId &&
             leadToEdit.id !== existing.id))
       ) {
-        setError('Ya existe un contacto activo con este correo electrónico en tu base de datos.')
+        setError(
+          'Ya existe un contacto activo con este correo electrónico en tu base de datos.',
+        )
         setLoading(false)
         return
+      }
+
+      // Validar si ya existe un lead local activo con el mismo número de documento (ignora mayúsculas/minúsculas)
+      if (documentId.trim()) {
+        const existingDoc = await localDb.leads
+          .where('documentId')
+          .equalsIgnoreCase(documentId.trim())
+          .filter((l) => l.userId === userId && l.deleted !== true)
+          .first()
+
+        if (
+          existingDoc &&
+          (!leadToEdit ||
+            (leadToEdit.tempId !== existingDoc.tempId &&
+              leadToEdit.id !== existingDoc.id))
+        ) {
+          setError(
+            'Ya existe un contacto activo con este número de identificación en tu base de datos.',
+          )
+          setLoading(false)
+          return
+        }
       }
 
       const now = Date.now()
@@ -95,15 +137,22 @@ export default function LeadFormModal({
           lastName: lastName.trim(),
           email: email.trim().toLowerCase(),
           phone: phone.trim() || undefined,
+          documentId: documentId.trim() || undefined,
           companyId: resolvedCompanyId,
           synced: false, // Forzar resincronización
           updatedAt: now,
         }
 
         if (leadToEdit.id) {
-          await localDb.leads.where('id').equals(leadToEdit.id).modify(updateData)
+          await localDb.leads
+            .where('id')
+            .equals(leadToEdit.id)
+            .modify(updateData)
         } else if (leadToEdit.tempId) {
-          await localDb.leads.where('tempId').equals(leadToEdit.tempId).modify(updateData)
+          await localDb.leads
+            .where('tempId')
+            .equals(leadToEdit.tempId)
+            .modify(updateData)
         }
       } else {
         // Modo Creación
@@ -114,6 +163,7 @@ export default function LeadFormModal({
           lastName: lastName.trim(),
           email: email.trim().toLowerCase(),
           phone: phone.trim() || undefined,
+          documentId: documentId.trim() || undefined,
           companyId: resolvedCompanyId,
           synced: false,
           createdAt: now,
@@ -135,26 +185,29 @@ export default function LeadFormModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
       {/* Modal Card */}
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="animate-in fade-in zoom-in-95 relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl duration-200">
         {/* Cabecera */}
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <h3 className="flex items-center gap-2 text-lg font-bold text-white">
             <User className="h-5 w-5 text-indigo-400" />
             {leadToEdit ? 'Editar Contacto / Lead' : 'Nuevo Contacto / Lead'}
           </h3>
           <button
             onClick={onClose}
-            className="rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors p-1"
+            className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Contenido / Formulario */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 p-6">
           {error && (
             <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
               {error}
@@ -163,7 +216,7 @@ export default function LeadFormModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Nombre *
               </label>
               <div className="relative">
@@ -182,7 +235,7 @@ export default function LeadFormModal({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Apellido *
               </label>
               <input
@@ -191,13 +244,13 @@ export default function LeadFormModal({
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 placeholder="Pérez"
-                className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 px-3 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="block w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
               Correo Electrónico *
             </label>
             <div className="relative">
@@ -216,7 +269,7 @@ export default function LeadFormModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
               Teléfono (Opcional)
             </label>
             <div className="relative">
@@ -234,7 +287,26 @@ export default function LeadFormModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Cédula / DNI *
+            </label>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <Fingerprint className="h-4.5 w-4.5 text-slate-500" />
+              </div>
+              <input
+                type="text"
+                required
+                value={documentId}
+                onChange={(e) => setDocumentId(e.target.value)}
+                placeholder="1.234.567-8"
+                className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
               Empresa Asociada
             </label>
             <div className="relative">
@@ -244,12 +316,18 @@ export default function LeadFormModal({
               <select
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
-                className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none"
+                className="block w-full appearance-none rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="" className="bg-slate-900">Ninguna empresa asociada</option>
+                <option value="" className="bg-slate-900">
+                  Ninguna empresa asociada
+                </option>
                 {companies &&
                   companies.map((comp) => (
-                    <option key={comp.id || comp.tempId} value={comp.id || comp.tempId} className="bg-slate-900">
+                    <option
+                      key={comp.id || comp.tempId}
+                      value={comp.id || comp.tempId}
+                      className="bg-slate-900"
+                    >
                       {`${comp.name} ${comp.synced ? '(Sincronizada)' : '(Local)'}`}
                     </option>
                   ))}
@@ -262,18 +340,18 @@ export default function LeadFormModal({
           </div>
 
           {/* Botones de acción */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-800 mt-6">
+          <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-800 bg-transparent px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+              className="rounded-xl border border-slate-800 bg-transparent px-4 py-2.5 text-sm font-semibold text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-violet-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:from-indigo-600 hover:to-violet-700 disabled:opacity-50"
             >
               <Save className="h-4 w-4" />
               {leadToEdit ? 'Guardar Cambios' : 'Crear Lead'}

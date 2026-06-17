@@ -14,7 +14,7 @@ export type SyncStatus = 'idle' | 'syncing' | 'error' | 'success'
  */
 export function useSync(userId: string | undefined) {
   const [isOnline, setIsOnline] = useState<boolean>(
-    typeof window !== 'undefined' ? navigator.onLine : true
+    typeof window !== 'undefined' ? navigator.onLine : true,
   )
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -37,19 +37,19 @@ export function useSync(userId: string | undefined) {
     try {
       // 1. Obtener datos locales modificados de Dexie
       const unsyncedCompanies = await localDb.companies
-        .filter(c => c.synced === false)
+        .filter((c) => c.synced === false)
         .toArray()
 
       const unsyncedLeads = await localDb.leads
-        .filter(l => l.synced === false && l.userId === userId)
+        .filter((l) => l.synced === false && l.userId === userId)
         .toArray()
 
       const unsyncedActivities = await localDb.activities
-        .filter(a => a.synced === false && a.userId === userId)
+        .filter((a) => a.synced === false && a.userId === userId)
         .toArray()
 
       const unsyncedDeals = await localDb.deals
-        .filter(d => d.synced === false && d.userId === userId)
+        .filter((d) => d.synced === false && d.userId === userId)
         .toArray()
 
       const hasPendingChanges =
@@ -69,7 +69,7 @@ export function useSync(userId: string | undefined) {
           unsyncedLeads.map(({ synced, ...rest }) => rest),
           unsyncedCompanies.map(({ synced, ...rest }) => rest),
           unsyncedActivities.map(({ synced, ...rest }) => rest),
-          unsyncedDeals.map(({ synced, ...rest }) => rest)
+          unsyncedDeals.map(({ synced, ...rest }) => rest),
         )
 
         if (!response.success) {
@@ -83,37 +83,68 @@ export function useSync(userId: string | undefined) {
 
         // Actualizar Dexie aplicando IDs reales y eliminando elementos soft-deleted
         for (const comp of unsyncedCompanies) {
-          if (comp.tempId) {
-            const mapping = companyMappings.find(m => m.tempId === comp.tempId)
-            if (mapping) {
-              if (comp.deleted) {
-                await localDb.companies.where('tempId').equals(comp.tempId).delete()
-              } else {
-                await localDb.companies.where('tempId').equals(comp.tempId).modify({
-                  id: mapping.id,
-                  synced: true,
-                })
-              }
-            }
-          } else if (comp.id) {
+          if (comp.id) {
             if (comp.deleted) {
               await localDb.companies.where('id').equals(comp.id).delete()
             } else {
-              await localDb.companies.where('id').equals(comp.id).modify({ synced: true })
+              await localDb.companies
+                .where('id')
+                .equals(comp.id)
+                .modify({ synced: true })
+            }
+          } else if (comp.tempId) {
+            const mapping = companyMappings.find(
+              (m) => m.tempId === comp.tempId,
+            )
+            if (mapping) {
+              if (comp.deleted) {
+                await localDb.companies
+                  .where('tempId')
+                  .equals(comp.tempId)
+                  .delete()
+              } else {
+                await localDb.companies
+                  .where('tempId')
+                  .equals(comp.tempId)
+                  .modify({
+                    id: mapping.id,
+                    synced: true,
+                  })
+              }
             }
           }
         }
 
         for (const lead of unsyncedLeads) {
-          if (lead.tempId) {
-            const mapping = leadMappings.find(m => m.tempId === lead.tempId)
+          if (lead.id) {
+            if (lead.deleted) {
+              await localDb.leads.where('id').equals(lead.id).delete()
+            } else {
+              let resolvedCompanyId = lead.companyId
+              if (lead.companyId) {
+                const compMapping = companyMappings.find(
+                  (m) => m.tempId === lead.companyId,
+                )
+                if (compMapping) {
+                  resolvedCompanyId = compMapping.id
+                }
+              }
+              await localDb.leads.where('id').equals(lead.id).modify({
+                companyId: resolvedCompanyId,
+                synced: true,
+              })
+            }
+          } else if (lead.tempId) {
+            const mapping = leadMappings.find((m) => m.tempId === lead.tempId)
             if (mapping) {
               if (lead.deleted) {
                 await localDb.leads.where('tempId').equals(lead.tempId).delete()
               } else {
                 let resolvedCompanyId = lead.companyId
                 if (lead.companyId) {
-                  const compMapping = companyMappings.find(m => m.tempId === lead.companyId)
+                  const compMapping = companyMappings.find(
+                    (m) => m.tempId === lead.companyId,
+                  )
                   if (compMapping) {
                     resolvedCompanyId = compMapping.id
                   }
@@ -126,53 +157,19 @@ export function useSync(userId: string | undefined) {
                 })
               }
             }
-          } else if (lead.id) {
-            if (lead.deleted) {
-              await localDb.leads.where('id').equals(lead.id).delete()
-            } else {
-              let resolvedCompanyId = lead.companyId
-              if (lead.companyId) {
-                const compMapping = companyMappings.find(m => m.tempId === lead.companyId)
-                if (compMapping) {
-                  resolvedCompanyId = compMapping.id
-                }
-              }
-              await localDb.leads.where('id').equals(lead.id).modify({
-                companyId: resolvedCompanyId,
-                synced: true,
-              })
-            }
           }
         }
 
         for (const act of unsyncedActivities) {
-          if (act.tempId) {
-            const mapping = activityMappings.find(m => m.tempId === act.tempId)
-            if (mapping) {
-              if (act.deleted) {
-                await localDb.activities.where('tempId').equals(act.tempId).delete()
-              } else {
-                let resolvedLeadId = act.leadId
-                if (act.leadId) {
-                  const leadMapping = leadMappings.find(m => m.tempId === act.leadId)
-                  if (leadMapping) {
-                    resolvedLeadId = leadMapping.id
-                  }
-                }
-                await localDb.activities.where('tempId').equals(act.tempId).modify({
-                  id: mapping.id,
-                  leadId: resolvedLeadId,
-                  synced: true,
-                })
-              }
-            }
-          } else if (act.id) {
+          if (act.id) {
             if (act.deleted) {
               await localDb.activities.where('id').equals(act.id).delete()
             } else {
               let resolvedLeadId = act.leadId
               if (act.leadId) {
-                const leadMapping = leadMappings.find(m => m.tempId === act.leadId)
+                const leadMapping = leadMappings.find(
+                  (m) => m.tempId === act.leadId,
+                )
                 if (leadMapping) {
                   resolvedLeadId = leadMapping.id
                 }
@@ -182,19 +179,69 @@ export function useSync(userId: string | undefined) {
                 synced: true,
               })
             }
+          } else if (act.tempId) {
+            const mapping = activityMappings.find(
+              (m) => m.tempId === act.tempId,
+            )
+            if (mapping) {
+              if (act.deleted) {
+                await localDb.activities
+                  .where('tempId')
+                  .equals(act.tempId)
+                  .delete()
+              } else {
+                let resolvedLeadId = act.leadId
+                if (act.leadId) {
+                  const leadMapping = leadMappings.find(
+                    (m) => m.tempId === act.leadId,
+                  )
+                  if (leadMapping) {
+                    resolvedLeadId = leadMapping.id
+                  }
+                }
+                await localDb.activities
+                  .where('tempId')
+                  .equals(act.tempId)
+                  .modify({
+                    id: mapping.id,
+                    leadId: resolvedLeadId,
+                    synced: true,
+                  })
+              }
+            }
           }
         }
 
         for (const deal of unsyncedDeals) {
-          if (deal.tempId) {
-            const mapping = dealMappings.find(m => m.tempId === deal.tempId)
+          if (deal.id) {
+            if (deal.deleted) {
+              await localDb.deals.where('id').equals(deal.id).delete()
+            } else {
+              let resolvedLeadId = deal.leadId
+              if (deal.leadId) {
+                const leadMapping = leadMappings.find(
+                  (m) => m.tempId === deal.leadId,
+                )
+                if (leadMapping) {
+                  resolvedLeadId = leadMapping.id
+                }
+              }
+              await localDb.deals.where('id').equals(deal.id).modify({
+                leadId: resolvedLeadId,
+                synced: true,
+              })
+            }
+          } else if (deal.tempId) {
+            const mapping = dealMappings.find((m) => m.tempId === deal.tempId)
             if (mapping) {
               if (deal.deleted) {
                 await localDb.deals.where('tempId').equals(deal.tempId).delete()
               } else {
                 let resolvedLeadId = deal.leadId
                 if (deal.leadId) {
-                  const leadMapping = leadMappings.find(m => m.tempId === deal.leadId)
+                  const leadMapping = leadMappings.find(
+                    (m) => m.tempId === deal.leadId,
+                  )
                   if (leadMapping) {
                     resolvedLeadId = leadMapping.id
                   }
@@ -205,22 +252,6 @@ export function useSync(userId: string | undefined) {
                   synced: true,
                 })
               }
-            }
-          } else if (deal.id) {
-            if (deal.deleted) {
-              await localDb.deals.where('id').equals(deal.id).delete()
-            } else {
-              let resolvedLeadId = deal.leadId
-              if (deal.leadId) {
-                const leadMapping = leadMappings.find(m => m.tempId === deal.leadId)
-                if (leadMapping) {
-                  resolvedLeadId = leadMapping.id
-                }
-              }
-              await localDb.deals.where('id').equals(deal.id).modify({
-                leadId: resolvedLeadId,
-                synced: true,
-              })
             }
           }
         }
@@ -244,7 +275,10 @@ export function useSync(userId: string | undefined) {
           await localDb.companies.where('id').equals(serverComp.id).delete()
         } else {
           // Buscar si ya existe localmente la empresa usando el ID de MongoDB o por nombre
-          let existingLocal = await localDb.companies.where('id').equals(serverComp.id).first()
+          let existingLocal = await localDb.companies
+            .where('id')
+            .equals(serverComp.id)
+            .first()
           if (!existingLocal) {
             existingLocal = await localDb.companies
               .where('name')
@@ -269,15 +303,21 @@ export function useSync(userId: string | undefined) {
         if (serverLead.deleted) {
           await localDb.leads.where('id').equals(serverLead.id).delete()
           await localDb.invoices.where('leadId').equals(serverLead.id).delete() // Borrado en cascada local
-          await localDb.activities.where('leadId').equals(serverLead.id).delete() // Borrado en cascada local
+          await localDb.activities
+            .where('leadId')
+            .equals(serverLead.id)
+            .delete() // Borrado en cascada local
         } else {
           // Buscar si ya existe localmente el lead usando el ID de MongoDB o por email
-          let existingLocal = await localDb.leads.where('id').equals(serverLead.id).first()
+          let existingLocal = await localDb.leads
+            .where('id')
+            .equals(serverLead.id)
+            .first()
           if (!existingLocal) {
             existingLocal = await localDb.leads
               .where('email')
               .equals(serverLead.email)
-              .filter(l => l.userId === serverLead.userId)
+              .filter((l) => l.userId === serverLead.userId)
               .first()
           }
 
@@ -289,6 +329,7 @@ export function useSync(userId: string | undefined) {
             lastName: serverLead.lastName,
             email: serverLead.email,
             phone: serverLead.phone,
+            documentId: serverLead.documentId,
             companyId: serverLead.companyId,
             scoring: serverLead.scoring, // Persistir el scoring en Dexie
             synced: true,
@@ -301,7 +342,9 @@ export function useSync(userId: string | undefined) {
       // Guardar facturas en Dexie (Inbound Sync)
       if (updates.invoices && updates.invoices.length > 0) {
         // Limpiar facturas previas de los leads recibidos en IndexedDB antes de insertar las nuevas
-        const leadIds = Array.from(new Set(updates.invoices.map((inv: any) => inv.leadId)))
+        const leadIds = Array.from(
+          new Set(updates.invoices.map((inv: any) => inv.leadId)),
+        )
         for (const leadId of leadIds) {
           await localDb.invoices.where('leadId').equals(leadId).delete()
         }
@@ -320,7 +363,7 @@ export function useSync(userId: string | undefined) {
             paymentDate: inv.paymentDate,
             createdAt: inv.createdAt,
             updatedAt: inv.updatedAt,
-          }))
+          })),
         )
       }
 
@@ -331,10 +374,16 @@ export function useSync(userId: string | undefined) {
             await localDb.activities.where('id').equals(serverAct.id).delete()
           } else {
             // Buscar si ya existe localmente la actividad usando el ID de MongoDB
-            let existingLocal = await localDb.activities.where('id').equals(serverAct.id).first()
+            let existingLocal = await localDb.activities
+              .where('id')
+              .equals(serverAct.id)
+              .first()
 
             // Resolver leadId local si tiene tempId en lugar de ID de MongoDB
-            let localLead = await localDb.leads.where('id').equals(serverAct.leadId).first()
+            let localLead = await localDb.leads
+              .where('id')
+              .equals(serverAct.leadId)
+              .first()
             const resolvedLeadId = localLead?.tempId || serverAct.leadId
 
             await localDb.activities.put({
@@ -362,8 +411,14 @@ export function useSync(userId: string | undefined) {
           if (serverDeal.deleted) {
             await localDb.deals.where('id').equals(serverDeal.id).delete()
           } else {
-            let existingLocal = await localDb.deals.where('id').equals(serverDeal.id).first()
-            let localLead = await localDb.leads.where('id').equals(serverDeal.leadId).first()
+            let existingLocal = await localDb.deals
+              .where('id')
+              .equals(serverDeal.id)
+              .first()
+            let localLead = await localDb.leads
+              .where('id')
+              .equals(serverDeal.leadId)
+              .first()
             const resolvedLeadId = localLead?.tempId || serverDeal.leadId
 
             await localDb.deals.put({

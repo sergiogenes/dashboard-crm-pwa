@@ -46,6 +46,18 @@ export default function CompanyFormModal({
       return
     }
 
+    if (domain.trim()) {
+      const domainRegex =
+        /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/
+      if (!domainRegex.test(domain.trim())) {
+        setError(
+          'El dominio web ingresado no es válido (ej. empresa.com o empresa.com.ar).',
+        )
+        setLoading(false)
+        return
+      }
+    }
+
     try {
       // Validar si ya existe una empresa local activa con el mismo nombre (ignora mayúsculas/minúsculas)
       const existing = await localDb.companies
@@ -60,7 +72,9 @@ export default function CompanyFormModal({
           (companyToEdit.tempId !== existing.tempId &&
             companyToEdit.id !== existing.id))
       ) {
-        setError('Ya existe una empresa activa con este nombre en tu base de datos.')
+        setError(
+          'Ya existe una empresa activa con este nombre en tu base de datos.',
+        )
         setLoading(false)
         return
       }
@@ -77,9 +91,15 @@ export default function CompanyFormModal({
         }
 
         if (companyToEdit.id) {
-          await localDb.companies.where('id').equals(companyToEdit.id).modify(updateData)
+          await localDb.companies
+            .where('id')
+            .equals(companyToEdit.id)
+            .modify(updateData)
         } else if (companyToEdit.tempId) {
-          await localDb.companies.where('tempId').equals(companyToEdit.tempId).modify(updateData)
+          await localDb.companies
+            .where('tempId')
+            .equals(companyToEdit.tempId)
+            .modify(updateData)
         }
       } else {
         // Modo Creación
@@ -99,7 +119,9 @@ export default function CompanyFormModal({
       onClose()
     } catch (err: any) {
       console.error('[Company Form] Error saving company:', err)
-      setError('Ocurrió un error al guardar la empresa en la base de datos local.')
+      setError(
+        'Ocurrió un error al guardar la empresa en la base de datos local.',
+      )
     } finally {
       setLoading(false)
     }
@@ -108,26 +130,29 @@ export default function CompanyFormModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
       {/* Modal Card */}
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="animate-in fade-in zoom-in-95 relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl duration-200">
         {/* Cabecera */}
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <h3 className="flex items-center gap-2 text-lg font-bold text-white">
             <Building2 className="h-5 w-5 text-indigo-400" />
             {companyToEdit ? 'Editar Empresa' : 'Nueva Empresa'}
           </h3>
           <button
             onClick={onClose}
-            className="rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors p-1"
+            className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Contenido / Formulario */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 p-6">
           {error && (
             <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
               {error}
@@ -135,7 +160,7 @@ export default function CompanyFormModal({
           )}
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
               Nombre de la Empresa *
             </label>
             <div className="relative">
@@ -154,7 +179,7 @@ export default function CompanyFormModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
               Dominio Web (Opcional)
             </label>
             <div className="relative">
@@ -172,18 +197,18 @@ export default function CompanyFormModal({
           </div>
 
           {/* Botones de acción */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-800 mt-6">
+          <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-800 bg-transparent px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+              className="rounded-xl border border-slate-800 bg-transparent px-4 py-2.5 text-sm font-semibold text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-violet-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:from-indigo-600 hover:to-violet-700 disabled:opacity-50"
             >
               <Save className="h-4 w-4" />
               {companyToEdit ? 'Guardar Cambios' : 'Crear Empresa'}
