@@ -3,8 +3,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { localDb, LocalLead, LocalInvoice, LocalActivity, LocalDeal } from '@/lib/db'
+import {
+  localDb,
+  LocalLead,
+  LocalInvoice,
+  LocalActivity,
+  LocalDeal,
+} from '@/lib/db'
 import LeadFormModal from '@/components/LeadFormModal'
+import { searchGlobalLeads, getGlobalLeadDetails } from '@/app/actions/sync'
 import {
   Users,
   Plus,
@@ -25,7 +32,8 @@ import {
   Mail,
   CheckSquare,
   Bell,
-  Wallet
+  Wallet,
+  Loader2,
 } from 'lucide-react'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
@@ -51,10 +59,13 @@ export default function ContactsPage() {
   const [leadToEdit, setLeadToEdit] = useState<LocalLead | null>(null)
 
   // Estado del Drawer de Historial Crediticio (Facturas) y Detalles
-  const [selectedLeadForInvoice, setSelectedLeadForInvoice] = useState<LocalLead | null>(null)
+  const [selectedLeadForInvoice, setSelectedLeadForInvoice] =
+    useState<LocalLead | null>(null)
 
   // Estado de Pestaña activa en el Drawer
-  const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'deals'>('activities')
+  const [activeTab, setActiveTab] = useState<
+    'finance' | 'activities' | 'deals'
+  >('activities')
 
   // Estado del Formulario de Nuevo Préstamo (Deal)
   const [dealAmount, setDealAmount] = useState('')
@@ -64,13 +75,17 @@ export default function ContactsPage() {
   const [isSubmittingDeal, setIsSubmittingDeal] = useState(false)
 
   // Estado del Formulario de Actividad
-  const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'>('NOTE')
+  const [activityType, setActivityType] = useState<
+    'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
+  >('NOTE')
   const [activityTitle, setActivityTitle] = useState('')
   const [activityBody, setActivityBody] = useState('')
   const [reminderDateOnly, setReminderDateOnly] = useState('')
   const [reminderTimeOnly, setReminderTimeOnly] = useState('08:00')
   const [showReminderPicker, setShowReminderPicker] = useState(false)
-  const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null)
+  const [highlightedActivityId, setHighlightedActivityId] = useState<
+    string | null
+  >(null)
   const [isSubmittingActivity, setIsSubmittingActivity] = useState(false)
 
   // Filtros y Búsqueda
@@ -81,12 +96,10 @@ export default function ContactsPage() {
   const companies = useLiveQuery(
     async () => {
       if (!userId) return []
-      return await localDb.companies
-        .filter((c) => c.deleted !== true)
-        .toArray()
+      return await localDb.companies.filter((c) => c.deleted !== true).toArray()
     },
     [userId],
-    []
+    [],
   )
 
   // 2. Obtener reactivamente todos los Leads activos desde Dexie
@@ -98,11 +111,12 @@ export default function ContactsPage() {
         .toArray()
     },
     [userId],
-    []
+    [],
   )
 
   // 3. Obtener reactivamente las facturas asociadas al lead seleccionado para el Drawer
-  const selectedLeadId = selectedLeadForInvoice?.id || selectedLeadForInvoice?.tempId || ''
+  const selectedLeadId =
+    selectedLeadForInvoice?.id || selectedLeadForInvoice?.tempId || ''
   const invoices = useLiveQuery(
     async () => {
       if (!selectedLeadId) return []
@@ -112,7 +126,7 @@ export default function ContactsPage() {
         .toArray()
     },
     [selectedLeadId],
-    []
+    [],
   )
 
   // 4. Obtener reactivamente las actividades asociadas al lead seleccionado para el Drawer
@@ -126,7 +140,7 @@ export default function ContactsPage() {
         .toArray()
     },
     [selectedLeadId],
-    []
+    [],
   )
 
   // 5. Obtener reactivamente los préstamos (deals) asociados al lead seleccionado
@@ -140,12 +154,133 @@ export default function ContactsPage() {
         .toArray()
     },
     [selectedLeadId],
-    []
+    [],
   )
+
+  // 5b. Obtener reactivamente todos los préstamos (deals) activos del usuario para calcular el estado de cada lead en la lista
+  const allDeals = useLiveQuery(
+    async () => {
+      if (!userId) return []
+      return await localDb.deals
+        .filter((d) => d.userId === userId && d.deleted !== true)
+        .toArray()
+    },
+    [userId],
+    [],
+  )
+
+  // 5c. Obtener reactivamente todas las actividades activas del usuario para calcular el estado de cada lead en la lista
+  const allActivities = useLiveQuery(
+    async () => {
+      if (!userId) return []
+      return await localDb.activities
+        .filter((a) => a.userId === userId && a.deleted !== true)
+        .toArray()
+    },
+    [userId],
+    [],
+  )
+
+  // Estado para búsqueda global por DNI / Cédula
+  const [globalLeads, setGlobalLeads] = useState<LocalLead[]>([])
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false)
+  const [foreignDetails, setForeignDetails] = useState<{
+    invoices: LocalInvoice[]
+    activities: LocalActivity[]
+    deals: LocalDeal[]
+  } | null>(null)
+  const [isLoadingForeign, setIsLoadingForeign] = useState(false)
+
+  const isForeign = selectedLeadForInvoice
+    ? selectedLeadForInvoice.userId !== userId
+    : false
+
+  // Effect para buscar contacto globalmente por DNI en el servidor (online)
+  useEffect(() => {
+    const searchGlobal = async () => {
+      if (!searchTerm.trim()) {
+        setGlobalLeads([])
+        return
+      }
+
+      // Solo buscar si estamos online y autenticados
+      if (typeof window !== 'undefined' && !navigator.onLine) return
+      if (!userId) return
+
+      setIsSearchingGlobal(true)
+      try {
+        const results = await searchGlobalLeads(searchTerm.trim())
+        const mappedLeads: LocalLead[] = results.map((result) => ({
+          id: result.id,
+          firstName: result.firstName,
+          lastName: result.lastName,
+          email: result.email,
+          phone: result.phone || undefined,
+          documentId: result.documentId || undefined,
+          companyId: result.companyId || undefined,
+          scoring: result.scoring || undefined,
+          userId: result.userId,
+          synced: true,
+          createdAt: result.createdAt,
+          updatedAt: result.updatedAt,
+        }))
+        setGlobalLeads(mappedLeads)
+      } catch (err) {
+        console.error('Error al buscar contacto globalmente:', err)
+      } finally {
+        setIsSearchingGlobal(false)
+      }
+    }
+
+    const timer = setTimeout(searchGlobal, 500)
+    return () => clearTimeout(timer)
+  }, [searchTerm, userId])
+
+  // Effect para cargar detalles de leads ajenos (foreign) desde MongoDB
+  useEffect(() => {
+    const loadForeignDetails = async () => {
+      if (!selectedLeadForInvoice || !selectedLeadForInvoice.id) {
+        setForeignDetails(null)
+        return
+      }
+
+      if (selectedLeadForInvoice.userId !== userId) {
+        setIsLoadingForeign(true)
+        try {
+          const details = await getGlobalLeadDetails(selectedLeadForInvoice.id)
+          setForeignDetails({
+            invoices: details.invoices as any[],
+            activities: details.activities.map((act) => ({
+              ...act,
+              type: act.type as any,
+              synced: true,
+            })),
+            deals: details.deals.map((d) => ({
+              ...d,
+              stage: d.stage as any,
+              synced: true,
+            })),
+          })
+        } catch (err) {
+          console.error('Error al obtener detalles globales del contacto:', err)
+        } finally {
+          setIsLoadingForeign(false)
+        }
+      } else {
+        setForeignDetails(null)
+      }
+    }
+    loadForeignDetails()
+  }, [selectedLeadForInvoice, userId])
 
   // Soft Delete del Lead
   const handleDeleteLead = async (lead: LocalLead) => {
-    if (!confirm(`¿Estás seguro de que deseas eliminar a ${lead.firstName} ${lead.lastName}?`)) return
+    if (
+      !confirm(
+        `¿Estás seguro de que deseas eliminar a ${lead.firstName} ${lead.lastName}?`,
+      )
+    )
+      return
     try {
       const now = Date.now()
       if (lead.id) {
@@ -159,9 +294,12 @@ export default function ContactsPage() {
         // Creado offline y nunca sincronizado: borrar directamente del cliente
         await localDb.leads.where('tempId').equals(lead.tempId).delete()
       }
-      
+
       // Si el lead que se está eliminando es el seleccionado en el drawer, cerrarlo
-      if (selectedLeadForInvoice?.id === lead.id || selectedLeadForInvoice?.tempId === lead.tempId) {
+      if (
+        selectedLeadForInvoice?.id === lead.id ||
+        selectedLeadForInvoice?.tempId === lead.tempId
+      ) {
         setSelectedLeadForInvoice(null)
       }
     } catch (err) {
@@ -172,7 +310,8 @@ export default function ContactsPage() {
   // Registrar una nueva actividad offline en Dexie
   const handleAddActivity = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!userId || !selectedLeadId) return
+    if (!userId || !selectedLeadId || selectedLeadForInvoice?.userId !== userId)
+      return
     if (!activityTitle.trim() || !activityBody.trim()) return
 
     setIsSubmittingActivity(true)
@@ -219,7 +358,7 @@ export default function ContactsPage() {
         }
         await localDb.activities.put(newTaskAct)
       }
-      
+
       // Limpiar formulario
       setActivityTitle('')
       setActivityBody('')
@@ -257,13 +396,20 @@ export default function ContactsPage() {
 
   // Marcar recordatorio como leído desde el historial
   const handleMarkReminderAsRead = async (act: LocalActivity) => {
+    if (selectedLeadForInvoice?.userId !== userId) return
     try {
       const now = Date.now()
       const actKey = act.tempId || act.id
       if (actKey) {
-        const notif = await localDb.notifications.where('activityId').equals(actKey).first()
+        const notif = await localDb.notifications
+          .where('activityId')
+          .equals(actKey)
+          .first()
         if (notif) {
-          await localDb.notifications.update(notif.id, { read: true, notified: true })
+          await localDb.notifications.update(notif.id, {
+            read: true,
+            notified: true,
+          })
         }
       }
 
@@ -281,12 +427,21 @@ export default function ContactsPage() {
 
   // Eliminar recordatorio de una actividad manteniendo la nota
   const handleRemoveReminder = async (act: LocalActivity) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este recordatorio? La nota permanecerá en el historial.')) return
+    if (selectedLeadForInvoice?.userId !== userId) return
+    if (
+      !confirm(
+        '¿Estás seguro de que deseas eliminar este recordatorio? La nota permanecerá en el historial.',
+      )
+    )
+      return
     try {
       const now = Date.now()
       const actKey = act.tempId || act.id
       if (actKey) {
-        const notif = await localDb.notifications.where('activityId').equals(actKey).first()
+        const notif = await localDb.notifications
+          .where('activityId')
+          .equals(actKey)
+          .first()
         if (notif) {
           await localDb.notifications.delete(notif.id)
         }
@@ -318,7 +473,13 @@ export default function ContactsPage() {
   // Registrar una nueva solicitud de préstamo offline en Dexie
   const handleAddDeal = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!userId || !selectedLeadId || !selectedLeadForInvoice) return
+    if (
+      !userId ||
+      !selectedLeadId ||
+      !selectedLeadForInvoice ||
+      selectedLeadForInvoice.userId !== userId
+    )
+      return
     if (!dealAmount.trim()) return
 
     setIsSubmittingDeal(true)
@@ -364,7 +525,12 @@ export default function ContactsPage() {
 
   // Soft Delete de Deal en Dexie
   const handleDeleteDeal = async (deal: LocalDeal) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar esta solicitud de préstamo?')) return
+    if (
+      !confirm(
+        '¿Estás seguro de que deseas eliminar esta solicitud de préstamo?',
+      )
+    )
+      return
     try {
       const now = Date.now()
       if (deal.id) {
@@ -386,13 +552,18 @@ export default function ContactsPage() {
   // Escuchar eventos de recordatorios del Header para abrir Drawer reactivamente
   useEffect(() => {
     const handleOpenReminder = (e: Event) => {
-      const customEvent = e as CustomEvent<{ leadId: string; activityId: string }>
+      const customEvent = e as CustomEvent<{
+        leadId: string
+        activityId: string
+      }>
       const { leadId, activityId } = customEvent.detail
       if (activityId) {
         setHighlightedActivityId(activityId)
       }
       if (leadId && leads.length > 0) {
-        const foundLead = leads.find((l) => l.id === leadId || l.tempId === leadId)
+        const foundLead = leads.find(
+          (l) => l.id === leadId || l.tempId === leadId,
+        )
         if (foundLead) {
           setSelectedLeadForInvoice(foundLead)
           setActiveTab('activities')
@@ -417,7 +588,9 @@ export default function ContactsPage() {
     }
 
     if (leadIdParam && leads.length > 0) {
-      const foundLead = leads.find((l) => l.id === leadIdParam || l.tempId === leadIdParam)
+      const foundLead = leads.find(
+        (l) => l.id === leadIdParam || l.tempId === leadIdParam,
+      )
       if (foundLead) {
         setSelectedLeadForInvoice(foundLead)
         setActiveTab('activities')
@@ -435,10 +608,12 @@ export default function ContactsPage() {
   useEffect(() => {
     if (highlightedActivityId) {
       const timer = setTimeout(() => {
-        const element = document.getElementById(`activity-${highlightedActivityId}`)
+        const element = document.getElementById(
+          `activity-${highlightedActivityId}`,
+        )
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          
+
           // Desvanecer el resaltado a los 3 segundos
           setTimeout(() => {
             setHighlightedActivityId(null)
@@ -453,28 +628,68 @@ export default function ContactsPage() {
   const getActivityConfig = (type: LocalActivity['type']) => {
     switch (type) {
       case 'CALL':
-        return { icon: Phone, bg: 'bg-blue-500/10', border: 'border-blue-500/20', text: 'text-blue-400' }
+        return {
+          icon: Phone,
+          bg: 'bg-blue-500/10',
+          border: 'border-blue-500/20',
+          text: 'text-blue-400',
+        }
       case 'MEETING':
-        return { icon: Calendar, bg: 'bg-purple-500/10', border: 'border-purple-500/20', text: 'text-purple-400' }
+        return {
+          icon: Calendar,
+          bg: 'bg-purple-500/10',
+          border: 'border-purple-500/20',
+          text: 'text-purple-400',
+        }
       case 'EMAIL':
-        return { icon: Mail, bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-400' }
+        return {
+          icon: Mail,
+          bg: 'bg-amber-500/10',
+          border: 'border-amber-500/20',
+          text: 'text-amber-400',
+        }
       case 'TASK':
-        return { icon: CheckSquare, bg: 'bg-rose-500/10', border: 'border-rose-500/20', text: 'text-rose-400' }
+        return {
+          icon: CheckSquare,
+          bg: 'bg-rose-500/10',
+          border: 'border-rose-500/20',
+          text: 'text-rose-400',
+        }
       case 'NOTE':
       default:
-        return { icon: MessageSquare, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400' }
+        return {
+          icon: MessageSquare,
+          bg: 'bg-emerald-500/10',
+          border: 'border-emerald-500/20',
+          text: 'text-emerald-400',
+        }
     }
   }
 
+  // Combinar leads locales con leads globales encontrados (evitando duplicados)
+  const allLeadsCombined = [...(leads || [])]
+  globalLeads.forEach((gl) => {
+    const alreadyExists = allLeadsCombined.some(
+      (l) => l.id === gl.id || (l.documentId && l.documentId === gl.documentId),
+    )
+    if (!alreadyExists) {
+      allLeadsCombined.push(gl)
+    }
+  })
+
   // Filtrado de Leads
-  const filteredLeads = leads.filter((lead) => {
+  const filteredLeads = allLeadsCombined.filter((lead) => {
     const fullName = `${lead.firstName} ${lead.lastName}`.toLowerCase()
     const matchesSearch =
       fullName.includes(searchTerm.toLowerCase()) ||
       lead.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (lead.phone && lead.phone.includes(searchTerm))
+      (lead.phone && lead.phone.includes(searchTerm)) ||
+      (lead.documentId &&
+        lead.documentId.toLowerCase().includes(searchTerm.toLowerCase()))
 
-    const matchesCompany = filterCompanyId ? lead.companyId === filterCompanyId : true
+    const matchesCompany = filterCompanyId
+      ? lead.companyId === filterCompanyId
+      : true
 
     return matchesSearch && matchesCompany
   })
@@ -488,71 +703,198 @@ export default function ContactsPage() {
 
   // Badges de color premium para el Scoring
   const getScoringBadge = (scoring?: string) => {
-    if (!scoring) return <span className="text-slate-500 text-xs font-semibold">-</span>
+    if (!scoring)
+      return <span className="text-xs font-semibold text-slate-500">-</span>
 
     if (scoring.startsWith('A')) {
       return (
-        <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-bold text-emerald-400 border border-emerald-500/20">
+        <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-bold text-emerald-400">
           {scoring}
         </span>
       )
     }
     if (scoring.startsWith('B')) {
       return (
-        <span className="inline-flex items-center rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-xs font-bold text-indigo-400 border border-indigo-500/20">
+        <span className="inline-flex items-center rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-bold text-indigo-400">
           {scoring}
         </span>
       )
     }
     if (scoring.startsWith('C')) {
       return (
-        <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-bold text-amber-400 border border-amber-500/20">
+        <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-bold text-amber-400">
           {scoring}
         </span>
       )
     }
     return (
-      <span className="inline-flex items-center rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-bold text-rose-400 border border-rose-500/20 animate-pulse">
+      <span className="inline-flex animate-pulse items-center rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-0.5 text-xs font-bold text-rose-400">
         {scoring}
       </span>
     )
   }
 
-  // Calcular métricas rápidas del Historial de Facturas
-  const totalInvoicesAmount = invoices?.reduce((sum, inv) => sum + inv.amount, 0) || 0
-  const totalBalanceDue = invoices?.reduce((sum, inv) => sum + (inv.balanceDue ?? (inv.status === 'PAID' ? 0 : inv.amount)), 0) || 0
-  const paidInvoices = invoices?.filter(inv => inv.status === 'PAID') || []
-  const pendingInvoices = invoices?.filter(inv => inv.status === 'PENDING') || []
-  const overdueInvoices = invoices?.filter(inv => inv.status === 'OVERDUE') || []
+  // Resolver el estado del lead de manera reactiva/dinámica en función de sus préstamos (deals) y actividades
+  const getLeadStatus = (lead: LocalLead) => {
+    const leadKey = lead.id || lead.tempId || ''
 
-  const paymentRatio = invoices && invoices.length > 0 
-    ? Math.round((paidInvoices.length / invoices.length) * 100) 
-    : 100
+    // Si es un lead ajeno (no pertenece al usuario actual)
+    if (lead.userId !== userId) {
+      // Si es el lead seleccionado en el drawer y ya cargamos sus detalles
+      if (selectedLeadForInvoice?.id === lead.id && foreignDetails) {
+        const dealsList = foreignDetails.deals || []
+        const actsList = foreignDetails.activities || []
+
+        const hasApproved = dealsList.some(
+          (d) =>
+            d.stage === 'approved' ||
+            d.stage === 'disbursed' ||
+            d.stage === 'completed',
+        )
+        if (hasApproved) return 'Aprobado'
+
+        const hasInProcess =
+          dealsList.some(
+            (d) => d.stage === 'under_evaluation' || d.stage === 'draft',
+          ) || actsList.length > 0
+        if (hasInProcess) return 'En Proceso'
+
+        const hasRejected = dealsList.some((d) => d.stage === 'refused')
+        if (hasRejected) return 'Rechazado'
+
+        return 'Nuevo'
+      }
+      return 'Ajeno'
+    }
+
+    // Para leads locales
+    if (!allDeals || !allActivities) return 'Cargando...'
+
+    const leadDeals = allDeals.filter((d) => d.leadId === leadKey)
+    const leadActivities = allActivities.filter((a) => a.leadId === leadKey)
+
+    const hasApproved = leadDeals.some(
+      (d) =>
+        d.stage === 'approved' ||
+        d.stage === 'disbursed' ||
+        d.stage === 'completed',
+    )
+    if (hasApproved) return 'Aprobado'
+
+    const hasInProcess =
+      leadDeals.some(
+        (d) => d.stage === 'under_evaluation' || d.stage === 'draft',
+      ) || leadActivities.length > 0
+    if (hasInProcess) return 'En Proceso'
+
+    const hasRejected = leadDeals.some((d) => d.stage === 'refused')
+    if (hasRejected) return 'Rechazado'
+
+    return 'Nuevo'
+  }
+
+  // Badge del estado con colores de la paleta del dashboard
+  const getLeadStatusBadge = (lead: LocalLead) => {
+    const status = getLeadStatus(lead)
+    switch (status) {
+      case 'Aprobado':
+        return (
+          <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
+            Aprobado
+          </span>
+        )
+      case 'En Proceso':
+        return (
+          <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-400">
+            En Proceso
+          </span>
+        )
+      case 'Rechazado':
+        return (
+          <span className="inline-flex items-center rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-0.5 text-xs font-semibold text-rose-400">
+            Rechazado
+          </span>
+        )
+      case 'Nuevo':
+        return (
+          <span className="inline-flex items-center rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-400">
+            Nuevo
+          </span>
+        )
+      case 'Cargando...':
+        return (
+          <span className="border-slate-850 inline-flex animate-pulse items-center rounded-full border bg-slate-950 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
+            Cargando...
+          </span>
+        )
+      default: // 'Ajeno'
+        return (
+          <span
+            className="inline-flex items-center rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-semibold text-indigo-400"
+            title="Contacto de otro asesor, pulse para cargar estado"
+          >
+            Ajeno
+          </span>
+        )
+    }
+  }
+
+  // Resolver los datos a mostrar en el Drawer (locales o remotos si es ajeno)
+  const invoicesToShow = isForeign
+    ? foreignDetails?.invoices || []
+    : invoices || []
+  const activitiesToShow = isForeign
+    ? foreignDetails?.activities || []
+    : activities || []
+  const dealsToShow = isForeign ? foreignDetails?.deals || [] : deals || []
+
+  // Calcular métricas rápidas del Historial de Facturas
+  const totalInvoicesAmount =
+    invoicesToShow?.reduce((sum, inv) => sum + inv.amount, 0) || 0
+  const totalBalanceDue =
+    invoicesToShow?.reduce(
+      (sum, inv) =>
+        sum + (inv.balanceDue ?? (inv.status === 'PAID' ? 0 : inv.amount)),
+      0,
+    ) || 0
+  const paidInvoices =
+    invoicesToShow?.filter((inv) => inv.status === 'PAID') || []
+  const pendingInvoices =
+    invoicesToShow?.filter((inv) => inv.status === 'PENDING') || []
+  const overdueInvoices =
+    invoicesToShow?.filter((inv) => inv.status === 'OVERDUE') || []
+
+  const paymentRatio =
+    invoicesToShow && invoicesToShow.length > 0
+      ? Math.round((paidInvoices.length / invoicesToShow.length) * 100)
+      : 100
 
   // Carga inicial mientras NextAuth resuelve la sesión
   if (status === 'loading' || !userId) {
     return (
       <div className="flex h-96 flex-col items-center justify-center text-slate-400">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent mb-4" />
-        <p className="text-sm font-medium animate-pulse">Cargando contactos...</p>
+        <div className="mb-4 h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+        <p className="animate-pulse text-sm font-medium">
+          Cargando contactos...
+        </p>
       </div>
     )
   }
 
   return (
     <div className="relative flex min-h-screen gap-6">
-      
       {/* Contenedor Principal de la Lista de Contactos */}
-      <div className="flex-1 space-y-6 min-w-0">
+      <div className="min-w-0 flex-1 space-y-6">
         {/* Sección de Encabezado */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl flex items-center gap-3">
+            <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
               <Users className="h-8 w-8 text-indigo-400" />
               Contactos
             </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Visualiza y administra tus leads almacenados localmente y sincronizados con el CRM.
+            <p className="mt-1 text-sm text-slate-400">
+              Visualiza y administra tus leads almacenados localmente y
+              sincronizados con el CRM.
             </p>
           </div>
 
@@ -561,7 +903,7 @@ export default function ContactsPage() {
               setLeadToEdit(null)
               setIsLeadModalOpen(true)
             }}
-            className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:from-indigo-600 hover:to-violet-700 transition-colors shrink-0"
+            className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:from-indigo-600 hover:to-violet-700"
           >
             <Plus className="h-4.5 w-4.5" />
             Nuevo Contacto
@@ -570,15 +912,19 @@ export default function ContactsPage() {
 
         {/* Buscador y Filtros */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/20 p-5 backdrop-blur-md">
-          <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex flex-col items-center gap-4 sm:flex-row">
             {/* Buscador */}
             <div className="relative w-full sm:flex-1">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
-                <Search className="h-4.5 w-4.5" />
+                {isSearchingGlobal ? (
+                  <Loader2 className="h-4.5 w-4.5 animate-spin text-indigo-500" />
+                ) : (
+                  <Search className="h-4.5 w-4.5" />
+                )}
               </div>
               <input
                 type="text"
-                placeholder="Buscar lead por nombre, email o teléfono..."
+                placeholder="Buscar por DNI/Cédula (Búsqueda global) o nombre/email local..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-4 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -593,7 +939,7 @@ export default function ContactsPage() {
               <select
                 value={filterCompanyId}
                 onChange={(e) => setFilterCompanyId(e.target.value)}
-                className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-10 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none"
+                className="block w-full appearance-none rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-10 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               >
                 <option value="">Todas las empresas</option>
                 {companies.map((c) => (
@@ -602,7 +948,7 @@ export default function ContactsPage() {
                   </option>
                 ))}
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 text-[10px]">
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[10px] text-slate-500">
                 ▼
               </div>
             </div>
@@ -610,63 +956,97 @@ export default function ContactsPage() {
         </div>
 
         {/* Tabla de Leads */}
-        <div className="hidden md:block overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-md">
+        <div className="hidden overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-md md:block">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-sm text-slate-300">
-              <thead className="bg-slate-900/60 text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+              <thead className="border-b border-slate-800 bg-slate-900/60 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 <tr>
-                  <th scope="col" className="px-6 py-4">Nombre</th>
-                  <th scope="col" className="px-6 py-4">Email</th>
-                  <th scope="col" className="px-6 py-4">Teléfono</th>
-                  <th scope="col" className="px-6 py-4">Empresa</th>
-                  <th scope="col" className="px-6 py-4">Scoring</th>
-                  <th scope="col" className="px-6 py-4">Origen / Sinc</th>
-                  <th scope="col" className="px-6 py-4 text-right">Acciones</th>
+                  <th scope="col" className="px-6 py-4">
+                    Nombre
+                  </th>
+                  <th scope="col" className="px-6 py-4">
+                    Email
+                  </th>
+                  <th scope="col" className="px-6 py-4">
+                    Teléfono
+                  </th>
+                  <th scope="col" className="px-6 py-4">
+                    Empresa
+                  </th>
+                  <th scope="col" className="px-6 py-4">
+                    Scoring
+                  </th>
+                  <th scope="col" className="px-6 py-4">
+                    Estado
+                  </th>
+                  <th scope="col" className="px-6 py-4">
+                    Origen / Sinc
+                  </th>
+                  <th scope="col" className="px-6 py-4 text-right">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 bg-transparent">
                 {filteredLeads.length > 0 ? (
                   filteredLeads.map((lead) => (
-                    <tr 
-                      key={lead.id || lead.tempId} 
-                      className={`hover:bg-slate-900/40 transition-colors cursor-pointer ${
-                        (selectedLeadForInvoice?.id === lead.id || selectedLeadForInvoice?.tempId === lead.tempId)
-                          ? 'bg-slate-900/60 border-l-2 border-indigo-500'
+                    <tr
+                      key={lead.id || lead.tempId}
+                      className={`cursor-pointer transition-colors hover:bg-slate-900/40 ${
+                        selectedLeadForInvoice?.id === lead.id ||
+                        selectedLeadForInvoice?.tempId === lead.tempId
+                          ? 'border-l-2 border-indigo-500 bg-slate-900/60'
                           : ''
                       }`}
                       onClick={() => setSelectedLeadForInvoice(lead)}
                     >
-                      <td className="px-6 py-4 font-semibold text-white">
-                        {lead.firstName} {lead.lastName}
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-white">
+                          {lead.firstName} {lead.lastName}
+                        </div>
+                        {lead.documentId && (
+                          <div className="mt-0.5 font-mono text-[11px] text-slate-500">
+                            ID: {lead.documentId}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-slate-300">{lead.email}</td>
-                      <td className="px-6 py-4 text-slate-400">{lead.phone || '-'}</td>
+                      <td className="px-6 py-4 text-slate-400">
+                        {lead.phone || '-'}
+                      </td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1 rounded bg-slate-900 border border-slate-800 px-2.5 py-1 text-xs text-slate-300">
+                        <span className="inline-flex items-center gap-1 rounded border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs text-slate-300">
                           {getCompanyName(lead.companyId)}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         {getScoringBadge(lead.scoring)}
                       </td>
-                      <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-6 py-4">{getLeadStatusBadge(lead)}</td>
+                      <td
+                        className="px-6 py-4"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {lead.synced ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/20">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
                             <Cloud className="h-3.5 w-3.5" />
                             CloudDb
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400 border border-amber-500/20 animate-pulse">
+                          <span className="inline-flex animate-pulse items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400">
                             <Database className="h-3.5 w-3.5" />
                             LocalDb
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="px-6 py-4 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => setSelectedLeadForInvoice(lead)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition-colors"
+                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-indigo-400"
                             title="Ver Historial Crediticio"
                           >
                             <FileText className="h-4 w-4" />
@@ -676,15 +1056,33 @@ export default function ContactsPage() {
                               setLeadToEdit(lead)
                               setIsLeadModalOpen(true)
                             }}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-                            title="Editar"
+                            disabled={lead.userId !== userId}
+                            className={`rounded-lg p-1.5 transition-colors ${
+                              lead.userId !== userId
+                                ? 'text-slate-750 cursor-not-allowed opacity-40'
+                                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                            }`}
+                            title={
+                              lead.userId !== userId
+                                ? 'Solo Lectura (Propietario ajeno)'
+                                : 'Editar'
+                            }
                           >
                             <Edit2 className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteLead(lead)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
-                            title="Eliminar"
+                            disabled={lead.userId !== userId}
+                            className={`rounded-lg p-1.5 transition-colors ${
+                              lead.userId !== userId
+                                ? 'text-slate-750 cursor-not-allowed opacity-40'
+                                : 'text-slate-400 hover:bg-red-500/20 hover:text-red-400'
+                            }`}
+                            title={
+                              lead.userId !== userId
+                                ? 'Solo Lectura (Propietario ajeno)'
+                                : 'Eliminar'
+                            }
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -694,7 +1092,10 @@ export default function ContactsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                    <td
+                      colSpan={7}
+                      className="px-6 py-12 text-center text-slate-500"
+                    >
                       No se encontraron leads registrados.
                     </td>
                   </tr>
@@ -708,30 +1109,51 @@ export default function ContactsPage() {
         <div className="grid grid-cols-1 gap-4 md:hidden">
           {filteredLeads.length > 0 ? (
             filteredLeads.map((lead) => (
-              <div 
+              <div
                 key={lead.id || lead.tempId}
                 onClick={() => setSelectedLeadForInvoice(lead)}
-                className={`rounded-2xl border p-4 space-y-3 cursor-pointer transition-all duration-300 ${
-                  (selectedLeadForInvoice?.id === lead.id || selectedLeadForInvoice?.tempId === lead.tempId)
+                className={`cursor-pointer space-y-3 rounded-2xl border p-4 transition-all duration-300 ${
+                  selectedLeadForInvoice?.id === lead.id ||
+                  selectedLeadForInvoice?.tempId === lead.tempId
                     ? 'border-indigo-500 bg-slate-900/40 shadow-md ring-1 ring-indigo-500/20'
                     : 'border-slate-800 bg-slate-900/20'
                 }`}
               >
-                <div className="flex justify-between items-start">
+                <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="font-bold text-white text-sm">
+                    <h3 className="text-sm font-bold text-white">
                       {lead.firstName} {lead.lastName}
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">{lead.email}</p>
-                    {lead.phone && <p className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.phone}</p>}
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {lead.email}
+                    </p>
+                    {lead.documentId && (
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-400">
+                        ID: {lead.documentId}
+                      </p>
+                    )}
+                    {lead.phone && (
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                        {lead.phone}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="flex items-center gap-1.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {lead.synced ? (
-                      <span className="inline-flex items-center rounded-full bg-emerald-500/10 p-1 text-emerald-400 border border-emerald-500/20" title="CloudDb">
+                      <span
+                        className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 p-1 text-emerald-400"
+                        title="CloudDb"
+                      >
                         <Cloud className="h-3.5 w-3.5" />
                       </span>
                     ) : (
-                      <span className="inline-flex items-center rounded-full bg-amber-500/10 p-1 text-amber-400 border border-amber-500/20 animate-pulse" title="LocalDb">
+                      <span
+                        className="inline-flex animate-pulse items-center rounded-full border border-amber-500/20 bg-amber-500/10 p-1 text-amber-400"
+                        title="LocalDb"
+                      >
                         <Database className="h-3.5 w-3.5" />
                       </span>
                     )}
@@ -739,15 +1161,21 @@ export default function ContactsPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center pt-2 border-t border-slate-850">
-                  <span className="inline-flex items-center rounded bg-slate-950 border border-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400">
-                    {getCompanyName(lead.companyId)}
-                  </span>
-                  
-                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                <div className="border-slate-850 flex items-center justify-between border-t pt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded border border-slate-800/80 bg-slate-950 px-2 py-0.5 text-[10px] text-slate-400">
+                      {getCompanyName(lead.companyId)}
+                    </span>
+                    {getLeadStatusBadge(lead)}
+                  </div>
+
+                  <div
+                    className="flex gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       onClick={() => setSelectedLeadForInvoice(lead)}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-indigo-400 transition-colors"
+                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-indigo-400"
                       title="Ver Historial Crediticio"
                     >
                       <FileText className="h-4 w-4" />
@@ -757,15 +1185,33 @@ export default function ContactsPage() {
                         setLeadToEdit(lead)
                         setIsLeadModalOpen(true)
                       }}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-                      title="Editar"
+                      disabled={lead.userId !== userId}
+                      className={`rounded-lg p-1.5 transition-colors ${
+                        lead.userId !== userId
+                          ? 'text-slate-750 cursor-not-allowed opacity-40'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      }`}
+                      title={
+                        lead.userId !== userId
+                          ? 'Solo Lectura (Propietario ajeno)'
+                          : 'Editar'
+                      }
                     >
                       <Edit2 className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => handleDeleteLead(lead)}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
-                      title="Eliminar"
+                      disabled={lead.userId !== userId}
+                      className={`rounded-lg p-1.5 transition-colors ${
+                        lead.userId !== userId
+                          ? 'text-slate-750 cursor-not-allowed opacity-40'
+                          : 'text-slate-400 hover:bg-red-500/20 hover:text-red-400'
+                      }`}
+                      title={
+                        lead.userId !== userId
+                          ? 'Solo Lectura (Propietario ajeno)'
+                          : 'Eliminar'
+                      }
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -774,7 +1220,9 @@ export default function ContactsPage() {
               </div>
             ))
           ) : (
-            <p className="text-center text-xs text-slate-500 py-12">No se encontraron contactos.</p>
+            <p className="py-12 text-center text-xs text-slate-500">
+              No se encontraron contactos.
+            </p>
           )}
         </div>
       </div>
@@ -783,642 +1231,834 @@ export default function ContactsPage() {
       {selectedLeadForInvoice && (
         <>
           {/* Backdrop overlay */}
-          <div 
+          <div
             onClick={() => setSelectedLeadForInvoice(null)}
             className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-300"
           />
-          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-950/95 border-l border-slate-800 shadow-2xl flex flex-col animate-slide-in">
-          
-          {/* Cabecera del Drawer */}
-          <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block">Detalle del Contacto</span>
-              <h3 className="text-lg font-bold text-white mt-1">
-                {selectedLeadForInvoice.firstName} {selectedLeadForInvoice.lastName}
-              </h3>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedLeadForInvoice.email}</p>
-            </div>
-            <button
-              onClick={() => setSelectedLeadForInvoice(null)}
-              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-900 hover:text-white transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          {/* Selectores de Pestaña */}
-          <div className="flex border-b border-slate-800 bg-slate-900/10 px-6">
-            <button
-              onClick={() => setActiveTab('finance')}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
-                activeTab === 'finance'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Finanzas
-            </button>
-            <button
-              onClick={() => setActiveTab('activities')}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
-                activeTab === 'activities'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Actividades
-            </button>
-            <button
-              onClick={() => setActiveTab('deals')}
-              className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
-                activeTab === 'deals'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Préstamos
-            </button>
-          </div>
-
-          {/* Contenido del Drawer */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {activeTab === 'finance' ? (
-              <div className="space-y-6">
-                {/* Sección: Resumen de Score */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-400 font-medium">Scoring Crediticio</span>
-                    {getScoringBadge(selectedLeadForInvoice.scoring)}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/50">
-                    <div>
-                      <span className="text-[9px] text-slate-500 uppercase block">Total Adeudado</span>
-                      <span className="text-xs font-bold text-rose-450 mt-0.5 block truncate">
-                        ${totalBalanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-slate-500 uppercase block">Cumplimiento</span>
-                      <span className="text-xs font-bold text-emerald-400 mt-0.5 block">
-                        {paymentRatio}%
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-slate-500 uppercase block">Facturas</span>
-                      <span className="text-xs font-bold text-white mt-0.5 block">
-                        {invoices?.length || 0}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Alertas de Vencimiento si existen facturas pendientes o vencidas */}
-                {overdueInvoices.length > 0 && (
-                  <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 flex gap-3 text-xs text-rose-300">
-                    <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0" />
-                    <div>
-                      <span className="font-bold block">¡Facturas Vencidas!</span>
-                      <span>Este lead posee {overdueInvoices.length} factura(s) vencida(s) en HubSpot. Riesgo crediticio activo.</span>
-                    </div>
-                  </div>
+          <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-slate-800 bg-slate-950/95 shadow-2xl">
+            {/* Cabecera del Drawer */}
+            <div className="flex items-center justify-between border-b border-slate-800 p-6">
+              <div>
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+                  Detalle del Contacto
+                </span>
+                <h3 className="mt-1 text-lg font-bold text-white">
+                  {selectedLeadForInvoice.firstName}{' '}
+                  {selectedLeadForInvoice.lastName}
+                </h3>
+                <p className="mt-0.5 font-mono text-xs text-slate-500">
+                  {selectedLeadForInvoice.email}
+                </p>
+                {selectedLeadForInvoice.documentId && (
+                  <p className="mt-0.5 font-mono text-xs text-slate-400">
+                    DNI/Cédula: {selectedLeadForInvoice.documentId}
+                  </p>
                 )}
+              </div>
+              <button
+                onClick={() => setSelectedLeadForInvoice(null)}
+                className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-900 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-                {/* Listado de Facturas */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Detalle de Facturas</h4>
+            {isForeign && (
+              <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-6 py-2.5 text-xs text-amber-400">
+                <ShieldAlert className="h-4.5 w-4.5 shrink-0 text-amber-400" />
+                <span>
+                  Contacto de otro asesor. Modo Solo Lectura habilitado.
+                </span>
+              </div>
+            )}
+
+            {/* Selectores de Pestaña */}
+            <div className="flex border-b border-slate-800 bg-slate-900/10 px-6">
+              <button
+                onClick={() => setActiveTab('finance')}
+                className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+                  activeTab === 'finance'
+                    ? 'border-indigo-500 text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Finanzas
+              </button>
+              <button
+                onClick={() => setActiveTab('activities')}
+                className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+                  activeTab === 'activities'
+                    ? 'border-indigo-500 text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Actividades
+              </button>
+              <button
+                onClick={() => setActiveTab('deals')}
+                className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+                  activeTab === 'deals'
+                    ? 'border-indigo-500 text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Préstamos
+              </button>
+            </div>
+
+            {/* Contenido del Drawer */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {isLoadingForeign ? (
+                <div className="flex h-64 flex-col items-center justify-center text-slate-500">
+                  <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                  <p className="animate-pulse text-xs">
+                    Cargando detalles desde el servidor...
+                  </p>
+                </div>
+              ) : activeTab === 'finance' ? (
+                <div className="space-y-6">
+                  {/* Sección: Resumen de Score */}
+                  <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-400">
+                        Scoring Crediticio
+                      </span>
+                      {getScoringBadge(selectedLeadForInvoice.scoring)}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 border-t border-slate-800/50 pt-2">
+                      <div>
+                        <span className="block text-[9px] uppercase text-slate-500">
+                          Total Adeudado
+                        </span>
+                        <span className="text-rose-450 mt-0.5 block truncate text-xs font-bold">
+                          $
+                          {totalBalanceDue.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase text-slate-500">
+                          Cumplimiento
+                        </span>
+                        <span className="mt-0.5 block text-xs font-bold text-emerald-400">
+                          {paymentRatio}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase text-slate-500">
+                          Facturas
+                        </span>
+                        <span className="mt-0.5 block text-xs font-bold text-white">
+                          {invoices?.length || 0}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Alertas de Vencimiento si existen facturas pendientes o vencidas */}
+                  {overdueInvoices.length > 0 && (
+                    <div className="flex gap-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-xs text-rose-300">
+                      <ShieldAlert className="h-5 w-5 shrink-0 text-rose-400" />
+                      <div>
+                        <span className="block font-bold">
+                          ¡Facturas Vencidas!
+                        </span>
+                        <span>
+                          Este lead posee {overdueInvoices.length} factura(s)
+                          vencida(s) en HubSpot. Riesgo crediticio activo.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Listado de Facturas */}
                   <div className="space-y-3">
-                    {invoices && invoices.length > 0 ? (
-                      invoices.map((inv) => (
-                        <div
-                          key={inv.id}
-                          className="rounded-xl border border-slate-900 bg-slate-950 p-4 flex justify-between items-start"
-                        >
-                          <div className="space-y-1.5">
-                            <span className="text-[10px] text-slate-500 font-mono block">INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}</span>
-                            <span className="text-sm font-bold text-white block">
-                              ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
-                            </span>
-                            {inv.status !== 'PAID' && inv.balanceDue !== undefined && inv.balanceDue !== inv.amount && (
-                              <span className="text-[10px] text-slate-450 block font-semibold">
-                                Pendiente: ${inv.balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                      Detalle de Facturas
+                    </h4>
+                    <div className="space-y-3">
+                      {invoicesToShow && invoicesToShow.length > 0 ? (
+                        invoicesToShow.map((inv) => (
+                          <div
+                            key={inv.id}
+                            className="flex items-start justify-between rounded-xl border border-slate-900 bg-slate-950 p-4"
+                          >
+                            <div className="space-y-1.5">
+                              <span className="block font-mono text-[10px] text-slate-500">
+                                INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}
                               </span>
-                            )}
-                            <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                              <Calendar className="h-3 w-3" />
-                              <span>Vencimiento: {new Date(inv.dueDate).toLocaleDateString()}</span>
+                              <span className="block text-sm font-bold text-white">
+                                $
+                                {inv.amount.toLocaleString('en-US', {
+                                  minimumFractionDigits: 2,
+                                })}{' '}
+                                USD
+                              </span>
+                              {inv.status !== 'PAID' &&
+                                inv.balanceDue !== undefined &&
+                                inv.balanceDue !== inv.amount && (
+                                  <span className="text-slate-450 block text-[10px] font-semibold">
+                                    Pendiente: $
+                                    {inv.balanceDue.toLocaleString('en-US', {
+                                      minimumFractionDigits: 2,
+                                    })}{' '}
+                                    USD
+                                  </span>
+                                )}
+                              <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                                <Calendar className="h-3 w-3" />
+                                <span>
+                                  Vencimiento:{' '}
+                                  {new Date(inv.dueDate).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              {inv.status === 'PAID' && (
+                                <span className="inline-flex items-center rounded border border-emerald-500/10 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                                  Pagado
+                                </span>
+                              )}
+                              {inv.status === 'PENDING' && (
+                                <span className="inline-flex items-center rounded border border-amber-500/10 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                                  Pendiente
+                                </span>
+                              )}
+                              {inv.status === 'OVERDUE' && (
+                                <span className="inline-flex items-center rounded border border-rose-500/10 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400">
+                                  Vencido
+                                </span>
+                              )}
+                              {inv.paymentDate && (
+                                <p className="mt-1 text-[9px] text-slate-500">
+                                  Pago:{' '}
+                                  {new Date(
+                                    inv.paymentDate,
+                                  ).toLocaleDateString()}
+                                </p>
+                              )}
                             </div>
                           </div>
-                          
-                          <div className="text-right">
-                            {inv.status === 'PAID' && (
-                              <span className="inline-flex items-center rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/10">
-                                Pagado
-                              </span>
-                            )}
-                            {inv.status === 'PENDING' && (
-                              <span className="inline-flex items-center rounded bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/10">
-                                Pendiente
-                              </span>
-                            )}
-                            {inv.status === 'OVERDUE' && (
-                              <span className="inline-flex items-center rounded bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/10">
-                                Vencido
-                              </span>
-                            )}
-                            {inv.paymentDate && (
-                              <p className="text-[9px] text-slate-500 mt-1">
-                                Pago: {new Date(inv.paymentDate).toLocaleDateString()}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-center text-slate-500 py-6">
-                        No se encontraron facturas asociadas a este contacto.
-                      </p>
-                    )}
+                        ))
+                      ) : (
+                        <p className="py-6 text-center text-xs text-slate-500">
+                          No se encontraron facturas asociadas a este contacto.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : activeTab === 'activities' ? (
-              <div className="space-y-6">
-                {/* Formulario para registrar actividad */}
-                <form onSubmit={handleAddActivity} className="rounded-xl border border-slate-800 bg-slate-900/20 p-4 space-y-4 backdrop-blur-md">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Registrar Actividad</h4>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Tipo</label>
-                      <select
-                        value={activityType}
-                        onChange={(e) => setActivityType(e.target.value as any)}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-505 transition-colors focus:border-indigo-500 focus:outline-none"
-                      >
-                        <option value="NOTE">Nota</option>
-                        <option value="CALL">Llamada</option>
-                        <option value="MEETING">Reunión</option>
-                        <option value="EMAIL">Correo</option>
-                        <option value="TASK">Tarea</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Título</label>
-                      <input
-                        type="text"
-                        placeholder="Ej. Llamada de seguimiento"
-                        value={activityTitle}
-                        onChange={(e) => setActivityTitle(e.target.value)}
-                        required
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
+              ) : activeTab === 'activities' ? (
+                <div className="space-y-6">
+                  {/* Formulario para registrar actividad */}
+                  {!isForeign ? (
+                    <form
+                      onSubmit={handleAddActivity}
+                      className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 backdrop-blur-md"
+                    >
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                        Registrar Actividad
+                      </h4>
 
-                  <div>
-                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Descripción</label>
-                    <textarea
-                      placeholder="Escribe el resumen o notas de la actividad..."
-                      value={activityBody}
-                      onChange={(e) => setActivityBody(e.target.value)}
-                      required
-                      rows={3}
-                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none resize-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="enable-reminder"
-                        checked={showReminderPicker}
-                        onChange={(e) => {
-                          setShowReminderPicker(e.target.checked)
-                          if (e.target.checked) {
-                            setReminderDateOnly(getTomorrowString())
-                            setReminderTimeOnly('08:00')
-                          } else {
-                            setReminderDateOnly('')
-                            setReminderTimeOnly('')
-                          }
-                        }}
-                        className="rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
-                      />
-                      <label htmlFor="enable-reminder" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider select-none cursor-pointer">
-                        Programar recordatorio
-                      </label>
-                    </div>
-                    {showReminderPicker && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <label className="text-[9px] text-slate-500 font-bold uppercase">Fecha</label>
-                          <div className="relative">
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              onClick={() => {
-                                if (typeof dateInputRef.current?.showPicker === 'function') {
-                                  try {
-                                    dateInputRef.current.showPicker()
-                                  } catch (_) {}
-                                }
-                              }}
-                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition-colors focus:outline-none"
-                            >
-                              <Calendar className="h-3.5 w-3.5" />
-                            </button>
-                            <input
-                              ref={dateInputRef}
-                              type="date"
-                              value={reminderDateOnly}
-                              onChange={(e) => setReminderDateOnly(e.target.value)}
-                              onClick={(e) => {
-                                if (typeof e.currentTarget.showPicker === 'function') {
-                                  try {
-                                    e.currentTarget.showPicker()
-                                  } catch (_) {}
-                                }
-                              }}
-                              required={showReminderPicker}
-                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none cursor-pointer"
-                            />
-                          </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Tipo
+                          </label>
+                          <select
+                            value={activityType}
+                            onChange={(e) =>
+                              setActivityType(e.target.value as any)
+                            }
+                            className="placeholder-slate-505 block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white transition-colors focus:border-indigo-500 focus:outline-none"
+                          >
+                            <option value="NOTE">Nota</option>
+                            <option value="CALL">Llamada</option>
+                            <option value="MEETING">Reunión</option>
+                            <option value="EMAIL">Correo</option>
+                            <option value="TASK">Tarea</option>
+                          </select>
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-[9px] text-slate-500 font-bold uppercase">Hora</label>
-                          <div className="relative">
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              onClick={() => {
-                                if (typeof timeInputRef.current?.showPicker === 'function') {
-                                  try {
-                                    timeInputRef.current.showPicker()
-                                  } catch (_) {}
-                                }
-                              }}
-                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition-colors focus:outline-none"
-                            >
-                              <Clock className="h-3.5 w-3.5" />
-                            </button>
-                            <input
-                              ref={timeInputRef}
-                              type="time"
-                              value={reminderTimeOnly}
-                              onChange={(e) => setReminderTimeOnly(e.target.value)}
-                              onClick={(e) => {
-                                if (typeof e.currentTarget.showPicker === 'function') {
-                                  try {
-                                    e.currentTarget.showPicker()
-                                  } catch (_) {}
-                                }
-                              }}
-                              required={showReminderPicker}
-                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none cursor-pointer"
-                            />
-                          </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Título
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ej. Llamada de seguimiento"
+                            value={activityTitle}
+                            onChange={(e) => setActivityTitle(e.target.value)}
+                            required
+                            className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                          />
                         </div>
                       </div>
-                    )}
-                  </div>
 
-                  <button
-                    type="submit"
-                    disabled={isSubmittingActivity}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white hover:bg-indigo-600 transition-colors disabled:opacity-50"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Registrar Actividad
-                  </button>
-                </form>
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Descripción
+                        </label>
+                        <textarea
+                          placeholder="Escribe el resumen o notas de la actividad..."
+                          value={activityBody}
+                          onChange={(e) => setActivityBody(e.target.value)}
+                          required
+                          rows={3}
+                          className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
 
-                {/* Línea de tiempo de Actividades */}
-                <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Historial de Actividades</h4>
-                  
-                  <div className="relative border-l border-slate-800 ml-3.5 pl-6 space-y-6">
-                    {activities && activities.length > 0 ? (
-                      [...activities]
-                        .sort((a, b) => b.timestamp - a.timestamp)
-                        .map((act) => {
-                          const config = getActivityConfig(act.type)
-                          const IconComponent = config.icon
-                          
-                          return (
-                            <div key={act.id || act.tempId} className="relative group">
-                              {/* Punto/Icono en el timeline */}
-                              <div className={`absolute -left-[38px] top-1 rounded-full p-1.5 border ${config.bg} ${config.border} ${config.text} shadow-md`}>
-                                <IconComponent className="h-3.5 w-3.5" />
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="enable-reminder"
+                            checked={showReminderPicker}
+                            onChange={(e) => {
+                              setShowReminderPicker(e.target.checked)
+                              if (e.target.checked) {
+                                setReminderDateOnly(getTomorrowString())
+                                setReminderTimeOnly('08:00')
+                              } else {
+                                setReminderDateOnly('')
+                                setReminderTimeOnly('')
+                              }
+                            }}
+                            className="h-3.5 w-3.5 cursor-pointer rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500"
+                          />
+                          <label
+                            htmlFor="enable-reminder"
+                            className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                          >
+                            Programar recordatorio
+                          </label>
+                        </div>
+                        {showReminderPicker && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold uppercase text-slate-500">
+                                Fecha
+                              </label>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  tabIndex={-1}
+                                  onClick={() => {
+                                    if (
+                                      typeof dateInputRef.current
+                                        ?.showPicker === 'function'
+                                    ) {
+                                      try {
+                                        dateInputRef.current.showPicker()
+                                      } catch (_) {}
+                                    }
+                                  }}
+                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
+                                >
+                                  <Calendar className="h-3.5 w-3.5" />
+                                </button>
+                                <input
+                                  ref={dateInputRef}
+                                  type="date"
+                                  value={reminderDateOnly}
+                                  onChange={(e) =>
+                                    setReminderDateOnly(e.target.value)
+                                  }
+                                  onClick={(e) => {
+                                    if (
+                                      typeof e.currentTarget.showPicker ===
+                                      'function'
+                                    ) {
+                                      try {
+                                        e.currentTarget.showPicker()
+                                      } catch (_) {}
+                                    }
+                                  }}
+                                  required={showReminderPicker}
+                                  className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                                />
                               </div>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold uppercase text-slate-500">
+                                Hora
+                              </label>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  tabIndex={-1}
+                                  onClick={() => {
+                                    if (
+                                      typeof timeInputRef.current
+                                        ?.showPicker === 'function'
+                                    ) {
+                                      try {
+                                        timeInputRef.current.showPicker()
+                                      } catch (_) {}
+                                    }
+                                  }}
+                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
+                                >
+                                  <Clock className="h-3.5 w-3.5" />
+                                </button>
+                                <input
+                                  ref={timeInputRef}
+                                  type="time"
+                                  value={reminderTimeOnly}
+                                  onChange={(e) =>
+                                    setReminderTimeOnly(e.target.value)
+                                  }
+                                  onClick={(e) => {
+                                    if (
+                                      typeof e.currentTarget.showPicker ===
+                                      'function'
+                                    ) {
+                                      try {
+                                        e.currentTarget.showPicker()
+                                      } catch (_) {}
+                                    }
+                                  }}
+                                  required={showReminderPicker}
+                                  className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
-                              {/* Card de Actividad */}
+                      <button
+                        type="submit"
+                        disabled={isSubmittingActivity}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Registrar Actividad
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/10 p-4 text-center text-xs text-slate-500">
+                      No tienes permisos para registrar actividades en este
+                      contacto (Modo Solo Lectura).
+                    </div>
+                  )}
+
+                  {/* Línea de tiempo de Actividades */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                      Historial de Actividades
+                    </h4>
+
+                    <div className="relative ml-3.5 space-y-6 border-l border-slate-800 pl-6">
+                      {activitiesToShow && activitiesToShow.length > 0 ? (
+                        [...activitiesToShow]
+                          .sort((a, b) => b.timestamp - a.timestamp)
+                          .map((act) => {
+                            const config = getActivityConfig(act.type)
+                            const IconComponent = config.icon
+
+                            return (
                               <div
-                                id={`activity-${act.id || act.tempId}`}
-                                className={`rounded-xl border p-4 space-y-2 transition-all duration-500 ${
-                                  highlightedActivityId === act.id || highlightedActivityId === act.tempId
-                                    ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20 scale-[1.02]'
-                                    : 'border-slate-900 bg-slate-950/80'
-                                }`}
+                                key={act.id || act.tempId}
+                                className="group relative"
                               >
-                                <div className="flex justify-between items-start">
-                                  <div>
-                                    <span className="text-[9px] text-slate-500 font-mono block">
-                                      {new Date(act.timestamp).toLocaleString()}
-                                    </span>
-                                    <h5 className="text-xs font-bold text-white mt-0.5">
-                                      {act.title}
-                                    </h5>
+                                {/* Punto/Icono en el timeline */}
+                                <div
+                                  className={`absolute -left-[38px] top-1 rounded-full border p-1.5 ${config.bg} ${config.border} ${config.text} shadow-md`}
+                                >
+                                  <IconComponent className="h-3.5 w-3.5" />
+                                </div>
+
+                                {/* Card de Actividad */}
+                                <div
+                                  id={`activity-${act.id || act.tempId}`}
+                                  className={`space-y-2 rounded-xl border p-4 transition-all duration-500 ${
+                                    highlightedActivityId === act.id ||
+                                    highlightedActivityId === act.tempId
+                                      ? 'scale-[1.02] border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20'
+                                      : 'border-slate-900 bg-slate-950/80'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <span className="block font-mono text-[9px] text-slate-500">
+                                        {new Date(
+                                          act.timestamp,
+                                        ).toLocaleString()}
+                                      </span>
+                                      <h5 className="mt-0.5 text-xs font-bold text-white">
+                                        {act.title}
+                                      </h5>
+                                    </div>
+
+                                    <div
+                                      className="flex items-center gap-1.5"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {act.synced ? (
+                                        <span title="Sincronizado con HubSpot">
+                                          <Cloud className="h-3.5 w-3.5 text-slate-600" />
+                                        </span>
+                                      ) : (
+                                        <span title="Guardado localmente, pendiente de sincronización">
+                                          <Database className="h-3.5 w-3.5 animate-pulse text-amber-500" />
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={() =>
+                                          handleDeleteActivity(act)
+                                        }
+                                        className="hover:text-red-450 rounded p-1 text-slate-600 transition-colors hover:bg-slate-900"
+                                        title="Eliminar actividad"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    </div>
                                   </div>
 
-                                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                    {act.synced ? (
-                                      <span title="Sincronizado con HubSpot">
-                                        <Cloud className="h-3.5 w-3.5 text-slate-600" />
-                                      </span>
-                                    ) : (
-                                      <span title="Guardado localmente, pendiente de sincronización">
-                                        <Database className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
-                                      </span>
-                                    )}
+                                  <p className="whitespace-pre-line text-xs leading-relaxed text-slate-400">
+                                    {act.body}
+                                  </p>
+                                  {act.reminderDate && (
+                                    <div className="mt-2 flex max-w-md flex-col gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-950/40 p-2.5">
+                                      <div className="flex items-center gap-1.5 text-[10px] text-indigo-300">
+                                        <Bell className="h-3.5 w-3.5 animate-pulse text-indigo-400" />
+                                        <span className="font-medium">
+                                          Recordatorio:{' '}
+                                          {new Date(
+                                            act.reminderDate,
+                                          ).toLocaleString()}
+                                        </span>
+                                        {act.reminderRead ? (
+                                          <span className="ml-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-1.5 py-0.5 text-[8px] text-indigo-200">
+                                            Leído
+                                          </span>
+                                        ) : (
+                                          <span className="ml-1 rounded border border-amber-500/30 bg-amber-500/20 px-1.5 py-0.5 text-[8px] text-amber-200">
+                                            Activo
+                                          </span>
+                                        )}
+                                      </div>
+                                      {!isForeign && (
+                                        <div className="flex items-center gap-2">
+                                          {!act.reminderRead && (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleMarkReminderAsRead(act)
+                                              }
+                                              className="flex items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-2 py-1 text-[9px] font-bold text-indigo-300 transition-colors hover:bg-indigo-500/30 hover:text-indigo-200"
+                                            >
+                                              <CheckSquare className="h-3 w-3" />
+                                              Marcar Leído
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleRemoveReminder(act)
+                                            }
+                                            className="flex items-center gap-1 rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[9px] font-bold text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300"
+                                          >
+                                            <X className="h-3 w-3" />
+                                            Quitar Alarma
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })
+                      ) : (
+                        <p className="-ml-3.5 py-6 text-center text-xs text-slate-500">
+                          No se encontraron actividades registradas para este
+                          contacto.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Formulario de creación */}
+                  {!isForeign ? (
+                    <form
+                      onSubmit={handleAddDeal}
+                      className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 backdrop-blur-md"
+                    >
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                        Nueva Solicitud de Préstamo
+                      </h4>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Monto (USD)
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="Ej. 5000"
+                            value={dealAmount}
+                            onChange={(e) => setDealAmount(e.target.value)}
+                            required
+                            min="1"
+                            className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Plazo (Meses)
+                          </label>
+                          <select
+                            value={dealTermMonths}
+                            onChange={(e) => setDealTermMonths(e.target.value)}
+                            className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white transition-colors focus:border-indigo-500 focus:outline-none"
+                          >
+                            <option value="3">3 meses</option>
+                            <option value="6">6 meses</option>
+                            <option value="12">12 meses</option>
+                            <option value="18">18 meses</option>
+                            <option value="24">24 meses</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Tasa de Interés (%)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder="Ej. 15"
+                          value={dealInterestRate}
+                          onChange={(e) => setDealInterestRate(e.target.value)}
+                          required
+                          min="0"
+                          className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Notas / Justificación
+                        </label>
+                        <textarea
+                          placeholder="Escribe comentarios u observaciones del préstamo..."
+                          value={dealNotes}
+                          onChange={(e) => setDealNotes(e.target.value)}
+                          rows={3}
+                          className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isSubmittingDeal}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Enviar Solicitud
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/10 p-4 text-center text-xs text-slate-500">
+                      No tienes permisos para solicitar préstamos para este
+                      contacto (Modo Solo Lectura).
+                    </div>
+                  )}
+
+                  {/* Listado de Préstamos Activos */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                      Solicitudes de Préstamos
+                    </h4>
+                    <div className="space-y-4">
+                      {dealsToShow && dealsToShow.length > 0 ? (
+                        dealsToShow.map((deal) => {
+                          const steps = [
+                            { stage: 'draft', label: 'Borrador' },
+                            { stage: 'under_evaluation', label: 'Riesgo' },
+                            { stage: 'approved', label: 'Aprobado' },
+                            { stage: 'disbursed', label: 'Desembolsado' },
+                          ]
+
+                          const getStepStatus = (
+                            dealStage: string,
+                            stepStage: string,
+                          ) => {
+                            const stageOrder = [
+                              'draft',
+                              'under_evaluation',
+                              'approved',
+                              'disbursed',
+                              'completed',
+                            ]
+                            const currentIdx = stageOrder.indexOf(dealStage)
+                            const stepIdx = stageOrder.indexOf(stepStage)
+
+                            if (
+                              dealStage === 'refused' ||
+                              dealStage === 'overdue'
+                            ) {
+                              return 'disabled'
+                            }
+                            if (currentIdx >= 3 && dealStage === 'completed') {
+                              return 'completed'
+                            }
+                            if (stepIdx < currentIdx) return 'completed'
+                            if (stepIdx === currentIdx) return 'active'
+                            return 'upcoming'
+                          }
+
+                          return (
+                            <div
+                              key={deal.id || deal.tempId}
+                              className="space-y-3 rounded-xl border border-slate-900 bg-slate-950 p-4"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <span className="block font-mono text-[10px] text-slate-500">
+                                    Creado:{' '}
+                                    {new Date(
+                                      deal.createdAt,
+                                    ).toLocaleDateString()}
+                                  </span>
+                                  <h5 className="mt-0.5 text-sm font-bold text-white">
+                                    ${deal.amount.toLocaleString()} USD
+                                  </h5>
+                                  <p className="mt-0.5 text-[10px] text-slate-400">
+                                    Plazo: {deal.termMonths} meses | Tasa:{' '}
+                                    {deal.interestRate}%
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  {deal.synced ? (
+                                    <span title="Sincronizado con el CRM">
+                                      <Cloud className="h-3.5 w-3.5 text-slate-600" />
+                                    </span>
+                                  ) : (
+                                    <span title="Pendiente de sincronización">
+                                      <Database className="h-3.5 w-3.5 animate-pulse text-amber-500" />
+                                    </span>
+                                  )}
+                                  {!isForeign && (
                                     <button
-                                      onClick={() => handleDeleteActivity(act)}
-                                      className="rounded p-1 text-slate-600 hover:bg-slate-900 hover:text-red-450 transition-colors"
-                                      title="Eliminar actividad"
+                                      onClick={() => handleDeleteDeal(deal)}
+                                      className="hover:text-red-450 rounded p-1 text-slate-600 transition-colors hover:bg-slate-900"
+                                      title="Eliminar préstamo"
                                     >
                                       <Trash2 className="h-3 w-3" />
                                     </button>
-                                  </div>
+                                  )}
                                 </div>
-
-                                <p className="text-xs text-slate-400 whitespace-pre-line leading-relaxed">
-                                  {act.body}
-                                </p>
-                                {act.reminderDate && (
-                                   <div className="flex flex-col gap-1.5 mt-2 rounded-lg bg-indigo-950/40 border border-indigo-500/20 p-2.5 max-w-md">
-                                     <div className="flex items-center gap-1.5 text-[10px] text-indigo-300">
-                                       <Bell className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
-                                       <span className="font-medium">
-                                         Recordatorio: {new Date(act.reminderDate).toLocaleString()}
-                                       </span>
-                                       {act.reminderRead ? (
-                                         <span className="ml-1 text-[8px] bg-indigo-500/20 text-indigo-200 px-1.5 py-0.5 rounded border border-indigo-500/30">
-                                           Leído
-                                         </span>
-                                       ) : (
-                                         <span className="ml-1 text-[8px] bg-amber-500/20 text-amber-200 px-1.5 py-0.5 rounded border border-amber-500/30">
-                                           Activo
-                                         </span>
-                                       )}
-                                     </div>
-                                     <div className="flex items-center gap-2">
-                                       {!act.reminderRead && (
-                                         <button
-                                           type="button"
-                                           onClick={() => handleMarkReminderAsRead(act)}
-                                           className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 hover:text-indigo-200 bg-indigo-500/20 hover:bg-indigo-500/30 px-2 py-1 rounded transition-colors border border-indigo-500/30"
-                                         >
-                                           <CheckSquare className="h-3 w-3" />
-                                           Marcar Leído
-                                         </button>
-                                       )}
-                                       <button
-                                         type="button"
-                                         onClick={() => handleRemoveReminder(act)}
-                                         className="flex items-center gap-1 text-[9px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 rounded transition-colors border border-red-500/20"
-                                       >
-                                         <X className="h-3 w-3" />
-                                         Quitar Alarma
-                                       </button>
-                                     </div>
-                                   </div>
-                                 )}
                               </div>
+
+                              {deal.notes && (
+                                <p className="rounded border border-slate-900 bg-slate-900/50 p-2 font-mono text-xs leading-relaxed text-slate-400">
+                                  {deal.notes}
+                                </p>
+                              )}
+
+                              {/* Stepper Horizontal */}
+                              {deal.stage !== 'refused' &&
+                              deal.stage !== 'overdue' &&
+                              deal.stage !== 'completed' ? (
+                                <div className="relative mt-4 flex items-center justify-between px-2 pb-1 pt-2">
+                                  <div className="absolute left-4 right-4 top-1/2 -z-10 h-0.5 -translate-y-[10px] bg-slate-800" />
+                                  <div
+                                    className="absolute left-4 top-1/2 -z-10 h-0.5 -translate-y-[10px] bg-emerald-500 transition-all duration-500"
+                                    style={{
+                                      width:
+                                        deal.stage === 'draft'
+                                          ? '0%'
+                                          : deal.stage === 'under_evaluation'
+                                            ? '33.33%'
+                                            : deal.stage === 'approved'
+                                              ? '66.66%'
+                                              : '100%',
+                                    }}
+                                  />
+                                  {steps.map((step, idx) => {
+                                    const status = getStepStatus(
+                                      deal.stage,
+                                      step.stage,
+                                    )
+                                    return (
+                                      <div
+                                        key={step.stage}
+                                        className="z-10 flex flex-col items-center"
+                                      >
+                                        <div
+                                          className={`flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-bold transition-all ${
+                                            status === 'completed'
+                                              ? 'border-emerald-500 bg-emerald-500 text-slate-950'
+                                              : status === 'active'
+                                                ? 'border-indigo-500 bg-indigo-950 text-indigo-400 ring-2 ring-indigo-500/20'
+                                                : 'border-slate-850 bg-slate-950 text-slate-500'
+                                          }`}
+                                        >
+                                          {status === 'completed'
+                                            ? '✓'
+                                            : idx + 1}
+                                        </div>
+                                        <span
+                                          className={`mt-1.5 text-[8px] font-semibold ${
+                                            status === 'completed'
+                                              ? 'text-emerald-400'
+                                              : status === 'active'
+                                                ? 'font-bold text-indigo-400'
+                                                : 'text-slate-500'
+                                          }`}
+                                        >
+                                          {step.label}
+                                        </span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ) : null}
+
+                              {deal.stage === 'refused' && (
+                                <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-xs font-semibold text-red-400">
+                                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                                  <span>Solicitud Rechazada por Riesgos</span>
+                                </div>
+                              )}
+
+                              {deal.stage === 'overdue' && (
+                                <div className="mt-2 flex items-center gap-2 rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-xs font-semibold text-rose-400">
+                                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                                  <span>Crédito en Mora (Vencido)</span>
+                                </div>
+                              )}
+
+                              {deal.stage === 'completed' && (
+                                <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-xs font-semibold text-emerald-400">
+                                  <CheckSquare className="h-4 w-4 shrink-0" />
+                                  <span>Crédito Completado (Pagado)</span>
+                                </div>
+                              )}
                             </div>
                           )
                         })
-                    ) : (
-                      <p className="text-xs text-center text-slate-500 py-6 -ml-3.5">
-                        No se encontraron actividades registradas para este contacto.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Formulario de creación */}
-                <form onSubmit={handleAddDeal} className="rounded-xl border border-slate-800 bg-slate-900/20 p-4 space-y-4 backdrop-blur-md">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Nueva Solicitud de Préstamo</h4>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Monto (USD)</label>
-                      <input
-                        type="number"
-                        placeholder="Ej. 5000"
-                        value={dealAmount}
-                        onChange={(e) => setDealAmount(e.target.value)}
-                        required
-                        min="1"
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Plazo (Meses)</label>
-                      <select
-                        value={dealTermMonths}
-                        onChange={(e) => setDealTermMonths(e.target.value)}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white transition-colors focus:border-indigo-500 focus:outline-none"
-                      >
-                        <option value="3">3 meses</option>
-                        <option value="6">6 meses</option>
-                        <option value="12">12 meses</option>
-                        <option value="18">18 meses</option>
-                        <option value="24">24 meses</option>
-                      </select>
+                      ) : (
+                        <p className="py-6 text-center text-xs text-slate-500">
+                          No hay solicitudes de préstamos registradas para este
+                          contacto.
+                        </p>
+                      )}
                     </div>
                   </div>
-
-                  <div>
-                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Tasa de Interés (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      placeholder="Ej. 15"
-                      value={dealInterestRate}
-                      onChange={(e) => setDealInterestRate(e.target.value)}
-                      required
-                      min="0"
-                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Notas / Justificación</label>
-                    <textarea
-                      placeholder="Escribe comentarios u observaciones del préstamo..."
-                      value={dealNotes}
-                      onChange={(e) => setDealNotes(e.target.value)}
-                      rows={3}
-                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none resize-none"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmittingDeal}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white hover:bg-indigo-600 transition-colors disabled:opacity-50"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Enviar Solicitud
-                  </button>
-                </form>
-
-                {/* Listado de Préstamos Activos */}
-                <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Solicitudes de Préstamos</h4>
-                  <div className="space-y-4">
-                    {deals && deals.length > 0 ? (
-                      deals.map((deal) => {
-                        const steps = [
-                          { stage: 'draft', label: 'Borrador' },
-                          { stage: 'under_evaluation', label: 'Riesgo' },
-                          { stage: 'approved', label: 'Aprobado' },
-                          { stage: 'disbursed', label: 'Desembolsado' },
-                        ]
-
-                        const getStepStatus = (dealStage: string, stepStage: string) => {
-                          const stageOrder = ['draft', 'under_evaluation', 'approved', 'disbursed', 'completed']
-                          const currentIdx = stageOrder.indexOf(dealStage)
-                          const stepIdx = stageOrder.indexOf(stepStage)
-                          
-                          if (dealStage === 'refused' || dealStage === 'overdue') {
-                            return 'disabled'
-                          }
-                          if (currentIdx >= 3 && dealStage === 'completed') {
-                            return 'completed'
-                          }
-                          if (stepIdx < currentIdx) return 'completed'
-                          if (stepIdx === currentIdx) return 'active'
-                          return 'upcoming'
-                        }
-
-                        return (
-                          <div key={deal.id || deal.tempId} className="rounded-xl border border-slate-900 bg-slate-950 p-4 space-y-3">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <span className="text-[10px] text-slate-500 font-mono block">
-                                  Creado: {new Date(deal.createdAt).toLocaleDateString()}
-                                </span>
-                                <h5 className="text-sm font-bold text-white mt-0.5">
-                                  ${deal.amount.toLocaleString()} USD
-                                </h5>
-                                <p className="text-[10px] text-slate-400 mt-0.5">
-                                  Plazo: {deal.termMonths} meses | Tasa: {deal.interestRate}%
-                                </p>
-                              </div>
-
-                              <div className="flex items-center gap-1.5">
-                                {deal.synced ? (
-                                  <span title="Sincronizado con el CRM">
-                                    <Cloud className="h-3.5 w-3.5 text-slate-600" />
-                                  </span>
-                                ) : (
-                                  <span title="Pendiente de sincronización">
-                                    <Database className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
-                                  </span>
-                                )}
-                                <button
-                                  onClick={() => handleDeleteDeal(deal)}
-                                  className="rounded p-1 text-slate-600 hover:bg-slate-900 hover:text-red-450 transition-colors"
-                                  title="Eliminar préstamo"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {deal.notes && (
-                              <p className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded border border-slate-900 leading-relaxed font-mono">
-                                {deal.notes}
-                              </p>
-                            )}
-
-                            {/* Stepper Horizontal */}
-                            {deal.stage !== 'refused' && deal.stage !== 'overdue' && deal.stage !== 'completed' ? (
-                              <div className="relative flex items-center justify-between mt-4 px-2 pt-2 pb-1">
-                                <div className="absolute left-4 right-4 top-1/2 -translate-y-[10px] h-0.5 bg-slate-800 -z-10" />
-                                <div 
-                                  className="absolute left-4 top-1/2 -translate-y-[10px] h-0.5 bg-emerald-500 transition-all duration-500 -z-10"
-                                  style={{
-                                    width: 
-                                      deal.stage === 'draft' ? '0%' :
-                                      deal.stage === 'under_evaluation' ? '33.33%' :
-                                      deal.stage === 'approved' ? '66.66%' : '100%'
-                                  }}
-                                />
-                                {steps.map((step, idx) => {
-                                  const status = getStepStatus(deal.stage, step.stage)
-                                  return (
-                                    <div key={step.stage} className="flex flex-col items-center z-10">
-                                      <div 
-                                        className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold border transition-all ${
-                                          status === 'completed' 
-                                            ? 'bg-emerald-500 border-emerald-500 text-slate-950'
-                                            : status === 'active'
-                                            ? 'bg-indigo-950 border-indigo-500 text-indigo-400 ring-2 ring-indigo-500/20'
-                                            : 'bg-slate-950 border-slate-850 text-slate-500'
-                                        }`}
-                                      >
-                                        {status === 'completed' ? '✓' : idx + 1}
-                                      </div>
-                                      <span className={`text-[8px] font-semibold mt-1.5 ${
-                                        status === 'completed' ? 'text-emerald-400' :
-                                        status === 'active' ? 'text-indigo-400 font-bold' : 'text-slate-500'
-                                      }`}>
-                                        {step.label}
-                                      </span>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            ) : null}
-
-                            {deal.stage === 'refused' && (
-                              <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 p-2 flex items-center gap-2 text-red-400 text-xs font-semibold">
-                                <ShieldAlert className="h-4 w-4 shrink-0" />
-                                <span>Solicitud Rechazada por Riesgos</span>
-                              </div>
-                            )}
-
-                            {deal.stage === 'overdue' && (
-                              <div className="mt-2 rounded-lg bg-rose-500/10 border border-rose-500/20 p-2 flex items-center gap-2 text-rose-400 text-xs font-semibold">
-                                <ShieldAlert className="h-4 w-4 shrink-0" />
-                                <span>Crédito en Mora (Vencido)</span>
-                              </div>
-                            )}
-
-                            {deal.stage === 'completed' && (
-                              <div className="mt-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2 flex items-center gap-2 text-emerald-400 text-xs font-semibold">
-                                <CheckSquare className="h-4 w-4 shrink-0" />
-                                <span>Crédito Completado (Pagado)</span>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })
-                    ) : (
-                      <p className="text-xs text-center text-slate-500 py-6">
-                        No hay solicitudes de préstamos registradas para este contacto.
-                      </p>
-                    )}
-                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
         </>
       )}
 
