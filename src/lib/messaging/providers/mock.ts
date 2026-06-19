@@ -1,4 +1,4 @@
-import { IMessagingProvider, SendMessageOptions, SendMessageResult } from '../interface'
+import { IMessagingProvider, SendMessageOptions, SendMessageResult, ParsedWebhookMessage } from '../interface'
 
 export class MockMessagingProvider implements IMessagingProvider {
   async sendMessage(
@@ -46,5 +46,22 @@ export class MockMessagingProvider implements IMessagingProvider {
         placeholders: ['Nombre del Lead', 'Monto'],
       }
     ]
+  }
+
+  async parseWebhook(req: Request, rawBody: string): Promise<ParsedWebhookMessage[]> {
+    try {
+      const parsed = JSON.parse(rawBody)
+      if (Array.isArray(parsed)) {
+        return parsed.map((m: any) => ({
+          messageId: m.messageId || `mock_msg_${Math.random().toString(36).substring(2, 11)}`,
+          fromPhone: m.fromPhone || '',
+          body: m.body || '',
+          timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+        }))
+      }
+      return []
+    } catch {
+      return []
+    }
   }
 }

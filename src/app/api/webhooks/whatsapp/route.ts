@@ -2,51 +2,23 @@ import { NextResponse } from 'next/server'
 import dbConnect from '@/lib/mongodb'
 import Lead from '@/models/Lead'
 import Activity from '@/models/Activity'
+import { MessagingProviderFactory } from '@/lib/messaging/factory'
 
-interface InfobipIncomingMessage {
-  messageId: string
-  from: string // Teléfono del cliente
-  to: string // Nuestro número de WhatsApp
-  channel?: string
-  receivedAt: string
-  message: {
-    type: string
-    text: string
-  }
-  contact?: {
-    name?: string
-  }
-}
-
-interface InfobipWebhookPayload {
-  results?: InfobipIncomingMessage[]
-}
-
-/**
- * POST /api/webhooks/whatsapp
- * Receptor de mensajes entrantes (Inbound) de WhatsApp desde Infobip.
- * Guarda las respuestas del cliente en MongoDB para que se sincronicen con el Dashboard local.
- */
 export async function POST(req: Request) {
   try {
-    const rawBody = await req.json() as InfobipWebhookPayload
-    console.log('[Webhook WhatsApp] Recibido payload de Infobip:', JSON.stringify(rawBody))
+    const rawBody = await req.text()
+    const provider = MessagingProviderFactory.getProvider()
+    const incomingMessages = await provider.parseWebhook(req, rawBody)
 
-    if (!rawBody.results || rawBody.results.length === 0) {
-      return NextResponse.json({ ok: true, message: 'No results found' }, { status: 200 })
+    if (incomingMessages.length === 0) {
+      return NextResponse.json({ ok: true, message: 'No messages processed' }, { status: 200 })
     }
 
     await dbConnect()
 
-    for (const result of rawBody.results) {
-      const { from, message, messageId, receivedAt } = result
-
-      if (!from || !message || message.type !== 'TEXT') {
-        console.log(`[Webhook WhatsApp] Saltando mensaje ${messageId}: no es de texto o no tiene remitente`)
-        continue
-      }
-
-      const cleanIncomingPhone = from.replace(/\D/g, '')
+    for (const msg of incomingMessages) {
+      const { fromPhone, body, messageId, timestamp } = msg
+      const cleanIncomingPhone = fromPhone.replace(/\D/g, '')
 
       // 1. Buscar el contacto en MongoDB de forma resiliente por teléfono
       const leads = await Lead.find({ deleted: false })
@@ -58,7 +30,7 @@ export async function POST(req: Request) {
       })
 
       if (!lead) {
-        console.warn(`[Webhook WhatsApp] No se encontró ningún lead asociado al teléfono: ${from}`)
+        console.warn(`[Webhook WhatsApp] No se encontró ningún lead asociado al teléfono: ${fromPhone}`)
         continue
       }
 
@@ -77,8 +49,8 @@ export async function POST(req: Request) {
         userId: lead.userId,
         type: 'WHATSAPP',
         title: 'WhatsApp Recibido',
-        body: message.text,
-        timestamp: new Date(receivedAt),
+        body,
+        timestamp,
         crmSynced: false, // Permitir que el motor lo suba a HubSpot para registrar la respuesta del cliente
         deleted: false,
       })
@@ -87,7 +59,6 @@ export async function POST(req: Request) {
       console.log(`[Webhook WhatsApp] Registrada respuesta de WhatsApp para el lead ${lead.firstName} ${lead.lastName} (LeadID: ${lead._id})`)
     }
 
-    // Retornar 200 OK inmediatamente para que Infobip no reintente el envío
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (error: any) {
     console.error('[Webhook WhatsApp] Error al procesar webhook de mensajería:', error)

@@ -1,4 +1,4 @@
-import { IMessagingProvider, SendMessageOptions, SendMessageResult } from '../interface'
+import { IMessagingProvider, SendMessageOptions, SendMessageResult, ParsedWebhookMessage } from '../interface'
 
 interface InfobipConfig {
   apiKey: string
@@ -147,6 +147,30 @@ export class InfobipMessagingProvider implements IMessagingProvider {
       })
     } catch (err) {
       console.error('[Infobip Provider] Error al obtener plantillas:', err)
+      return []
+    }
+  }
+
+  async parseWebhook(req: Request, rawBody: string): Promise<ParsedWebhookMessage[]> {
+    try {
+      const data = JSON.parse(rawBody)
+      const results = data.results || []
+      const parsed: ParsedWebhookMessage[] = []
+
+      for (const result of results) {
+        const { messageId, from, message, receivedAt } = result
+        if (from && message && message.type === 'TEXT') {
+          parsed.push({
+            messageId,
+            fromPhone: from,
+            body: message.text,
+            timestamp: new Date(receivedAt),
+          })
+        }
+      }
+      return parsed
+    } catch (err) {
+      console.error('[Infobip Provider Webhook] Error parsing payload:', err)
       return []
     }
   }

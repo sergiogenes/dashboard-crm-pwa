@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import {
   ICRMProvider,
   CRMLead,
@@ -5,6 +6,7 @@ import {
   CRMInvoice,
   CRMActivity,
   CRMDeal,
+  ParsedCRMWebhookEvent,
 } from './interface'
 
 interface HubSpotContactResponse {
@@ -1254,6 +1256,155 @@ export class HubSpotProvider implements ICRMProvider {
         `[HubSpot Provider] Error al obtener contactos asociados para la factura ${invoiceCrmId}:`,
         err,
       )
+      return null
+    }
+  }
+
+  async verifyAndParseWebhook(
+    req: Request,
+    rawBody: string,
+  ): Promise<ParsedCRMWebhookEvent[] | null> {
+    const clientSecret = process.env.HUBSPOT_CLIENT_SECRET
+    const signature = req.headers.get('x-hubspot-signature')
+    const signatureV3 = req.headers.get('x-hubspot-signature-v3')
+    const timestamp = req.headers.get('x-hubspot-request-timestamp')
+
+    if (clientSecret) {
+      if (!signature && !signatureV3) {
+        console.error('[HubSpot Provider Webhook] Error: Falta cabecera de firma')
+        return null
+      }
+
+      const method = req.method
+      const urlObj = new URL(req.url)
+      const proto = req.headers.get('x-forwarded-proto') || 'https'
+      const host = req.headers.get('host') || urlObj.host
+      const uri = `${proto}://${host}${urlObj.pathname}${urlObj.search}`
+
+      let v3Valid = false
+      let v2Valid = false
+      let v1Valid = false
+
+      if (signatureV3 && timestamp) {
+        const sourceStringV3 = method + uri + rawBody + timestamp
+        const expectedSignatureV3 = crypto
+          .createHmac('sha256', clientSecret)
+          .update(sourceStringV3)
+          .digest('base64')
+        v3Valid = signatureV3 === expectedSignatureV3
+      }
+
+      if (signature) {
+        const sourceStringV2 = clientSecret + method + uri + rawBody
+        const expectedSignatureV2 = crypto
+          .createHash('sha256')
+          .update(sourceStringV2)
+          .digest('hex')
+        v2Valid = signature === expectedSignatureV2
+
+        const sourceStringV1 = clientSecret + rawBody
+        const expectedSignatureV1 = crypto
+          .createHash('md5')
+          .update(sourceStringV1)
+          .digest('hex')
+        v1Valid = signature === expectedSignatureV1
+      }
+
+      if (!v3Valid && !v2Valid && !v1Valid) {
+        console.error('[HubSpot Provider Webhook] Error: Todas las firmas fallaron la validación.')
+        return null
+      }
+    }
+
+    try {
+      const events = JSON.parse(rawBody) as any[]
+      const parsed: ParsedCRMWebhookEvent[] = []
+
+      for (const event of events) {
+        const { subscriptionType, objectId, propertyName, propertyValue, fromObjectId, toObjectId } = event
+        const crmId = String(objectId)
+
+        let mappedType: ParsedCRMWebhookEvent['subscriptionType'] | null = null
+
+        if (subscriptionType.startsWith('contact.')) {
+          mappedType = subscriptionType === 'contact.deletion' ? 'lead.deletion' : 'lead.upsert'
+        } else if (subscriptionType.startsWith('company.')) {
+          mappedType = subscriptionType === 'company.deletion' ? 'company.deletion' : 'company.upsert'
+        } else if (
+          subscriptionType.startsWith('invoice.') ||
+          subscriptionType.startsWith('custom_object.') ||
+          subscriptionType.startsWith('customObject.')
+        ) {
+          mappedType = subscriptionType.endsWith('.deletion') ? 'invoice.deletion' : 'invoice.upsert'
+        } else if (subscriptionType === 'association.creation') {
+          mappedType = 'association.creation'
+        } else if (subscriptionType === 'association.deletion') {
+          mappedType = 'association.deletion'
+        }
+
+        if (!mappedType) continue
+
+        let mappedPropName = propertyName
+        let mappedPropValue = propertyValue
+
+        // Traducir nombres de propiedades específicos de HubSpot a genéricos
+        if (mappedType === 'lead.upsert' && propertyName) {
+          if (propertyName === 'firstname') mappedPropName = 'firstName'
+          if (propertyName === 'lastname') mappedPropName = 'lastName'
+          if (propertyName === 'email') mappedPropName = 'email'
+          if (propertyName === 'phone') mappedPropName = 'phone'
+          if (propertyName === 'national_id_number') mappedPropName = 'documentId'
+        } else if (mappedType === 'company.upsert' && propertyName) {
+          if (propertyName === 'name') mappedPropName = 'name'
+          if (propertyName === 'domain') mappedPropName = 'domain'
+        } else if (mappedType === 'invoice.upsert' && propertyName) {
+          const lowerProp = propertyName.toLowerCase()
+          if (
+            lowerProp === 'hs_amount_billed' ||
+            lowerProp === 'amount_billed' ||
+            lowerProp === 'hs_total_amount_billed' ||
+            lowerProp === 'hs_total_amount' ||
+            lowerProp === 'invoice_amount' ||
+            lowerProp === 'hs_invoice_amount' ||
+            lowerProp === 'amount'
+          ) {
+            mappedPropName = 'amount'
+          } else if (lowerProp === 'balance_due' || lowerProp === 'hs_balance_due') {
+            mappedPropName = 'balanceDue'
+          } else if (
+            lowerProp === 'hs_invoice_status' ||
+            lowerProp === 'invoice_status' ||
+            lowerProp === 'status'
+          ) {
+            mappedPropName = 'status'
+            if (propertyValue) {
+              const upperVal = String(propertyValue).toUpperCase()
+              if (upperVal === 'PAID') mappedPropValue = 'PAID'
+              else if (upperVal === 'OVERDUE') mappedPropValue = 'OVERDUE'
+              else mappedPropValue = 'PENDING'
+            }
+          } else if (lowerProp === 'hs_invoice_date' || lowerProp === 'invoice_date') {
+            mappedPropName = 'invoiceDate'
+          } else if (lowerProp === 'hs_due_date') {
+            mappedPropName = 'dueDate'
+          } else if (lowerProp === 'hs_payment_date' || lowerProp === 'payment_date') {
+            mappedPropName = 'paymentDate'
+          }
+        }
+
+        parsed.push({
+          subscriptionType: mappedType,
+          crmId,
+          propertyName: mappedPropName,
+          propertyValue: mappedPropValue,
+          fromCrmId: fromObjectId ? String(fromObjectId) : undefined,
+          toCrmId: toObjectId ? String(toObjectId) : undefined,
+        })
+      }
+
+      return parsed
+    } catch (err) {
+      console.error('[HubSpot Provider Webhook] Error al parsear JSON:', err)
       return null
     }
   }

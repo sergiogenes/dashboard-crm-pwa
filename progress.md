@@ -373,5 +373,22 @@ _Última actualización: 2026-06-03_
 - **Corrección de Borrado de WhatsApp en HubSpot ([hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts))**:
   - Corregida la función `deleteActivity` para direccionar adecuadamente el borrado de actividades de tipo `'WHATSAPP'` hacia el endpoint `/communications/{crmId}` en HubSpot en lugar del endpoint genérico `/notes/{crmId}`.
   - Actualizado el fallback de borrado sin tipo de `deleteActivity` para que intente eliminar de manera secuencial en `/notes`, `/tasks` y finalmente en `/communications`, evitando que los mensajes eliminados localmente "resuciten" al volver a sincronizar desde el CRM.
+- **Desacoplamiento de Webhooks (CRM y WhatsApp)**:
+  - Definida la interfaz `ParsedCRMWebhookEvent` y la firma `verifyAndParseWebhook` en [interface.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/interface.ts).
+  - Implementado el método `verifyAndParseWebhook` en [hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts) para realizar la validación de firmas (V3/V2/V1) y mapear propiedades específicas de HubSpot a nomenclatura genérica.
+  - Implementado el mock de verificación de webhook en [mock.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/mock.ts).
+  - Re-diseñado el endpoint [route.ts de CRM](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/api/webhooks/crm/route.ts) para que sea 100% genérico delegando firma y parseo al CRM Provider configurado.
+  - Definida la interfaz `ParsedWebhookMessage` y la firma `parseWebhook` en [interface.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/messaging/interface.ts) de mensajería.
+  - Implementado `parseWebhook` en [infobip.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/messaging/providers/infobip.ts) para traducir las notificaciones entrantes de Infobip.
+  - Implementado `parseWebhook` en el mock de mensajería [mock.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/messaging/providers/mock.ts).
+  - Re-diseñado el endpoint [route.ts de WhatsApp](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/api/webhooks/whatsapp/route.ts) para que sea 100% genérico delegando el procesamiento al Messaging Provider configurado.
 
-_Última actualización: 2026-06-17_
+## Fases del 18 de junio de 2026 (Análisis de Proceso Comercial y Modelado de Franquicias/Royalties)
+
+- **Diagnóstico y Diseño del Modelo Comercial de Franquicias**:
+  - Analizado el documento de consultoría [Proceso comercial.txt](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/feedback-images/Proceso%20comercial.txt) detallando la estructura de Aliados, Franquicias, Fuerza de Ventas (Captadores y Renovadores) y comisiones.
+  - Creada la propuesta arquitectónica de modelo de datos en el archivo [franchise_architecture_design.md](file:///C:/Users/sergi/.gemini/antigravity-cli/brain/a8635076-1473-4864-891a-0b0fa76b8752/franchise_architecture_design.md).
+  - Diseñado el mapeo a entidades estándar de HubSpot CRM utilizando asociaciones jerárquicas parent-child para Aliados/Franquicias y Owners con roles comerciales.
+  - Diseñadas las modificaciones de los esquemas Mongoose de la aplicación (`Company`, `User`, `Lead`, `Deal`) para incorporar la estructura comercial y las validaciones de exclusividad (Regla Simply) y regalías (Royalties).
+
+_Última actualización: 2026-06-18_
