@@ -77,8 +77,8 @@ export async function enableMFA(secret: string, code: string) {
     }
 
     // Verificar el código de 6 dígitos ingresado contra la clave secreta provista (función async en otplib v13)
-    const isValid = await verify({ token: code, secret })
-    if (!isValid) {
+    const verification = await verify({ token: code, secret })
+    if (!verification || !verification.valid) {
       return { success: false, error: 'El código ingresado es incorrecto' }
     }
 
@@ -136,12 +136,12 @@ export async function verifyMFA(code: string) {
 
     // 1. Intentar validar como código TOTP (6 dígitos numéricos - función async en otplib v13)
     if (/^\d{6}$/.test(cleanCode)) {
-      const isValid = await verify({
+      const verification = await verify({
         token: cleanCode,
         secret: user.twoFactorSecret,
       })
 
-      if (isValid) {
+      if (verification && verification.valid) {
         const mfaToken = signMfaToken(userId)
         return { success: true, mfaToken }
       }

@@ -11,6 +11,7 @@ export interface IUserSchema extends Document {
   roles: ('admin' | 'supervisor' | 'user')[]
   supervisorId?: string
   disbursementGoal?: number
+  dbEncryptionKey?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -27,6 +28,7 @@ const UserSchema = new Schema<IUserSchema>(
     roles: { type: [String], enum: ['admin', 'supervisor', 'user'], default: ['user'], required: true },
     supervisorId: { type: String, index: true },
     disbursementGoal: { type: Number, default: 100000 },
+    dbEncryptionKey: { type: String },
   },
   { timestamps: true },
 )

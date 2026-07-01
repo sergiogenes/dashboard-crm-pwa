@@ -4,6 +4,7 @@ import dbConnect from './mongodb'
 import User from '@/models/User'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
+import { decrypt } from './crypto'
 
 /**
  * Genera un token firmado de un solo uso para indicar la verificación exitosa de MFA.
@@ -96,6 +97,8 @@ export const authOptions: NextAuthOptions = {
           )
         }
 
+        const dbKeyDecrypted = user.dbEncryptionKey ? decrypt(user.dbEncryptionKey) : undefined
+
         // Emitimos la sesión con mfaVerified en false inicialmente.
         // El middleware o la UI redirigirán según corresponda.
         return {
@@ -106,6 +109,7 @@ export const authOptions: NextAuthOptions = {
           mfaVerified: false,
           twoFactorEnabled: user.twoFactorEnabled === true,
           roles: user.roles || [user.role || 'user'],
+          dbEncryptionKey: dbKeyDecrypted,
         }
       },
     }),
@@ -118,6 +122,7 @@ export const authOptions: NextAuthOptions = {
         token.mfaVerified = user.mfaVerified
         token.twoFactorEnabled = user.twoFactorEnabled
         token.roles = user.roles || ['user']
+        token.dbEncryptionKey = user.dbEncryptionKey
       }
 
       // Si el cliente solicita actualizar la sesión (NextAuth Session Update)
@@ -140,6 +145,7 @@ export const authOptions: NextAuthOptions = {
         session.user.mfaVerified = token.mfaVerified
         session.user.twoFactorEnabled = token.twoFactorEnabled
         session.user.roles = token.roles || ['user']
+        session.user.dbEncryptionKey = token.dbEncryptionKey
       }
       return session
     },

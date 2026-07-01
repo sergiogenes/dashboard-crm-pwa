@@ -58,7 +58,7 @@ export interface LocalActivity {
   tempId?: string // ID temporal para offline
   leadId: string // ID de MongoDB o tempId del contacto asociado
   userId: string // Sesión del usuario
-  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
+  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'
   title: string
   body: string
   timestamp: number // Timestamp de creación/registro
