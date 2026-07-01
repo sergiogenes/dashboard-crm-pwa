@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { generateMfaSetup, enableMFA } from '@/app/actions/mfa'
@@ -19,20 +19,24 @@ export default function MfaSetupPage() {
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
   const [copied, setCopied] = useState(false)
 
+  const initiatedRef = useRef(false)
+
   useEffect(() => {
     async function loadSetup() {
       setError(null)
       const res = await generateMfaSetup()
-      if (res && res.success && res.secret && res.qrCodeUrl) {
+      if (res && res.success && res.qrCodeUrl) {
         setSecret(res.secret)
         setQrCodeUrl(res.qrCodeUrl)
       } else {
         setError(res?.error || 'No se pudo generar el código de configuración. Refresca la página.')
+        initiatedRef.current = false
       }
       setLoadingSetup(false)
     }
 
-    if (session?.user && !backupCodes) {
+    if (session?.user && !backupCodes && !initiatedRef.current) {
+      initiatedRef.current = true
       loadSetup()
     }
   }, [session, backupCodes])

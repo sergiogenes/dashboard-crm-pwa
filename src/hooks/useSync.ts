@@ -1,7 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { localDb } from '@/lib/db'
+import { localDb, LocalLead, LocalActivity } from '@/lib/db'
 import { pushClientChanges, pullServerUpdates } from '@/app/actions/sync'
 import { useQueryClient } from '@tanstack/react-query'
+import { useSession } from 'next-auth/react'
+import {
+  decryptLead,
+  encryptLead,
+  decryptActivity,
+  encryptActivity,
+  decryptLocal
+} from '@/lib/client-crypto'
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'success'
 
@@ -13,6 +21,7 @@ export type SyncStatus = 'idle' | 'syncing' | 'error' | 'success'
  * (Lie-Fi protection) antes de subir datos.
  */
 export function useSync(userId: string | undefined) {
+  const { data: session } = useSession()
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof window !== 'undefined' ? navigator.onLine : true,
   )
@@ -35,6 +44,8 @@ export function useSync(userId: string | undefined) {
     setSyncError(null)
 
     try {
+      const dbKey = session?.user?.dbEncryptionKey
+
       // 1. Obtener datos locales modificados de Dexie
       const unsyncedCompanies = await localDb.companies
         .filter((c) => c.synced === false)
@@ -65,10 +76,18 @@ export function useSync(userId: string | undefined) {
 
       // 2. Subir cambios si existen
       if (hasPendingChanges) {
+        const decryptedLeads = await Promise.all(
+          unsyncedLeads.map((l) => decryptLead(l, dbKey))
+        )
+
+        const decryptedActivities = await Promise.all(
+          unsyncedActivities.map((a) => decryptActivity(a, dbKey))
+        )
+
         const response = await pushClientChanges(
-          unsyncedLeads.map(({ synced, ...rest }) => rest),
+          decryptedLeads.map(({ synced, ...rest }) => rest),
           unsyncedCompanies.map(({ synced, ...rest }) => rest),
-          unsyncedActivities.map(({ synced, ...rest }) => rest),
+          decryptedActivities.map(({ synced, ...rest }) => rest),
           unsyncedDeals.map(({ synced, ...rest }) => rest),
         )
 
@@ -308,20 +327,23 @@ export function useSync(userId: string | undefined) {
             .equals(serverLead.id)
             .delete() // Borrado en cascada local
         } else {
-          // Buscar si ya existe localmente el lead usando el ID de MongoDB o por email
+          // Buscar si ya existe localmente el lead usando el ID de MongoDB o desencriptando por email en memoria
           let existingLocal = await localDb.leads
             .where('id')
             .equals(serverLead.id)
             .first()
           if (!existingLocal) {
-            existingLocal = await localDb.leads
-              .where('email')
-              .equals(serverLead.email)
-              .filter((l) => l.userId === serverLead.userId)
-              .first()
+            const allLeads = await localDb.leads.filter(l => l.userId === serverLead.userId).toArray()
+            for (const l of allLeads) {
+              const decryptedEmail = dbKey ? await decryptLocal(l.email, dbKey) : l.email
+              if (decryptedEmail.toLowerCase() === serverLead.email.toLowerCase()) {
+                existingLocal = l
+                break
+              }
+            }
           }
 
-          await localDb.leads.put({
+          const leadToSave: LocalLead = {
             tempId: existingLocal?.tempId || serverLead.id,
             id: serverLead.id,
             userId: serverLead.userId,
@@ -335,7 +357,10 @@ export function useSync(userId: string | undefined) {
             synced: true,
             createdAt: serverLead.createdAt,
             updatedAt: serverLead.updatedAt,
-          })
+          }
+
+          const encryptedLead = await encryptLead(leadToSave, dbKey)
+          await localDb.leads.put(encryptedLead)
         }
       }
 
@@ -386,7 +411,7 @@ export function useSync(userId: string | undefined) {
               .first()
             const resolvedLeadId = localLead?.tempId || serverAct.leadId
 
-            await localDb.activities.put({
+            const actToSave: LocalActivity = {
               tempId: existingLocal?.tempId || serverAct.id,
               id: serverAct.id,
               leadId: resolvedLeadId,
@@ -400,7 +425,10 @@ export function useSync(userId: string | undefined) {
               synced: true,
               createdAt: serverAct.createdAt,
               updatedAt: serverAct.updatedAt,
-            })
+            }
+
+            const encryptedAct = await encryptActivity(actToSave, dbKey)
+            await localDb.activities.put(encryptedAct)
           }
         }
       }
@@ -441,6 +469,9 @@ export function useSync(userId: string | undefined) {
       }
 
       localStorage.setItem(lastSyncKey, Date.now().toString())
+      if (userId) {
+        await purgeLocalCache(userId)
+      }
       queryClient.invalidateQueries()
       setSyncStatus('success')
     } catch (error: any) {
@@ -450,7 +481,7 @@ export function useSync(userId: string | undefined) {
     } finally {
       syncInProgressRef.current = false
     }
-  }, [userId, queryClient])
+  }, [userId, queryClient, session])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -501,5 +532,67 @@ export function useSync(userId: string | undefined) {
     syncStatus,
     syncError,
     triggerSync: sync,
+  }
+}
+
+async function purgeLocalCache(userId: string) {
+  try {
+    const totalCount = await localDb.leads.where('userId').equals(userId).count()
+    if (totalCount <= 100) return
+
+    // 1. Obtener todos los leads del usuario
+    const userLeads = await localDb.leads.where('userId').equals(userId).toArray()
+    // Obtener todos los deals del usuario para comprobar préstamos activos
+    const userDeals = await localDb.deals.where('userId').equals(userId).toArray()
+
+    // Agrupar leads con préstamos activos
+    const activeLeadIds = new Set<string>()
+    userDeals.forEach((deal) => {
+      if (deal.stage !== 'completed' && deal.stage !== 'refused' && !deal.deleted) {
+        activeLeadIds.add(deal.leadId)
+      }
+    })
+
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+
+    // Filtrar candidatos a purgar
+    const candidates = userLeads.filter((lead) => {
+      // Debe estar sincronizado
+      if (!lead.synced || lead.deleted) return false
+      // No debe tener préstamos activos
+      const leadKey = lead.id || lead.tempId || ''
+      if (activeLeadIds.has(leadKey)) return false
+      // No debe haber sido actualizado en los últimos 7 días
+      if (lead.updatedAt >= sevenDaysAgo) return false
+      return true
+    })
+
+    if (candidates.length === 0) return
+
+    // Ordenar de menor a mayor por updatedAt
+    candidates.sort((a, b) => a.updatedAt - b.updatedAt)
+
+    // Determinar cuántos eliminar para estar por debajo de 100
+    const excessCount = totalCount - 100
+    const toDelete = candidates.slice(0, Math.max(excessCount, candidates.length))
+
+    console.log(`[Cache Purge] Purging ${toDelete.length} expired leads from local cache.`)
+
+    for (const lead of toDelete) {
+      const leadKey = lead.id || lead.tempId || ''
+      // Eliminar lead
+      if (lead.id) {
+        await localDb.leads.where('id').equals(lead.id).delete()
+      } else if (lead.tempId) {
+        await localDb.leads.where('tempId').equals(lead.tempId).delete()
+      }
+
+      // Borrado en cascada de sub-entidades asociadas en Dexie
+      await localDb.invoices.where('leadId').equals(leadKey).delete()
+      await localDb.activities.where('leadId').equals(leadKey).delete()
+      await localDb.deals.where('leadId').equals(leadKey).delete()
+    }
+  } catch (err) {
+    console.error('[Cache Purge] Error running purge:', err)
   }
 }

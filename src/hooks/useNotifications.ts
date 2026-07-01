@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { localDb } from '@/lib/db'
+import { decryptLead, decryptActivity } from '@/lib/client-crypto'
 
 export function useNotifications() {
   const { data: session } = useSession()
@@ -24,6 +25,7 @@ export function useNotifications() {
 
     const syncNotifications = async () => {
       try {
+        const dbKey = session?.user?.dbEncryptionKey
         const existingNotifications = await localDb.notifications
           .where('userId')
           .equals(userId)
@@ -33,7 +35,8 @@ export function useNotifications() {
           existingNotifications.map((n) => [n.activityId, n])
         )
 
-        for (const act of activities) {
+        for (const rawAct of activities) {
+          const act = await decryptActivity(rawAct, dbKey)
           const actKey = act.tempId || act.id
           if (!actKey) continue
 
@@ -48,10 +51,11 @@ export function useNotifications() {
             continue
           }
           
-          // Buscar información del lead asociado
-          const lead = 
+          // Buscar información del lead asociado y desencriptarlo en caliente
+          const rawLead = 
             (await localDb.leads.where('tempId').equals(act.leadId).first()) || 
             (await localDb.leads.where('id').equals(act.leadId).first())
+          const lead = rawLead ? await decryptLead(rawLead, dbKey) : null
           const leadName = lead ? `${lead.firstName} ${lead.lastName}` : 'Contacto'
 
           if (!existingNotif) {
@@ -95,7 +99,7 @@ export function useNotifications() {
     }
 
     syncNotifications()
-  }, [userId, activities])
+  }, [userId, activities, session])
 
   // Timer para comprobar recordatorios vencidos cada 10s
   useEffect(() => {

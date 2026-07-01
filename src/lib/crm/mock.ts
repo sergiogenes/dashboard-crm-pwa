@@ -5,6 +5,7 @@ import {
   CRMInvoice,
   CRMActivity,
   CRMDeal,
+  ParsedCRMWebhookEvent,
 } from './interface'
 
 export class MockCRMProvider implements ICRMProvider {
@@ -245,5 +246,16 @@ export class MockCRMProvider implements ICRMProvider {
     }
     const firstLead = Array.from(this.contacts.keys())[0] || null
     return firstLead
+  }
+
+  async verifyAndParseWebhook(
+    req: Request,
+    rawBody: string,
+  ): Promise<ParsedCRMWebhookEvent[] | null> {
+    try {
+      return JSON.parse(rawBody) as ParsedCRMWebhookEvent[]
+    } catch {
+      return []
+    }
   }
 }

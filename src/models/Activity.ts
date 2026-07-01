@@ -1,11 +1,12 @@
 import mongoose, { Schema, Document } from 'mongoose'
+import { encrypt, decrypt } from '@/lib/crypto'
 
 export interface IActivitySchema extends Document {
   crmId?: string
   tempId?: string
   leadId: mongoose.Types.ObjectId
   userId: string
-  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK'
+  type: 'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'
   title: string
   body: string
   timestamp: Date
@@ -25,19 +26,23 @@ const ActivitySchema = new Schema<IActivitySchema>(
     userId: { type: String, required: true },
     type: {
       type: String,
-      enum: ['NOTE', 'CALL', 'MEETING', 'EMAIL', 'TASK'],
+      enum: ['NOTE', 'CALL', 'MEETING', 'EMAIL', 'TASK', 'WHATSAPP'],
       default: 'NOTE',
       required: true,
     },
-    title: { type: String, required: true },
-    body: { type: String, required: true },
+    title: { type: String, required: true, get: decrypt, set: encrypt },
+    body: { type: String, required: true, get: decrypt, set: encrypt },
     timestamp: { type: Date, required: true, default: Date.now },
     reminderDate: { type: Date },
     reminderRead: { type: Boolean, default: false },
     deleted: { type: Boolean, default: false },
     crmSynced: { type: Boolean, default: false },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { getters: true },
+    toObject: { getters: true },
+  }
 )
 
 export default mongoose.models.Activity || mongoose.model<IActivitySchema>('Activity', ActivitySchema)

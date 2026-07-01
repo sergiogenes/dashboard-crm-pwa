@@ -53,3 +53,6 @@ next-env.d.ts
 
 #imagenes de feedback
 /feedback-images
+
+# IA Agent configs
+.claude/

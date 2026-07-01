@@ -167,11 +167,11 @@
   - Se dejó lista la indicación para eliminar el archivo raíz obsoleto `src/app/page.tsx`.
   - **Corrección de Solapamiento y Scroll**: Corregido el solapamiento estético del botón de expandir/colapsar en el sidebar colapsado mediante un botón circular flotante posicionado de forma absoluta sobre el borde derecho y centrando dinámicamente el logotipo. Asimismo, se incorporó `overflow-x-hidden` en el layout general y un comportamiento de desbordamiento dinámico (`overflow-visible` al colapsar y `overflow-y-auto` al expandir) en el menú de navegación para eliminar definitivamente scrollbars horizontales espurios en el navegador y el sidebar. Adicionalmente, se añadió la clase `truncate` al botón de cerrar sesión para evitar saltos de línea molestos durante la animación de transición.
   - **Limpieza de Interfaz**: Se removió el buscador global de cabecera sin funcionalidad del [Header.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/Header.tsx) y se re-alineó el menú de usuario hacia la derecha.
-- [ ] **Cifrado y Purga de Datos Locales (IndexedDB) - Fase 3:**
-  - Cifrado transparente en la capa local de Dexie.js derivando claves efímeras en RAM en el inicio de sesión.
+- [x] **Cifrado y Purga de Datos Locales (IndexedDB) - Fase 3:**
+  - [x] Cifrado transparente en la capa local de Dexie.js derivando claves efímeras en RAM en el inicio de sesión.
   - [x] Implementar purga total de Dexie.js en el evento de cierre de sesión (logout) y limpieza de `localStorage`/`sessionStorage`.
-- [ ] **Cifrado en MongoDB (Capa de Base Intermedia) - Fase 4:**
-  - Implementar Field-Level Encryption (CSFLE) o cifrado simétrico en el servidor de campos confidenciales de contactos.
+- [x] **Cifrado en MongoDB (Capa de Base Intermedia) - Fase 4:**
+  - [x] Implementar Field-Level Encryption (CSFLE) o cifrado simétrico en el servidor de campos confidenciales de contactos.
 - [ ] **Sincronización en Producción via Webhooks (Fase 4):**
   - Configurar suscripción de Webhook en el portal de desarrolladores de HubSpot para cambios en el estado de facturas (`invoices` o Custom Object de facturas) y procesar los eventos entrantes en el endpoint del webhook para actualizar en tiempo real el estado en MongoDB Atlas al pasar a producción.
 
@@ -287,3 +287,136 @@ _Última actualización: 2026-06-03_
 - **Visualización en UI Desktop y Móvil**:
   - **Tabla Desktop**: Incorporada una columna nueva **Estado** con chips coloreados estilizados siguiendo la paleta premium (Nuevo en azul, En Proceso en amarillo, Aprobado en verde, Rechazado en rojo).
   - **Vista Móvil**: Agregado el badge de estado directamente al lado del nombre de la empresa asociada en el pie de cada tarjeta de contacto móvil.
+
+## Fases del 17 de junio de 2026 (Integración de WhatsApp con Infobip y HubSpot)
+
+- **Capa de Persistencia y Modelos**:
+  - Modificado el esquema Mongoose `Activity.ts` y la interfaz de IndexedDB local `LocalActivity` en `src/lib/db.ts` para soportar el nuevo tipo de actividad `'WHATSAPP'`.
+  - Actualizada la interfaz de comunicación `CRMActivity` en `src/lib/crm/interface.ts` con soporte para `'WHATSAPP'`.
+- **Capa de Mensajería Desacoplada (Messaging Layer)**:
+  - Creado el contrato unificado `IMessagingProvider` en `src/lib/messaging/interface.ts` que permite el envío abstracto de mensajes y plantillas de WhatsApp.
+  - Creada la factoría `MessagingProviderFactory` en `src/lib/messaging/factory.ts` para inyectar dinámicamente el proveedor activo basado en la variable de entorno `NEXT_PUBLIC_MESSAGING_PROVIDER`.
+  - Creado el proveedor simulado `MockMessagingProvider` en `src/lib/messaging/providers/mock.ts` para pruebas y desarrollo ágil offline.
+  - Creado el proveedor real `InfobipMessagingProvider` en `src/lib/messaging/providers/infobip.ts` consumiendo los endpoints `/whatsapp/1/message/text` y `/whatsapp/1/message/template` de la API de Infobip.
+- **Mapeo y Sincronización con HubSpot**:
+  - Modificado `src/lib/crm/hubspot.ts` para que `fetchActivitiesByLead` descargue los objetos de tipo `communication` de HubSpot con tipo de canal WhatsApp e incorpore estos mensajes al timeline local.
+  - Modificada la creación de actividades `createActivity` en `hubspot.ts` para que, cuando el tipo de actividad sea `'WHATSAPP'`, cree y registre el objeto de comunicación correspondiente en la nube de HubSpot asociándolo mediante la relación por defecto `81` (Communication to Contact).
+- **Webhook de Respuestas de WhatsApp en Tiempo Real**:
+  - Creado el endpoint receptor de webhooks `src/app/api/webhooks/whatsapp/route.ts` que recibe notificaciones de mensajes entrantes de Infobip.
+  - Implementado un algoritmo de comparación de teléfonos flexible (por sufijo `endsWith` con números limpios de caracteres especiales) para enlazar de forma resiliente el remitente con los Leads de la base de datos local y guardar el mensaje en MongoDB.
+- **Interfaz de Usuario y Envío desde el Dashboard**:
+  - Creada la Server Action `sendWhatsAppMessage` en `src/app/actions/whatsapp.ts` para despachar mensajes a través del proveedor configurado e insertarlos reactivamente en IndexedDB.
+  - Modificado `contacts/page.tsx` para incorporar el soporte visual de WhatsApp (icono `MessageCircle` con color esmeralda) en el timeline del contacto.
+  - Refactorizado el formulario de actividades en el Drawer de contactos para habilitar la opción de tipo "WhatsApp". Si se selecciona, el formulario oculta condicionalmente los campos innecesarios (Título y Recordatorios), habilita el botón contextual "Enviar WhatsApp" (con el icono `Send`), y despacha el mensaje llamando a la Server Action de forma instantánea.
+  - **Selector Dinámico de Plantillas y Corriente de Chat**:
+    - Implementado un selector de plantillas homologadas (`WHATSAPP_TEMPLATES`) que se activa condicionalmente cuando la ventana de 24 horas está cerrada (`wsActive === false`).
+    - Diseñado un cargador de variables de plantilla que pre-llena la primera variable (`{{1}}`) con el nombre del lead de forma automática y muestra una vista previa del mensaje en tiempo real.
+    - Movido el estado y cálculo de la ventana de 24 horas (`wsActive` y `wsText`) al cuerpo del componente principal para que sea compartido y evaluado correctamente tanto al enviar el mensaje como en el formulario.
+    - Eliminados los bloques duplicados de sintaxis obsoleta en `contacts/page.tsx` para resolver errores de compilación JSX.
+
+## Fases del 17 de junio de 2026 (Corrección de Sincronización de WhatsApp, Ventana de 24 hs e Indicador Reactivo)
+
+- **Preservación del Sentido del Mensaje en HubSpot y MongoDB (Inbound/Outbound)**:
+  - Modificado [src/lib/crm/hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts) para enviar `hs_communication_logged_from: 'CRM'` de manera obligatoria en todas las comunicaciones de WhatsApp, cumpliendo con las reglas estrictas de validación HTTP 400 del CRM.
+  - Modificado [src/app/actions/sync.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/actions/sync.ts) en `syncActivitiesForLead` para que, al sincronizar desde HubSpot, si la actividad de WhatsApp ya existe localmente en MongoDB, se preserve su título original (`existingAct.title`) en lugar de sobrescribirse por el mapeo genérico del CRM. Esto blinda permanentemente el estado de ventana activa.
+- **Reloj Reactivo y Contadores en Tiempo Real**:
+  - Incorporado el estado `nowTime` y un timer `setInterval` de 10 segundos en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx). Esto actualiza todos los contadores de la ventana de chat libre de WhatsApp en tiempo real sin requerir interacción o recargas manuales.
+- **Indicador Visual de Ventana Activa en Lista de Contactos**:
+  - Implementada la función `getWhatsAppWindowStatus(lead)` en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx) para evaluar reactivamente si la ventana de 24 horas está activa a partir del último mensaje entrante del contacto (incluyendo soporte resiliente para leads ajenos buscando en `foreignDetails`).
+  - Añadido un badge visual interactivo debajo del número de teléfono en el listado de contactos (un círculo verde parpadeante con el tiempo restante, o un círculo gris con la etiqueta "Expirada" si finalizó) tanto en la vista de escritorio (tabla) como en la móvil (tarjetas).
+- **Inicio de Clean Architecture (Fase 1 y Fase 2)**:
+  - Creadas las entidades puras de dominio (`Company`, `Lead`, `Activity`, `Deal`, `Invoice`) en `src/core/entities/` para desacoplar el modelo del framework y de Mongoose.
+  - Creadas las interfaces de repositorio (`ICompanyRepository`, `ILeadRepository`, `IActivityRepository`, `IDealRepository`, `IInvoiceRepository`) en `src/core/repositories/`.
+  - Implementados los repositorios concretos para MongoDB usando Mongoose (`MongoDBCompanyRepository`, `MongoDBLeadRepository`, `MongoDBActivityRepository`, `MongoDBDealRepository`, `MongoDBInvoiceRepository`) en `src/infrastructure/repositories/mongodb/`.
+  - Diseñada la factoría centralizada `RepositoryFactory` en `src/infrastructure/repositories/RepositoryFactory.ts` para resolver dinámicamente las instancias concretas, aislando la lógica de base de datos de la UI y de las Server Actions.
+
+## Fases del 17 de junio de 2026 (Modularización y Reemplazo de UI en Contactos y Deals)
+
+- **Modularización del UI de Contactos (Fase 2 del Blueprint)**:
+  - Completado el reemplazo de la interfaz inline del Drawer lateral en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx) por el componente modularizado [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx).
+  - Actualizado [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx) para aceptar y gestionar reactivamente las props de resaltado de notificaciones (`highlightedActivityId`, `setHighlightedActivityId`) y el spinner de carga al consultar datos externos (`isLoadingForeign`).
+  - Removidos estados obsoletos y handlers redundantes en [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx), reduciendo su tamaño de más de 2000 líneas a solo 1134 líneas.
+- **Modularización de la UI de Deals (Fase 3 del Blueprint)**:
+  - Creados los componentes modulares [DealTable.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/deals/DealTable.tsx) (para escritorio, hidden md:block) y [DealCard.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/deals/DealCard.tsx) (para móviles, md:hidden).
+  - Extraído el helper de estilos y estados de préstamos `getStageConfig` para hacerlo autocontenido dentro de los componentes.
+  - Refactorizado [deals/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/deals/page.tsx) para importar y utilizar ambos subcomponentes, reduciendo su tamaño original de 544 líneas a solo 306 líneas y logrando una separación de responsabilidades limpia en el listado de préstamos.
+  - **Modularización Extrema y Clean Architecture en todo el Dashboard (Hito de Consistencia)**:
+    - **Sección Contactos**: 
+      - Creado el componente [LeadCard.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadCard.tsx) (tarjetas móviles).
+      - Creado el custom hook [useContacts.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useContacts.ts) conteniendo todo el estado, base de datos y efectos.
+      - Reducido [contacts/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/contacts/page.tsx) a solo **192 líneas** (código 100% declarativo y visual).
+    - **Sección Empresas**:
+      - Creados los componentes modularizados [CompanyTable.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/companies/CompanyTable.tsx) (desktop) y [CompanyCard.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/companies/CompanyCard.tsx) (móvil).
+      - Creado el custom hook [useCompanies.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useCompanies.ts) para la lógica de IndexedDB y soft delete de empresas.
+      - Reducido [companies/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/companies/page.tsx) a solo **85 líneas**.
+    - **Sección Préstamos (Deals)**:
+      - Creado el custom hook [useDeals.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useDeals.ts) encapsulando los filtros y las métricas de créditos.
+      - Reducido [deals/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/deals/page.tsx) a solo **155 líneas** delegando a `DealTable` y `DealCard`.
+    - **Dashboard Home**:
+      - Creado el custom hook [useDashboard.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useDashboard.ts) para el agrupamiento de estados y cálculo del embudo de ventas.
+      - Reducido [page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/page.tsx) a un markup declarativo y limpio.
+    - **Sección Configuración**:
+      - Creado el custom hook [useSettings.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useSettings.ts) y simplificado [settings/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/settings/page.tsx).
+    - **Sección Admin**:
+      - Creado el custom hook [useAdmin.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/hooks/useAdmin.ts) y refactorizado [admin/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/(dashboard)/admin/page.tsx) a **229 líneas** de puros componentes visuales.
+
+## Fases del 17 de junio de 2026 (Rediseño de la UI del Chat de WhatsApp en Timeline)
+
+- **Rediseño Visual de Mensajes en [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx)**:
+  - Implementado renderizado condicional si la actividad es de tipo `'WHATSAPP'`.
+  - Diseñadas burbujas estilo chat de WhatsApp asimétricas (`rounded-tr-none` para enviados y `rounded-tl-none` para recibidos).
+  - Alineado binario según remitente: enviados a la derecha (`justify-end` en verde translúcido esmeralda) y recibidos a la izquierda (`justify-start` en gris oscuro).
+  - Ocultados títulos repetitivos redundantes ("WhatsApp Enviado" / "WhatsApp Recibido") para mejorar el flujo de lectura.
+  - Implementado formateo de fechas inteligente: solo muestra la hora para mensajes de hoy y añade fecha abreviada para días previos.
+  - Ocultados en hover los controles de sincronización de base de datos/nube y el botón de borrado (`Trash2`) para mantener la interfaz despejada.
+  - Actualizados los colores de los iconos Cloud de sincronización a verde esmeralda (`text-emerald-400` / `text-emerald-500`) en WhatsApp, actividades estándar y préstamos (deals) cuando están en estado sincronizado.
+- **Corrección de Borrado de WhatsApp en HubSpot ([hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts))**:
+  - Corregida la función `deleteActivity` para direccionar adecuadamente el borrado de actividades de tipo `'WHATSAPP'` hacia el endpoint `/communications/{crmId}` en HubSpot en lugar del endpoint genérico `/notes/{crmId}`.
+  - Actualizado el fallback de borrado sin tipo de `deleteActivity` para que intente eliminar de manera secuencial en `/notes`, `/tasks` y finalmente en `/communications`, evitando que los mensajes eliminados localmente "resuciten" al volver a sincronizar desde el CRM.
+- **Desacoplamiento de Webhooks (CRM y WhatsApp)**:
+  - Definida la interfaz `ParsedCRMWebhookEvent` y la firma `verifyAndParseWebhook` en [interface.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/interface.ts).
+  - Implementado el método `verifyAndParseWebhook` en [hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts) para realizar la validación de firmas (V3/V2/V1) y mapear propiedades específicas de HubSpot a nomenclatura genérica.
+  - Implementado el mock de verificación de webhook en [mock.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/mock.ts).
+  - Re-diseñado el endpoint [route.ts de CRM](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/api/webhooks/crm/route.ts) para que sea 100% genérico delegando firma y parseo al CRM Provider configurado.
+  - Definida la interfaz `ParsedWebhookMessage` y la firma `parseWebhook` en [interface.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/messaging/interface.ts) de mensajería.
+  - Implementado `parseWebhook` en [infobip.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/messaging/providers/infobip.ts) para traducir las notificaciones entrantes de Infobip.
+  - Implementado `parseWebhook` en el mock de mensajería [mock.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/messaging/providers/mock.ts).
+  - Re-diseñado el endpoint [route.ts de WhatsApp](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/api/webhooks/whatsapp/route.ts) para que sea 100% genérico delegando el procesamiento al Messaging Provider configurado.
+
+## Fases del 18 de junio de 2026 (Análisis de Proceso Comercial y Modelado de Franquicias/Royalties)
+
+- **Diagnóstico y Diseño del Modelo Comercial de Franquicias**:
+  - Analizado el documento de consultoría [Proceso comercial.txt](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/feedback-images/Proceso%20comercial.txt) detallando la estructura de Aliados, Franquicias, Fuerza de Ventas (Captadores y Renovadores) y comisiones.
+  - Creada la propuesta arquitectónica de modelo de datos en el archivo [franchise_architecture_design.md](file:///C:/Users/sergi/.gemini/antigravity-cli/brain/a8635076-1473-4864-891a-0b0fa76b8752/franchise_architecture_design.md).
+  - Diseñado el mapeo a entidades estándar de HubSpot CRM utilizando asociaciones jerárquicas parent-child para Aliados/Franquicias y Owners con roles comerciales.
+  - Diseñadas las modificaciones de los esquemas Mongoose de la aplicación (`Company`, `User`, `Lead`, `Deal`) para incorporar la estructura comercial y las validaciones de exclusividad (Regla Simply) y regalías (Royalties).
+
+## Fases del 19 de junio de 2026 (Cifrado Extremo a Extremo en Reposo y Ventana Deslizable de Caché)
+
+- **Cifrado Simétrico en el Servidor (MongoDB)**:
+  - Creada una utilidad criptográfica central en `src/lib/crypto.ts` para cifrar y descifrar PII usando AES-256-CBC de Node.js con la clave del servidor `SERVER_ENCRYPTION_SECRET`.
+  - Modificados los esquemas Mongoose `User.ts` (almacena la clave Dexie de cada usuario cifrada), `Lead.ts` y `Activity.ts` con getters y setters automáticos en Mongoose.
+  - Creados campos de hash irreversibles SHA-256 para `emailHash` y `documentIdHash` en el modelo `Lead.ts` para indexación y queries eficientes y seguras.
+  - Actualizado el script de migración `scripts/migrate-encryption.js` para cifrar registros antiguos en MongoDB.
+- **Cifrado Simétrico en el Cliente (Dexie.js)**:
+  - Propagada la clave de encriptación descifrada `dbEncryptionKey` a través del token JWT y la sesión de NextAuth en `src/lib/auth.ts` y `src/types/next-auth.d.ts`.
+  - Creado el módulo `src/lib/client-crypto.ts` que utiliza el Web Crypto API nativo (`crypto.subtle`) del navegador para cifrar y descifrar con AES-256-GCM las tablas de IndexedDB (`leads` y `activities`).
+  - Desarrollada la desencriptación en caliente asíncrona dentro de los custom hooks `useContacts`, `useDashboard`, `useDeals` y `useNotifications` mediante estados locales y efectos vinculados a `useLiveQuery`.
+  - Modificados los formularios `LeadFormModal` y `LeadDrawer` para encriptar datos PII y actividades en caliente antes de escribirlos en Dexie.
+- **Purga de IndexedDB en Logout**:
+  - Implementado el observador global `SessionPurgeObserver` en `src/app/providers.tsx` que detecta de manera reactiva la pérdida de autenticación del usuario (logout, expiración) y ejecuta `localDb.delete()` para borrar toda IndexedDB del disco, reforzando la seguridad.
+- **Caché Acotada y Ventana Deslizable (Sliding Window)**:
+  - Implementado el algoritmo `purgeLocalCache(userId)` en el worker `useSync.ts` que se ejecuta al final de cada ciclo exitoso de sincronización. Si la cantidad de leads en Dexie supera los 100, selecciona los leads candidatos (aquellos completamente sincronizados, sin deals/préstamos activos y no modificados en los últimos 7 días) y los purga en cascada (leads, actividades, deals, facturas) de la base local.
+  - Desarrollado el mecanismo de descarga perezosa ("on-demand") y auto-caché en `useContacts.ts`: si se selecciona un lead que pertenece al usuario pero no está local (purgado de Dexie), descarga sus detalles completos desde MongoDB y los escribe en IndexedDB de forma encriptada, integrándolo reactivamente en la caché del navegador.
+- **Optimización de Polling de Sincronización**:
+  - Modificada la Server Action `pullServerUpdates` en `src/app/actions/sync.ts` para que el polling periódico en segundo plano sólo descargue detalles (facturas, actividades, deals) de aquellos leads modificados desde la última sincronización (`updatedAt > sinceDate`), previniendo consultas innecesarias en la base intermedia.
+- **Corrección de Test E2E de Playwright (Sistema de Recordatorios)**:
+  - Corregida la condición visual del título de las actividades en el timeline de [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx) para prepender dinámicamente `"Recordatorio: "` únicamente si la nota cuenta con un recordatorio activo (`reminderDate` presente), logrando la alineación perfecta con las expectativas y aserciones de la suite de pruebas automatizadas y permitiendo que todos los tests de Playwright pasen exitosamente.
+- **Cabeceras de Seguridad y Content Security Policy (CSP)**:
+  - Implementado un conjunto de cabeceras HTTP de seguridad robustas en [next.config.mjs](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/next.config.mjs), incluyendo directivas estrictas de `Content-Security-Policy` (CSP) para mitigar ataques de tipo Cross-Site Scripting (XSS), además de cabeceras de prevención para Clickjacking (`X-Frame-Options: DENY`, `frame-ancestors 'none'`), MIME sniffing (`X-Content-Type-Options: nosniff`) y limitación de APIs del navegador (`Permissions-Policy`).
+- **Estabilización de Autenticación MFA en Pruebas**:
+  - Corregida condición de carrera en [mfa-setup/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/auth/mfa-setup/page.tsx) mediante la implementación de una referencia mutable síncrona `useRef` (`initiatedRef`) que bloquea ejecuciones concurrentes de la promesa `generateMfaSetup()` durante los re-renderizados causados por actualizaciones de la sesión en NextAuth, garantizando la consistencia del secreto MFA entre el cliente y el servidor y estabilizando al 100% las pruebas de integración de Playwright.
+- **Limpieza de Esquema de MongoDB**:
+  - Eliminado índice redundante en el campo `documentIdHash` en [Lead.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/models/Lead.ts) para resolver la advertencia de duplicación de Mongoose en la consola del servidor durante las pruebas de integración.
+
+_Última actualización: 2026-06-19_

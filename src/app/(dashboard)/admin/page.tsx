@@ -1,166 +1,32 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import {
-  getAdminUserData,
-  updateUserRoles,
-  assignSalespeopleToSupervisor,
-} from '@/app/actions/admin'
+import React from 'react'
 import {
   ShieldAlert,
   Users,
   UserCheck,
-  UserX,
   Search,
   Loader2,
-  Check,
   Save,
-  Grid,
-  Settings,
 } from 'lucide-react'
-
-interface AdminUser {
-  id: string
-  name: string
-  email: string
-  roles: ('admin' | 'supervisor' | 'user')[]
-  supervisorId: string | null
-  supervisorName: string | null
-  crmOwnerId: string | null
-}
+import { useAdmin } from '@/hooks/useAdmin'
 
 export default function AdminPage() {
-  const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState(false)
-
-  const [users, setUsers] = useState<AdminUser[]>([])
-  const [supervisors, setSupervisors] = useState<AdminUser[]>([])
-  const [salespeople, setSalespeople] = useState<AdminUser[]>([])
-
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState('')
-  const [assignedSalespeopleIds, setAssignedSalespeopleIds] = useState<
-    string[]
-  >([])
-
-  // Cargar datos de administración
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true)
-      const data = await getAdminUserData()
-      setUsers(data.users as AdminUser[])
-      setSupervisors(data.supervisors as AdminUser[])
-      setSalespeople(data.salespeople as AdminUser[])
-
-      // Auto-seleccionar primer supervisor si existe
-      if (data.supervisors.length > 0) {
-        setSelectedSupervisorId((prev) => {
-          if (!prev) {
-            // Cargar sus vendedores a cargo
-            const supId = data.supervisors[0].id
-            const currentAssigned = (data.salespeople as AdminUser[])
-              .filter((s) => s.supervisorId === supId)
-              .map((s) => s.id)
-            setAssignedSalespeopleIds(currentAssigned)
-            return supId
-          }
-          return prev
-        })
-      }
-    } catch (err) {
-      console.error('Error al cargar datos de administración:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
-
-  // Seleccionar supervisor y cargar sus vendedores actuales
-  const handleSelectSupervisor = (
-    supId: string,
-    currentSalespeople = salespeople,
-  ) => {
-    setSelectedSupervisorId(supId)
-    const currentAssigned = currentSalespeople
-      .filter((s) => s.supervisorId === supId)
-      .map((s) => s.id)
-    setAssignedSalespeopleIds(currentAssigned)
-  }
-
-  // Alternar un rol específico en la lista de roles del usuario
-  const handleRoleToggle = async (
-    userId: string,
-    currentRoles: ('admin' | 'supervisor' | 'user')[],
-    roleToToggle: 'admin' | 'supervisor' | 'user',
-  ) => {
-    try {
-      setActionLoading(true)
-      let newRoles: ('admin' | 'supervisor' | 'user')[]
-
-      if (currentRoles.includes(roleToToggle)) {
-        if (currentRoles.length === 1) {
-          alert('Un usuario debe tener al menos un rol asignado.')
-          return
-        }
-        newRoles = currentRoles.filter((r) => r !== roleToToggle)
-      } else {
-        newRoles = [...currentRoles, roleToToggle]
-      }
-
-      await updateUserRoles(userId, newRoles)
-      alert('Roles actualizados correctamente.')
-
-      // Recargar datos para refrescar las tablas
-      await loadData()
-    } catch (err: any) {
-      alert(`Error al actualizar roles: ${err.message}`)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  // Alternar checkbox de vendedor asignado
-  const toggleSalespersonAssign = (id: string) => {
-    if (assignedSalespeopleIds.includes(id)) {
-      setAssignedSalespeopleIds(assignedSalespeopleIds.filter((x) => x !== id))
-    } else {
-      setAssignedSalespeopleIds([...assignedSalespeopleIds, id])
-    }
-  }
-
-  // Guardar asignaciones del supervisor
-  const handleSaveAssignments = async () => {
-    if (!selectedSupervisorId) return
-
-    try {
-      setActionLoading(true)
-      await assignSalespeopleToSupervisor(
-        selectedSupervisorId,
-        assignedSalespeopleIds,
-      )
-      alert(
-        'Asignaciones de vendedores actualizadas correctamente en la base de datos.',
-      )
-      await loadData()
-    } catch (err: any) {
-      alert(`Error al guardar asignaciones: ${err.message}`)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  // Filtrar lista de usuarios por buscador
-  const filteredUsers = users.filter((u) => {
-    const term = searchTerm.toLowerCase()
-    return (
-      u.name.toLowerCase().includes(term) ||
-      u.email.toLowerCase().includes(term) ||
-      u.roles.some((r) => r.toLowerCase().includes(term))
-    )
-  })
+  const {
+    loading,
+    actionLoading,
+    supervisors,
+    salespeople,
+    searchTerm,
+    setSearchTerm,
+    selectedSupervisorId,
+    assignedSalespeopleIds,
+    handleSelectSupervisor,
+    handleRoleToggle,
+    toggleSalespersonAssign,
+    handleSaveAssignments,
+    filteredUsers,
+  } = useAdmin()
 
   if (loading) {
     return (
@@ -182,8 +48,7 @@ export default function AdminPage() {
             Administración de Usuarios y Roles
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Promueve usuarios a supervisores y asigna vendedores a cargo de cada
-            equipo.
+            Promueve usuarios a supervisores y asigna vendedores a cargo de cada equipo.
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-2 text-xs text-slate-500">
@@ -194,7 +59,7 @@ export default function AdminPage() {
 
       {/* Grid de Secciones */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-        {/* Columna Izquierda: Tabla de Usuarios y Roles (8 cols) */}
+        {/* Columna Izquierda: Tabla de Usuarios y Roles (7 cols) */}
         <div className="flex flex-col gap-6 lg:col-span-7">
           <div className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-950/20 p-5 backdrop-blur-md">
             <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
@@ -317,7 +182,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Columna Derecha: Asignación de Vendedores a Supervisores (4 cols) */}
+        {/* Columna Derecha: Asignación de Vendedores a Supervisores (5 cols) */}
         <div className="flex flex-col gap-6 lg:col-span-5">
           <div className="flex flex-col gap-5 rounded-2xl border border-slate-800 bg-slate-950/20 p-5 backdrop-blur-md">
             <h4 className="flex items-center gap-2 text-base font-bold">
