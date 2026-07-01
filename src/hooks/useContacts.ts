@@ -12,6 +12,12 @@ import {
 } from '@/lib/db'
 import { searchGlobalLeads, getGlobalLeadDetails } from '@/app/actions/sync'
 import { getWhatsAppTemplates } from '@/app/actions/whatsapp'
+import {
+  decryptLead,
+  encryptLead,
+  decryptActivity,
+  encryptActivity
+} from '@/lib/client-crypto'
 
 export interface WhatsAppTemplate {
   name: string
@@ -79,7 +85,7 @@ export function useContacts() {
   )
 
   // 2. Obtener reactivamente todos los Leads activos desde Dexie
-  const leads = useLiveQuery(
+  const rawLeads = useLiveQuery(
     async () => {
       if (!userId) return []
       return await localDb.leads
@@ -89,6 +95,22 @@ export function useContacts() {
     [userId],
     [],
   )
+
+  const [leads, setLeads] = useState<LocalLead[]>([])
+  useEffect(() => {
+    const decryptAll = async () => {
+      if (!rawLeads) {
+        setLeads([])
+        return
+      }
+      const dbKey = session?.user?.dbEncryptionKey
+      const decrypted = await Promise.all(
+        rawLeads.map((l) => decryptLead(l, dbKey))
+      )
+      setLeads(decrypted)
+    }
+    decryptAll()
+  }, [rawLeads, session])
 
   // 3. Obtener reactivamente las facturas asociadas al lead seleccionado para el Drawer
   const selectedLeadId =
@@ -106,7 +128,7 @@ export function useContacts() {
   )
 
   // 4. Obtener reactivamente las actividades asociadas al lead seleccionado para el Drawer
-  const activities = useLiveQuery(
+  const rawActivities = useLiveQuery(
     async () => {
       if (!selectedLeadId) return []
       return await localDb.activities
@@ -118,6 +140,22 @@ export function useContacts() {
     [selectedLeadId],
     [],
   )
+
+  const [activities, setActivities] = useState<LocalActivity[]>([])
+  useEffect(() => {
+    const decryptAll = async () => {
+      if (!rawActivities) {
+        setActivities([])
+        return
+      }
+      const dbKey = session?.user?.dbEncryptionKey
+      const decrypted = await Promise.all(
+        rawActivities.map((a) => decryptActivity(a, dbKey))
+      )
+      setActivities(decrypted)
+    }
+    decryptAll()
+  }, [rawActivities, session])
 
   // 5. Obtener reactivamente los préstamos (deals) asociados al lead seleccionado
   const deals = useLiveQuery(
@@ -146,7 +184,7 @@ export function useContacts() {
   )
 
   // 5c. Obtener reactivamente todas las actividades activas del usuario
-  const allActivities = useLiveQuery(
+  const rawAllActivities = useLiveQuery(
     async () => {
       if (!userId) return []
       return await localDb.activities
@@ -156,6 +194,22 @@ export function useContacts() {
     [userId],
     [],
   )
+
+  const [allActivities, setAllActivities] = useState<LocalActivity[]>([])
+  useEffect(() => {
+    const decryptAll = async () => {
+      if (!rawAllActivities) {
+        setAllActivities([])
+        return
+      }
+      const dbKey = session?.user?.dbEncryptionKey
+      const decrypted = await Promise.all(
+        rawAllActivities.map((a) => decryptActivity(a, dbKey))
+      )
+      setAllActivities(decrypted)
+    }
+    decryptAll()
+  }, [rawAllActivities, session])
 
   // Estado para búsqueda global por DNI / Cédula
   const [globalLeads, setGlobalLeads] = useState<LocalLead[]>([])
@@ -248,6 +302,100 @@ export function useContacts() {
     }
     loadForeignDetails()
   }, [selectedLeadForInvoice, userId])
+
+  // Effect para cargar y cachear en Dexie leads propios del usuario que no están locales (fueron purgados)
+  useEffect(() => {
+    const loadAndCacheDetails = async () => {
+      if (!selectedLeadForInvoice || !selectedLeadForInvoice.id) return
+      if (selectedLeadForInvoice.userId !== userId) return
+
+      // Comprobar si ya existe localmente
+      const existsLocal = await localDb.leads.where('id').equals(selectedLeadForInvoice.id).first()
+      if (existsLocal) return // Ya está en IndexedDB
+
+      setIsLoadingForeign(true)
+      try {
+        const details = await getGlobalLeadDetails(selectedLeadForInvoice.id)
+        const dbKey = session?.user?.dbEncryptionKey
+
+        // 1. Encriptar el lead y guardarlo en localDb.leads
+        const encryptedLead = await encryptLead(selectedLeadForInvoice, dbKey)
+        await localDb.leads.put(encryptedLead)
+
+        // 2. Encriptar y guardar actividades
+        if (details.activities && details.activities.length > 0) {
+          const encryptedActs = await Promise.all(
+            details.activities.map(async (act) => {
+              const localAct: LocalActivity = {
+                tempId: act.id,
+                id: act.id,
+                leadId: selectedLeadForInvoice.id!,
+                userId: act.userId,
+                type: act.type as any,
+                title: act.title,
+                body: act.body,
+                timestamp: act.timestamp,
+                reminderDate: act.reminderDate,
+                reminderRead: (act as any).reminderRead || false,
+                synced: true,
+                createdAt: act.createdAt,
+                updatedAt: act.updatedAt,
+              }
+              return await encryptActivity(localAct, dbKey)
+            })
+          )
+          await localDb.activities.bulkPut(encryptedActs)
+        }
+
+        // 3. Guardar facturas (no encriptadas)
+        if (details.invoices && details.invoices.length > 0) {
+          await localDb.invoices.bulkPut(
+            details.invoices.map((inv: any) => ({
+              id: inv.id,
+              crmId: inv.crmId,
+              leadId: selectedLeadForInvoice.id!,
+              userId: inv.userId,
+              amount: inv.amount,
+              balanceDue: inv.balanceDue,
+              status: inv.status,
+              invoiceDate: inv.invoiceDate,
+              dueDate: inv.dueDate,
+              paymentDate: inv.paymentDate,
+              createdAt: inv.createdAt,
+              updatedAt: inv.updatedAt,
+            }))
+          )
+        }
+
+        // 4. Guardar deals (no encriptados)
+        if (details.deals && details.deals.length > 0) {
+          await localDb.deals.bulkPut(
+            details.deals.map((d: any) => ({
+              tempId: d.tempId || d.id,
+              id: d.id,
+              leadId: selectedLeadForInvoice.id!,
+              userId: d.userId,
+              name: d.name,
+              amount: d.amount,
+              termMonths: d.termMonths,
+              interestRate: d.interestRate,
+              stage: d.stage as any,
+              notes: d.notes,
+              synced: true,
+              createdAt: d.createdAt,
+              updatedAt: d.updatedAt,
+            }))
+          )
+        }
+      } catch (err) {
+        console.error('Error al cargar y cachear lead desde búsqueda global:', err)
+      } finally {
+        setIsLoadingForeign(false)
+      }
+    }
+
+    loadAndCacheDetails()
+  }, [selectedLeadForInvoice, userId, session])
 
   // Soft Delete del Lead
   const handleDeleteLead = async (lead: LocalLead) => {

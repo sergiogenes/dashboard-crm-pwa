@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { localDb, LocalLead, LocalCompany } from '@/lib/db'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useSession } from 'next-auth/react'
+import { encryptLead, decryptLead } from '@/lib/client-crypto'
 import {
   X,
   User,
@@ -26,6 +28,7 @@ export default function LeadFormModal({
   userId,
   leadToEdit,
 }: LeadFormModalProps) {
+  const { data: session } = useSession()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -85,12 +88,20 @@ export default function LeadFormModal({
     }
 
     try {
-      // Validar si ya existe un lead local activo con el mismo correo electrónico (ignora mayúsculas/minúsculas)
-      const existing = await localDb.leads
-        .where('email')
-        .equalsIgnoreCase(email.trim())
+      const dbEncryptionKey = session?.user?.dbEncryptionKey
+
+      // Validar si ya existe un lead local activo con el mismo correo electrónico (desencriptado en memoria)
+      const allLocalLeads = await localDb.leads
         .filter((l) => l.userId === userId && l.deleted !== true)
-        .first()
+        .toArray()
+
+      const decryptedLeads = await Promise.all(
+        allLocalLeads.map((l) => decryptLead(l, dbEncryptionKey))
+      )
+
+      const existing = decryptedLeads.find(
+        (l) => l.email.toLowerCase() === email.trim().toLowerCase()
+      )
 
       if (
         existing &&
@@ -105,13 +116,11 @@ export default function LeadFormModal({
         return
       }
 
-      // Validar si ya existe un lead local activo con el mismo número de documento (ignora mayúsculas/minúsculas)
+      // Validar si ya existe un lead local activo con el mismo número de documento (desencriptado en memoria)
       if (documentId.trim()) {
-        const existingDoc = await localDb.leads
-          .where('documentId')
-          .equalsIgnoreCase(documentId.trim())
-          .filter((l) => l.userId === userId && l.deleted !== true)
-          .first()
+        const existingDoc = decryptedLeads.find(
+          (l) => l.documentId && l.documentId.toLowerCase() === documentId.trim().toLowerCase()
+        )
 
         if (
           existingDoc &&
@@ -131,8 +140,9 @@ export default function LeadFormModal({
       const resolvedCompanyId = companyId || undefined
 
       if (leadToEdit) {
-        // Modo Edición
-        const updateData: Partial<LocalLead> = {
+        // Modo Edición: Encriptamos todo el registro y usamos put
+        const fullUpdatedLead: LocalLead = {
+          ...leadToEdit,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           email: email.trim().toLowerCase(),
@@ -143,19 +153,10 @@ export default function LeadFormModal({
           updatedAt: now,
         }
 
-        if (leadToEdit.id) {
-          await localDb.leads
-            .where('id')
-            .equals(leadToEdit.id)
-            .modify(updateData)
-        } else if (leadToEdit.tempId) {
-          await localDb.leads
-            .where('tempId')
-            .equals(leadToEdit.tempId)
-            .modify(updateData)
-        }
+        const encryptedLead = await encryptLead(fullUpdatedLead, dbEncryptionKey)
+        await localDb.leads.put(encryptedLead)
       } else {
-        // Modo Creación
+        // Modo Creación: Encriptamos todo el registro y usamos add
         const newLead: LocalLead = {
           tempId: crypto.randomUUID(),
           userId,
@@ -170,7 +171,8 @@ export default function LeadFormModal({
           updatedAt: now,
         }
 
-        await localDb.leads.add(newLead)
+        const encryptedNewLead = await encryptLead(newLead, dbEncryptionKey)
+        await localDb.leads.add(encryptedNewLead)
       }
 
       onClose()

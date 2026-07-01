@@ -8,6 +8,7 @@ declare module 'next-auth' {
       mfaVerified?: boolean
       twoFactorEnabled?: boolean
       roles?: ('admin' | 'supervisor' | 'user')[]
+      dbEncryptionKey?: string
     } & DefaultSession['user']
   }
 
@@ -17,6 +18,7 @@ declare module 'next-auth' {
     mfaVerified?: boolean
     twoFactorEnabled?: boolean
     roles?: ('admin' | 'supervisor' | 'user')[]
+    dbEncryptionKey?: string
   }
 }
 
@@ -27,5 +29,6 @@ declare module 'next-auth/jwt' {
     mfaVerified?: boolean
     twoFactorEnabled?: boolean
     roles?: ('admin' | 'supervisor' | 'user')[]
+    dbEncryptionKey?: string
   }
 }

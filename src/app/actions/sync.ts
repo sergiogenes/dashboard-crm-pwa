@@ -9,6 +9,7 @@ import Lead, { ILeadSchema } from '@/models/Lead'
 import User from '@/models/User'
 import Invoice from '@/models/Invoice'
 import { LocalLead, LocalCompany, LocalActivity, LocalDeal } from '@/lib/db'
+import { hash } from '@/lib/crypto'
 import {
   ICRMProvider,
   CRMInvoice,
@@ -144,7 +145,7 @@ export async function pushClientChanges(
     } else if (clientLead.tempId) {
       // Evitar duplicados por email en MongoDB para el mismo usuario
       let existingLead = await Lead.findOne({
-        email: clientLead.email,
+        emailHash: hash(clientLead.email),
         userId,
         deleted: false,
       })
@@ -450,7 +451,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
               const existingLead = await Lead.findOne({
                 $or: [
                   { crmId: crmLead.crmId },
-                  { email: crmLead.email, userId, deleted: false },
+                  { emailHash: hash(crmLead.email), userId, deleted: false },
                 ],
               })
 
@@ -460,7 +461,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
                 {
                   $or: [
                     { crmId: crmLead.crmId },
-                    { email: crmLead.email, userId, deleted: false },
+                    { emailHash: hash(crmLead.email), userId, deleted: false },
                   ],
                 },
                 {
@@ -526,10 +527,11 @@ export async function pullServerUpdates(lastSyncTime: number) {
     updatedAt: { $gt: sinceDate },
   })
 
-  // Sincronizar facturas, actividades y deals para todos los leads activos en segundo plano para reflejar cambios externos del CRM
+  // Sincronizar facturas, actividades y deals sólo para leads modificados/actualizados recientemente en segundo plano
   const activeLeads = await Lead.find({
     userId: { $in: userIdsToSync },
     deleted: false,
+    updatedAt: { $gt: sinceDate },
   })
   if (activeLeads.length > 0) {
     import('@/lib/crm/factory')
@@ -961,20 +963,14 @@ export async function searchGlobalLeads(query: string) {
   const cleanQuery = query.trim()
   if (!cleanQuery) return []
 
-  // 1. Buscar en MongoDB local primero
-  const isNumeric = /^\d+$/.test(cleanQuery)
-  const mongoQuery: any = { deleted: false }
-
-  if (isNumeric) {
-    mongoQuery.documentId = cleanQuery
-  } else {
-    const regex = new RegExp(cleanQuery, 'i')
-    mongoQuery.$or = [
-      { firstName: regex },
-      { lastName: regex },
-      { email: regex },
-      { documentId: cleanQuery },
-    ]
+  // 1. Buscar en MongoDB local primero por hashes exactos (email o DNI)
+  const cleanQueryLower = cleanQuery.toLowerCase()
+  const mongoQuery: any = {
+    deleted: false,
+    $or: [
+      { documentIdHash: hash(cleanQuery) },
+      { emailHash: hash(cleanQueryLower) },
+    ],
   }
 
   let localLeads = await Lead.find(mongoQuery).limit(20)
@@ -1003,7 +999,7 @@ export async function searchGlobalLeads(query: string) {
           const existingLead = await Lead.findOne({
             $or: [
               { crmId: crmLead.crmId },
-              { email: crmLead.email, deleted: false },
+              { emailHash: hash(crmLead.email?.toLowerCase()), deleted: false },
             ],
           })
 

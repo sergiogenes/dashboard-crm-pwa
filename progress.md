@@ -167,11 +167,11 @@
   - Se dejó lista la indicación para eliminar el archivo raíz obsoleto `src/app/page.tsx`.
   - **Corrección de Solapamiento y Scroll**: Corregido el solapamiento estético del botón de expandir/colapsar en el sidebar colapsado mediante un botón circular flotante posicionado de forma absoluta sobre el borde derecho y centrando dinámicamente el logotipo. Asimismo, se incorporó `overflow-x-hidden` en el layout general y un comportamiento de desbordamiento dinámico (`overflow-visible` al colapsar y `overflow-y-auto` al expandir) en el menú de navegación para eliminar definitivamente scrollbars horizontales espurios en el navegador y el sidebar. Adicionalmente, se añadió la clase `truncate` al botón de cerrar sesión para evitar saltos de línea molestos durante la animación de transición.
   - **Limpieza de Interfaz**: Se removió el buscador global de cabecera sin funcionalidad del [Header.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/Header.tsx) y se re-alineó el menú de usuario hacia la derecha.
-- [ ] **Cifrado y Purga de Datos Locales (IndexedDB) - Fase 3:**
-  - Cifrado transparente en la capa local de Dexie.js derivando claves efímeras en RAM en el inicio de sesión.
+- [x] **Cifrado y Purga de Datos Locales (IndexedDB) - Fase 3:**
+  - [x] Cifrado transparente en la capa local de Dexie.js derivando claves efímeras en RAM en el inicio de sesión.
   - [x] Implementar purga total de Dexie.js en el evento de cierre de sesión (logout) y limpieza de `localStorage`/`sessionStorage`.
-- [ ] **Cifrado en MongoDB (Capa de Base Intermedia) - Fase 4:**
-  - Implementar Field-Level Encryption (CSFLE) o cifrado simétrico en el servidor de campos confidenciales de contactos.
+- [x] **Cifrado en MongoDB (Capa de Base Intermedia) - Fase 4:**
+  - [x] Implementar Field-Level Encryption (CSFLE) o cifrado simétrico en el servidor de campos confidenciales de contactos.
 - [ ] **Sincronización en Producción via Webhooks (Fase 4):**
   - Configurar suscripción de Webhook en el portal de desarrolladores de HubSpot para cambios en el estado de facturas (`invoices` o Custom Object de facturas) y procesar los eventos entrantes en el endpoint del webhook para actualizar en tiempo real el estado en MongoDB Atlas al pasar a producción.
 
@@ -391,4 +391,32 @@ _Última actualización: 2026-06-03_
   - Diseñado el mapeo a entidades estándar de HubSpot CRM utilizando asociaciones jerárquicas parent-child para Aliados/Franquicias y Owners con roles comerciales.
   - Diseñadas las modificaciones de los esquemas Mongoose de la aplicación (`Company`, `User`, `Lead`, `Deal`) para incorporar la estructura comercial y las validaciones de exclusividad (Regla Simply) y regalías (Royalties).
 
-_Última actualización: 2026-06-18_
+## Fases del 19 de junio de 2026 (Cifrado Extremo a Extremo en Reposo y Ventana Deslizable de Caché)
+
+- **Cifrado Simétrico en el Servidor (MongoDB)**:
+  - Creada una utilidad criptográfica central en `src/lib/crypto.ts` para cifrar y descifrar PII usando AES-256-CBC de Node.js con la clave del servidor `SERVER_ENCRYPTION_SECRET`.
+  - Modificados los esquemas Mongoose `User.ts` (almacena la clave Dexie de cada usuario cifrada), `Lead.ts` y `Activity.ts` con getters y setters automáticos en Mongoose.
+  - Creados campos de hash irreversibles SHA-256 para `emailHash` y `documentIdHash` en el modelo `Lead.ts` para indexación y queries eficientes y seguras.
+  - Actualizado el script de migración `scripts/migrate-encryption.js` para cifrar registros antiguos en MongoDB.
+- **Cifrado Simétrico en el Cliente (Dexie.js)**:
+  - Propagada la clave de encriptación descifrada `dbEncryptionKey` a través del token JWT y la sesión de NextAuth en `src/lib/auth.ts` y `src/types/next-auth.d.ts`.
+  - Creado el módulo `src/lib/client-crypto.ts` que utiliza el Web Crypto API nativo (`crypto.subtle`) del navegador para cifrar y descifrar con AES-256-GCM las tablas de IndexedDB (`leads` y `activities`).
+  - Desarrollada la desencriptación en caliente asíncrona dentro de los custom hooks `useContacts`, `useDashboard`, `useDeals` y `useNotifications` mediante estados locales y efectos vinculados a `useLiveQuery`.
+  - Modificados los formularios `LeadFormModal` y `LeadDrawer` para encriptar datos PII y actividades en caliente antes de escribirlos en Dexie.
+- **Purga de IndexedDB en Logout**:
+  - Implementado el observador global `SessionPurgeObserver` en `src/app/providers.tsx` que detecta de manera reactiva la pérdida de autenticación del usuario (logout, expiración) y ejecuta `localDb.delete()` para borrar toda IndexedDB del disco, reforzando la seguridad.
+- **Caché Acotada y Ventana Deslizable (Sliding Window)**:
+  - Implementado el algoritmo `purgeLocalCache(userId)` en el worker `useSync.ts` que se ejecuta al final de cada ciclo exitoso de sincronización. Si la cantidad de leads en Dexie supera los 100, selecciona los leads candidatos (aquellos completamente sincronizados, sin deals/préstamos activos y no modificados en los últimos 7 días) y los purga en cascada (leads, actividades, deals, facturas) de la base local.
+  - Desarrollado el mecanismo de descarga perezosa ("on-demand") y auto-caché en `useContacts.ts`: si se selecciona un lead que pertenece al usuario pero no está local (purgado de Dexie), descarga sus detalles completos desde MongoDB y los escribe en IndexedDB de forma encriptada, integrándolo reactivamente en la caché del navegador.
+- **Optimización de Polling de Sincronización**:
+  - Modificada la Server Action `pullServerUpdates` en `src/app/actions/sync.ts` para que el polling periódico en segundo plano sólo descargue detalles (facturas, actividades, deals) de aquellos leads modificados desde la última sincronización (`updatedAt > sinceDate`), previniendo consultas innecesarias en la base intermedia.
+- **Corrección de Test E2E de Playwright (Sistema de Recordatorios)**:
+  - Corregida la condición visual del título de las actividades en el timeline de [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx) para prepender dinámicamente `"Recordatorio: "` únicamente si la nota cuenta con un recordatorio activo (`reminderDate` presente), logrando la alineación perfecta con las expectativas y aserciones de la suite de pruebas automatizadas y permitiendo que todos los tests de Playwright pasen exitosamente.
+- **Cabeceras de Seguridad y Content Security Policy (CSP)**:
+  - Implementado un conjunto de cabeceras HTTP de seguridad robustas en [next.config.mjs](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/next.config.mjs), incluyendo directivas estrictas de `Content-Security-Policy` (CSP) para mitigar ataques de tipo Cross-Site Scripting (XSS), además de cabeceras de prevención para Clickjacking (`X-Frame-Options: DENY`, `frame-ancestors 'none'`), MIME sniffing (`X-Content-Type-Options: nosniff`) y limitación de APIs del navegador (`Permissions-Policy`).
+- **Estabilización de Autenticación MFA en Pruebas**:
+  - Corregida condición de carrera en [mfa-setup/page.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/auth/mfa-setup/page.tsx) mediante la implementación de una referencia mutable síncrona `useRef` (`initiatedRef`) que bloquea ejecuciones concurrentes de la promesa `generateMfaSetup()` durante los re-renderizados causados por actualizaciones de la sesión en NextAuth, garantizando la consistencia del secreto MFA entre el cliente y el servidor y estabilizando al 100% las pruebas de integración de Playwright.
+- **Limpieza de Esquema de MongoDB**:
+  - Eliminado índice redundante en el campo `documentIdHash` en [Lead.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/models/Lead.ts) para resolver la advertencia de duplicación de Mongoose en la consola del servidor durante las pruebas de integración.
+
+_Última actualización: 2026-06-19_

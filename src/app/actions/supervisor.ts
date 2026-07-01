@@ -6,6 +6,7 @@ import dbConnect from '@/lib/mongodb'
 import User from '@/models/User'
 import Lead from '@/models/Lead'
 import Deal from '@/models/Deal'
+import { hash } from '@/lib/crypto'
 
 // Helper para validar rol de supervisor
 async function getSupervisorIdOrThrow() {
@@ -190,7 +191,7 @@ export async function importProspectsFromCSV(
     try {
       // Validar si ya existe un lead activo en la base de datos por DNI o Email
       const existingLead = await Lead.findOne({
-        $or: [{ documentId: docId }, { email }],
+        $or: [{ documentIdHash: hash(docId) }, { emailHash: hash(email) }],
         deleted: { $ne: true },
       })
 

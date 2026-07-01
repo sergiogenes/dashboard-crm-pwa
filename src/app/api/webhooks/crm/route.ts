@@ -5,6 +5,7 @@ import Company from '@/models/Company'
 import User from '@/models/User'
 import Invoice from '@/models/Invoice'
 import { CRMProviderFactory } from '@/lib/crm/factory'
+import { hash } from '@/lib/crypto'
 
 export async function POST(req: Request) {
   try {
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
         let lead = await Lead.findOne({ crmId })
 
         if (!lead && event.propertyName === 'email' && event.propertyValue) {
-          lead = await Lead.findOne({ email: event.propertyValue })
+          lead = await Lead.findOne({ emailHash: hash(event.propertyValue) })
         }
 
         if (lead && lead.deleted) {

@@ -20,6 +20,8 @@ import {
 } from 'lucide-react'
 import { localDb, LocalLead, LocalActivity, LocalDeal, LocalInvoice } from '@/lib/db'
 import { sendWhatsAppMessage } from '@/app/actions/whatsapp'
+import { useSession } from 'next-auth/react'
+import { encryptActivity } from '@/lib/client-crypto'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
 const getTomorrowString = () => {
@@ -68,6 +70,7 @@ export default function LeadDrawer({
   highlightedActivityId,
   setHighlightedActivityId,
 }: LeadDrawerProps) {
+  const { data: session } = useSession()
   const isForeign = selectedLeadForInvoice.userId !== userId
   const selectedLeadId = selectedLeadForInvoice.id || selectedLeadForInvoice.tempId
 
@@ -234,6 +237,7 @@ export default function LeadDrawer({
     setIsSubmittingActivity(true)
     try {
       const now = Date.now()
+      const dbKey = session?.user?.dbEncryptionKey
 
       if ((activityType as string) === 'WHATSAPP') {
         let result
@@ -267,7 +271,8 @@ export default function LeadDrawer({
             createdAt: now,
             updatedAt: now,
           }
-          await localDb.activities.put(localAct)
+          const encryptedAct = await encryptActivity(localAct, dbKey)
+          await localDb.activities.put(encryptedAct)
         }
 
         setActivityBody('')
@@ -300,7 +305,8 @@ export default function LeadDrawer({
         updatedAt: now,
       }
 
-      await localDb.activities.put(newMainAct)
+      const encryptedMainAct = await encryptActivity(newMainAct, dbKey)
+      await localDb.activities.put(encryptedMainAct)
 
       setActivityTitle('')
       setActivityBody('')
@@ -984,7 +990,7 @@ export default function LeadDrawer({
                                       {new Date(act.timestamp).toLocaleString()}
                                     </span>
                                     <h5 className="mt-0.5 text-xs font-bold text-white">
-                                      {act.title}
+                                      {act.reminderDate ? `Recordatorio: ${act.title}` : act.title}
                                     </h5>
                                   </div>
 

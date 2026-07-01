@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { localDb } from '@/lib/db'
+import { localDb, LocalLead } from '@/lib/db'
 import { getSalespeople } from '@/app/actions/supervisor'
+import { decryptLead } from '@/lib/client-crypto'
 
 export function useDeals() {
   const { data: session, status } = useSession()
@@ -57,7 +58,7 @@ export function useDeals() {
   )
 
   // 2. Obtener reactivamente todos los Leads locales
-  const leads = useLiveQuery(
+  const rawLeads = useLiveQuery(
     async () => {
       if (!userId) return []
       return await localDb.leads.filter((l) => l.deleted !== true).toArray()
@@ -65,6 +66,22 @@ export function useDeals() {
     [userId],
     [],
   )
+
+  const [leads, setLeads] = useState<LocalLead[]>([])
+  useEffect(() => {
+    const decryptAll = async () => {
+      if (!rawLeads) {
+        setLeads([])
+        return
+      }
+      const dbKey = session?.user?.dbEncryptionKey
+      const decrypted = await Promise.all(
+        rawLeads.map((l) => decryptLead(l, dbKey))
+      )
+      setLeads(decrypted)
+    }
+    decryptAll()
+  }, [rawLeads, session])
 
   // Resolver el nombre del prestatario asociado
   const getBorrowerName = (leadId: string) => {

@@ -1,8 +1,10 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { localDb } from '@/lib/db'
+import { localDb, LocalLead, LocalActivity } from '@/lib/db'
+import { decryptLead, decryptActivity } from '@/lib/client-crypto'
 
 export function useDashboard() {
   const { data: session, status } = useSession()
@@ -19,7 +21,7 @@ export function useDashboard() {
   )
 
   // 2. Obtener reactivamente todos los Leads activos desde Dexie
-  const leads = useLiveQuery(
+  const rawLeads = useLiveQuery(
     async () => {
       if (!userId) return []
       return await localDb.leads
@@ -29,6 +31,22 @@ export function useDashboard() {
     [userId],
     [],
   )
+
+  const [leads, setLeads] = useState<LocalLead[]>([])
+  useEffect(() => {
+    const decryptAll = async () => {
+      if (!rawLeads) {
+        setLeads([])
+        return
+      }
+      const dbKey = session?.user?.dbEncryptionKey
+      const decrypted = await Promise.all(
+        rawLeads.map((l) => decryptLead(l, dbKey))
+      )
+      setLeads(decrypted)
+    }
+    decryptAll()
+  }, [rawLeads, session])
 
   // 3. Obtener reactivamente todas las solicitudes de préstamo (Deals) activas desde Dexie
   const deals = useLiveQuery(
@@ -43,7 +61,7 @@ export function useDashboard() {
   )
 
   // 4. Obtener reactivamente todas las actividades activas del usuario desde Dexie
-  const activities = useLiveQuery(
+  const rawActivities = useLiveQuery(
     async () => {
       if (!userId) return []
       return await localDb.activities
@@ -53,6 +71,22 @@ export function useDashboard() {
     [userId],
     [],
   )
+
+  const [activities, setActivities] = useState<LocalActivity[]>([])
+  useEffect(() => {
+    const decryptAll = async () => {
+      if (!rawActivities) {
+        setActivities([])
+        return
+      }
+      const dbKey = session?.user?.dbEncryptionKey
+      const decrypted = await Promise.all(
+        rawActivities.map((a) => decryptActivity(a, dbKey))
+      )
+      setActivities(decrypted)
+    }
+    decryptAll()
+  }, [rawActivities, session])
 
   // Estadísticas generales y sincronización
   const totalLeads = leads?.length || 0

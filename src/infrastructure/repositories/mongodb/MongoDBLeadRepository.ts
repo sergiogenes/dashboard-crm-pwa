@@ -2,6 +2,7 @@ import { ILeadRepository } from '@/core/repositories/ILeadRepository';
 import { Lead } from '@/core/entities/Lead';
 import LeadModel from '@/models/Lead';
 import mongoose from 'mongoose';
+import { hash } from '@/lib/crypto';
 
 export class MongoDBLeadRepository implements ILeadRepository {
   private toEntity(doc: any): Lead {
@@ -31,7 +32,7 @@ export class MongoDBLeadRepository implements ILeadRepository {
   }
 
   async findByDocumentId(documentId: string): Promise<Lead | null> {
-    const doc = await LeadModel.findOne({ documentId });
+    const doc = await LeadModel.findOne({ documentIdHash: hash(documentId) });
     return doc ? this.toEntity(doc) : null;
   }
 
