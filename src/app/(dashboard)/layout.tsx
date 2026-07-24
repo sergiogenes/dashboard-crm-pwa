@@ -12,7 +12,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { data: session, status } = useSession()
+  const { data: session, status, update } = useSession()
   const router = useRouter()
 
   useNotifications()
@@ -32,6 +32,17 @@ export default function DashboardLayout({
       }
     }
   }, [session, status, router])
+
+  // Auto-recuperación si el fetch inicial de sesión quedó colgado (p. ej. el
+  // servidor de desarrollo se reinició con la pestaña ya abierta). Reintenta
+  // con update() en vez de forzar al usuario a recargar la página manualmente.
+  useEffect(() => {
+    if (status !== 'loading') return
+    const interval = setInterval(() => {
+      update()
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [status, update])
 
   // Spinner de carga inicial para la sesión
   if (status === 'loading') {

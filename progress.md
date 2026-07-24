@@ -419,4 +419,60 @@ _Última actualización: 2026-06-03_
 - **Limpieza de Esquema de MongoDB**:
   - Eliminado índice redundante en el campo `documentIdHash` en [Lead.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/models/Lead.ts) para resolver la advertencia de duplicación de Mongoose en la consola del servidor durante las pruebas de integración.
 
-_Última actualización: 2026-06-19_
+_Última actualización: 2026-07-01_
+
+## Fases del 1 de julio de 2026 (Integración Multi-CRM y Adaptador para Salesforce)
+
+- **Instalación de Dependencias:** Instalación de la librería `jsforce` y sus tipos `@types/jsforce` para habilitar la comunicación estructurada con Salesforce.
+- **Creación del Adaptador Salesforce:** Creado el archivo `src/lib/crm/salesforce.ts` que implementa la interfaz `ICRMProvider` utilizando llamadas API REST y consultas SOQL.
+- **Mapeo de Datos de Salesforce:**
+  - Leads ➔ Objeto estándar `Contact` (con campos personalizados `National_ID_Number__c` para DNI y `Scoring__c`).
+  - Companies ➔ Objeto estándar `Account` (con el campo personalizado `Domain__c`).
+  - Deals ➔ Objeto estándar `Opportunity` (con el rol `OpportunityContactRole` para asociación de leads).
+  - Invoices ➔ Objeto personalizado `Invoice__c` con campos de importes y fechas, vinculado por Lookup a `Contact`.
+  - Activities ➔ Objeto estándar `Task` codificando los tipos locales de actividad en el `Subject`.
+- **Registro en la Factoría:** Modificado `src/lib/crm/factory.ts` para instanciar dinámicamente el proveedor de Salesforce cuando se configure `CRM_PROVIDER="salesforce"`.
+- **Variables de Entorno:** Actualizado `.env.template` con los parámetros de Salesforce OAuth y credenciales.
+
+## Fases del 2 de julio de 2026 (Resolución de Autenticación Salesforce — Client Credentials Flow)
+
+- **Migración del Flujo de Autenticación:** Reemplazado el flujo Username-Password + Security Token (bloqueado por defecto en Salesforce desde Summer '23) por **OAuth 2.0 Client Credentials Flow** en `src/lib/crm/salesforce.ts`. El método `getConnection()` ahora realiza un `POST` directo al endpoint `/services/oauth2/token` usando `grant_type=client_credentials` e inicializa la conexión `jsforce` con el `access_token` e `instance_url` devueltos, eliminando la dependencia de `conn.login()`.
+- **Configuración en Salesforce Developer Edition:**
+  - Habilitado el **"Activar flujo de credenciales de cliente"** en la Connected App `Dashboard CRM PWA` (ruta: Compilar → Crear → Aplicaciones → Modificar).
+  - Asignado el **usuario de ejecución "Sergio Genes"** en la sección "Flujo de credenciales de cliente" de las políticas de la app (ruta: Gestionar → Modificar políticas).
+- **Corrección de URL de Autenticación:** Identificado que el flujo Client Credentials **no funciona con `login.salesforce.com`** — requiere el dominio específico de la org (My Domain). Actualizada la variable `SALESFORCE_LOGIN_URL` a `https://orgfarm-2325759fb2-dev-ed.develop.my.salesforce.com`. La URL de la UI (`*.lightning.force.com`) se convierte a API (`*.my.salesforce.com`) reemplazando el subdominio.
+- **Autenticación verificada:** El servidor ya no arroja `invalid_grant`. La conexión con Salesforce queda establecida correctamente.
+
+### Pendiente para continuar (Corrección de Esquema en Salesforce)
+
+El campo de dominio en el objeto `Account` fue creado con nombre en español ("Dominio"), generando el API name `Dominio__c` en lugar del esperado `Domain__c`. El código usa `Domain__c` (consistente con HubSpot), por lo que la corrección se realizará en Salesforce:
+
+1. Setup → Gestor de objetos → Cuenta → Campos y relaciones → eliminar `Dominio__c`
+2. Crear nuevo campo Texto(255) con etiqueta en inglés `Domain` → API name resultante: `Domain__c`
+3. Verificar que el resto del esquema personalizado (`National_ID_Number__c`, `Scoring__c`, `Invoice__c` y sus campos) tenga los API names correctos antes de probar la sincronización de un contacto.
+
+## Fases del 6 de julio de 2026 (Estabilización de Salesforce y Webhooks de Facturas)
+
+- **Corrección de esquema pendiente resuelta:** creado el campo `Balance_Due__c` (Moneda 16,2) en `Invoice__c`, faltante desde la configuración inicial. Confirmado que el resto de los campos (`Amount__c`, `Status__c`, `Invoice_Date__c`, `Due_Date__c`, `Payment_Date__c`, `Contact__c`) ya coincidían.
+- **Fix de sesión inválida (`INVALID_SESSION_ID`):** Next.js App Router compila el código en capas de módulos aisladas (`rsc`, `action-browser`, `edge`), cada una con su propia copia de `factory.ts`. Como `CRMProviderFactory` usaba un campo estático de clase (salvo para el mock), Salesforce terminaba con múltiples instancias del provider logueándose de forma independiente y compitiendo por la misma sesión del usuario de ejecución. Se migró `factory.ts` para cachear **todos** los proveedores (no solo el mock) en `globalThis`, garantizando una única instancia y una única sesión por proceso. Además, se agregó en `salesforce.ts` un wrapper `withConnection()` que detecta `INVALID_SESSION_ID` y reintenta una vez con login nuevo, en vez de confiar en el timer fijo de 1 hora (`tokenExpiryMs`).
+- **Fix de fecha de recordatorio en Salesforce:** en `createActivity`, el campo `ActivityDate` (Fecha de vencimiento del Task) se llenaba con la fecha de creación de la nota en vez de la fecha del recordatorio (`reminderDate`). Corregido para que `ActivityDate`/`ReminderDateTime` reflejen el recordatorio cuando existe. Como consecuencia, se agregó `CreatedDate` a la consulta de `fetchActivitiesByLead` y se usa ese campo (inmutable, fecha real de creación en Salesforce) para el `timestamp` de la actividad, en vez de `ActivityDate`.
+- **Auto-recuperación del loading de sesión (NextAuth):** el layout del dashboard quedaba colgado en "Verificando credenciales de seguridad..." si el fetch inicial de `/api/auth/session` se cortaba (p. ej. al reiniciar el servidor de desarrollo con una pestaña ya abierta), ya que `refetchOnWindowFocus` y `refetchWhenOffline` están desactivados a propósito en `providers.tsx`. Se agregó un watchdog en `(dashboard)/layout.tsx` que reintenta con `update()` de `useSession()` cada 5s mientras `status === 'loading'`, sin requerir F5 manual.
+- **Diagnóstico de sincronización de facturas creadas directamente en Salesforce:** las facturas no llegaban a la app porque `syncInvoicesForLead` solo se dispara (a) en el polling de fondo, únicamente para leads con `updatedAt` modificado localmente recientemente, o (b) on-demand en `getGlobalLeadDetails`, solo para leads ajenos o purgados de la caché local. Un contacto propio y ya cacheado, con una factura creada directamente en Salesforce, no cae en ninguno de los dos casos. A diferencia de HubSpot, Salesforce no tenía webhooks configurados para avisar estos cambios de forma proactiva.
+- **Simplificación del webhook genérico de facturas:** modificado `src/app/api/webhooks/crm/route.ts` para que `invoice.upsert` siempre traiga el estado completo y autoritativo de la factura vía `crm.fetchInvoiceById(crmId)`, en vez de parchear campo a campo con `propertyName`/`propertyValue` (patrón que solo se aplicaba en la creación inicial, no en actualizaciones). Esto simplifica el payload que debe enviar cualquier proveedor (solo el ID) y evita drift si se pierde algún evento intermedio.
+- **Implementación de webhooks reales para Salesforce (en curso):**
+  - Creada la clase Apex `InvoiceWebhookNotifier` (`Queueable, Database.AllowsCallouts`) que recibe una lista de IDs de `Invoice__c` y hace un callout HTTP POST a `/api/webhooks/crm` con el payload `{ events: [{ subscriptionType, crmId }, ...] }`.
+  - Creado el trigger `InvoiceWebhookTrigger` sobre `Invoice__c` (`after insert, after update, after delete`) que encola el Queueable.
+  - Configurado el Remote Site Setting `DashboardCRM_Webhook` apuntando al túnel de ngrok.
+  - Actualizado `.env.template`: removidas las variables obsoletas `SALESFORCE_USERNAME`/`SALESFORCE_PASSWORD`/`SALESFORCE_SECURITY_TOKEN` (del flujo de auth viejo, ya no se usan con Client Credentials Flow) y agregada `SALESFORCE_WEBHOOK_SECRET`.
+  - Instalado `ngrok` vía `winget` para exponer `localhost:3000` con dominio estático (`clamp-limit-gruffly.ngrok-free.dev`). Se resolvió un conflicto de versión de configuración (`ngrok.yml` tenía formato v3 de una instalación previa, incompatible con el binario recién instalado v3.3.1) migrando el archivo a formato v2, y luego se actualizó el binario a la v3.39.9 vía `ngrok update` porque la cuenta del usuario exige mínimo v3.20.0.
+
+### Pendiente para mañana
+
+1. Actualizar la clase Apex `InvoiceWebhookNotifier` con: la URL real del endpoint (`https://clamp-limit-gruffly.ngrok-free.dev/api/webhooks/crm`), el header `ngrok-skip-browser-warning: true` (necesario para que el plan gratuito de ngrok no interponga su página de advertencia HTML), y un token secreto real.
+2. Setear ese mismo token en `SALESFORCE_WEBHOOK_SECRET` en `.env.development.local` y reiniciar el servidor.
+3. Levantar el túnel (`ngrok http 3000 --domain=clamp-limit-gruffly.ngrok-free.dev`) y probar editando la factura `FAC-001` en Salesforce, verificando en la consola del servidor el log `[Webhook CRM] Factura crmId ... guardada/actualizada.` y en la pestaña Finanzas del contacto en la app.
+4. Verificar que el picklist `Status__c` de `Invoice__c` tenga exactamente los valores `PENDING`, `PAID`, `OVERDUE` (inglés, mayúsculas) — el código no traduce ni normaliza este campo.
+5. Evaluar si conviene extender el mismo patrón de webhooks (Apex trigger + Queueable) a `Contact` y `Account` para reflejar en tiempo real ediciones hechas directamente en Salesforce, replicando la cobertura que ya existe para HubSpot.
+
+_Última actualización: 2026-07-06_
+

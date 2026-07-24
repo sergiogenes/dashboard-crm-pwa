@@ -983,6 +983,7 @@ export async function searchGlobalLeads(query: string) {
 
     if (isCrmOnline) {
       const crmLeads = await crm.searchLeads(cleanQuery)
+      const importedIds: any[] = []
       for (const crmLead of crmLeads) {
         if (crmLead.crmId) {
           // Determinar dueño local
@@ -1005,7 +1006,7 @@ export async function searchGlobalLeads(query: string) {
 
           const hasPendingChanges = existingLead?.crmSynced === false
 
-          await Lead.findOneAndUpdate(
+          const upsertedLead = await Lead.findOneAndUpdate(
             { crmId: crmLead.crmId },
             {
               $setOnInsert: {
@@ -1026,13 +1027,23 @@ export async function searchGlobalLeads(query: string) {
                     }),
               },
             },
-            { upsert: true },
+            { upsert: true, new: true },
           )
+          if (upsertedLead) importedIds.push(upsertedLead._id)
         }
       }
 
-      // Volver a consultar MongoDB para incluir los leads recién importados
-      localLeads = await Lead.find(mongoQuery).limit(20)
+      // Volver a consultar MongoDB incluyendo tanto el match exacto por
+      // hash como los leads recién importados desde HubSpot (que pueden
+      // haber sido encontrados por nombre/teléfono, no solo DNI o email)
+      localLeads = await Lead.find({
+        deleted: false,
+        $or: [
+          { documentIdHash: hash(cleanQuery) },
+          { emailHash: hash(cleanQueryLower) },
+          { _id: { $in: importedIds } },
+        ],
+      }).limit(20)
     }
   } catch (err) {
     console.error(

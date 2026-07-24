@@ -1,40 +1,50 @@
 import { ICRMProvider } from './interface'
 import { HubSpotProvider } from './hubspot'
+import { SalesforceProvider } from './salesforce'
 import { MockCRMProvider } from './mock'
 
 export class CRMProviderFactory {
-  private static instance: ICRMProvider | null = null
-
+  // Next.js App Router compila el código en capas de módulos aisladas entre sí
+  // (rsc, action-browser, edge, etc.), cada una con su propia copia de este archivo.
+  // Un campo estático de clase daría una instancia distinta por capa, lo que para
+  // proveedores con estado de sesión (p. ej. Salesforce) generaba logins concurrentes
+  // que se invalidaban entre sí. Usamos globalThis para compartir una única instancia
+  // (y una única sesión CRM) en todo el proceso, igual que ya se hacía con el mock.
   public static getProvider(): ICRMProvider {
-    if (this.instance) {
-      return this.instance
-    }
-
     const isTest = process.env.IS_PLAYWRIGHT_TEST === 'true'
-    const providerType = isTest ? 'mock' : (process.env.CRM_PROVIDER || 'mock')
+    const providerType = (isTest ? 'mock' : process.env.CRM_PROVIDER || 'mock').toLowerCase()
 
-    if (providerType.toLowerCase() === 'mock') {
-      const g = globalThis as any
-      if (!g.__mockCrmInstance) {
-        g.__mockCrmInstance = new MockCRMProvider()
-      }
-      this.instance = g.__mockCrmInstance
-      return g.__mockCrmInstance
+    const g = globalThis as any
+    if (g.__crmProviderInstance && g.__crmProviderType === providerType) {
+      return g.__crmProviderInstance
     }
 
-    switch (providerType.toLowerCase()) {
-      case 'hubspot':
+    let instance: ICRMProvider
+
+    switch (providerType) {
+      case 'mock':
+        instance = new MockCRMProvider()
+        break
+
+      case 'hubspot': {
         const token = process.env.HUBSPOT_ACCESS_TOKEN
         if (!token) {
           throw new Error('HUBSPOT_ACCESS_TOKEN is not defined in environment variables')
         }
-        this.instance = new HubSpotProvider(token)
+        instance = new HubSpotProvider(token)
+        break
+      }
+
+      case 'salesforce':
+        instance = new SalesforceProvider()
         break
 
       default:
         throw new Error(`Provider ${providerType} not supported`)
     }
 
-    return this.instance!
+    g.__crmProviderInstance = instance
+    g.__crmProviderType = providerType
+    return instance
   }
 }

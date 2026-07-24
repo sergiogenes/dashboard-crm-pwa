@@ -201,25 +201,28 @@ export async function POST(req: Request) {
             invoiceDate: new Date(),
             dueDate: new Date(),
           })
-
-          const fullInvoice = await crm.fetchInvoiceById(crmId)
-          if (fullInvoice) {
-            invoice.amount = fullInvoice.amount
-            invoice.balanceDue =
-              fullInvoice.balanceDue ??
-              (fullInvoice.status === 'PAID' ? 0 : fullInvoice.amount)
-            invoice.status = fullInvoice.status
-            invoice.invoiceDate = new Date(fullInvoice.invoiceDate)
-            invoice.dueDate = new Date(fullInvoice.dueDate)
-            if (fullInvoice.paymentDate) {
-              invoice.paymentDate = new Date(fullInvoice.paymentDate)
-            }
-          }
         } else {
           leadDoc = await Lead.findById(invoice.leadId)
         }
 
-        if (event.propertyName && event.propertyValue !== undefined) {
+        // Siempre traemos el estado completo y autoritativo desde el CRM en vez de
+        // parchear campo a campo: así el webhook solo necesita avisar el ID que cambió
+        // (válido para cualquier proveedor) y no se pierde información si algún evento
+        // intermedio no llega.
+        const fullInvoice = await crm.fetchInvoiceById(crmId)
+        if (fullInvoice) {
+          invoice.amount = fullInvoice.amount
+          invoice.balanceDue =
+            fullInvoice.balanceDue ??
+            (fullInvoice.status === 'PAID' ? 0 : fullInvoice.amount)
+          invoice.status = fullInvoice.status
+          invoice.invoiceDate = new Date(fullInvoice.invoiceDate)
+          invoice.dueDate = new Date(fullInvoice.dueDate)
+          if (fullInvoice.paymentDate) {
+            invoice.paymentDate = new Date(fullInvoice.paymentDate)
+          }
+        } else if (event.propertyName && event.propertyValue !== undefined) {
+          // Fallback si el proveedor no pudo recuperar el registro completo (p. ej. ya se borró)
           const val = event.propertyValue
           switch (event.propertyName) {
             case 'amount':
