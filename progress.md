@@ -476,3 +476,41 @@ El campo de dominio en el objeto `Account` fue creado con nombre en español ("D
 
 _Última actualización: 2026-07-06_
 
+## Fases del 24 de julio de 2026 (Fixes de Búsqueda/Recordatorios y Webhooks de Deals con HubSpot)
+
+- **Corrección de Búsqueda Global de Contactos:** en `searchGlobalLeads` ([src/app/actions/sync.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/actions/sync.ts)), los contactos encontrados en HubSpot por texto libre (nombre, no solo DNI/email exacto) se importaban correctamente a MongoDB pero luego se descartaban al volver a consultar la base local con el mismo filtro estrecho de hash exacto (`documentIdHash`/`emailHash`). Se corrigió capturando los `_id` de los leads recién importados/actualizados y agregándolos con `$in` a la query final.
+- **Corrección de Tipado en el Adaptador Salesforce:** en [src/lib/crm/salesforce.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/salesforce.ts), el `build` de producción fallaba porque `conn.query()` de `jsforce` devuelve un objeto `Query` "thenable" pero no compatible en su tipado con `Promise<T>` (le faltan `finally` y `Symbol.toStringTag`). Se marcaron como `async` las 9 funciones flecha que retornaban `conn.query(...)` directamente a `withConnection`, resolviendo el error de compilación sin cambiar el comportamiento en runtime.
+- **Notas con Recordatorio Generan Task Acompañante:** en [LeadDrawer.tsx](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/components/contacts/LeadDrawer.tsx), al crear una actividad con recordatorio activo cuyo tipo elegido no es ya `TASK` (p. ej. una `NOTE`), ahora se registran **dos** Activities locales separadas: la principal con el tipo elegido (sin `reminderDate` propio) y una `TASK` compañera con el mismo título/cuerpo que sí lleva el `reminderDate`. Antes, el recordatorio quedaba adjunto a la Nota y nunca generaba la Task nativa en el CRM (`createActivity` en `hubspot.ts` solo crea Task cuando `type === 'TASK'`).
+- **Nueva Rama `feature/deal-webhook-sync` — Sincronización Entrante de Deals:** hasta ahora el webhook de CRM (`route.ts`) sólo procesaba eventos de `lead`, `company`, `invoice` y `association`; los cambios de etapa (`dealstage`) hechos directamente en HubSpot nunca llegaban a la app.
+  - [src/lib/crm/interface.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/interface.ts): agregado `'deal.upsert' | 'deal.deletion'` a `ParsedCRMWebhookEvent` y el método `fetchLeadIdAssociatedWithDeal(dealCrmId)` a `ICRMProvider`.
+  - [src/lib/crm/hubspot.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/hubspot.ts): mapeo de `deal.*` en `verifyAndParseWebhook` + implementación de `fetchLeadIdAssociatedWithDeal` vía `/deals/{id}/associations/contacts`.
+  - [src/lib/crm/salesforce.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/salesforce.ts): `fetchLeadIdAssociatedWithDeal` vía SOQL sobre `OpportunityContactRole` (no requirió tocar `verifyAndParseWebhook`, que ya reenvía el `subscriptionType` genérico tal cual).
+  - [src/lib/crm/mock.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/lib/crm/mock.ts): implementación trivial reutilizando el `dealAssociations` Map existente.
+  - [src/app/actions/sync.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/actions/sync.ts): exportada `syncDealsForLead` (antes privada) para reutilizar desde el webhook toda la lógica ya probada de mapeo de stage (`hsStageToLocal`) y metadata (`termMonths`/`interestRate`/sub-etapas), en vez de duplicarla.
+  - [src/app/api/webhooks/crm/route.ts](file:///C:/Users/sergi/Documents/Ceibo/Proyectos/307-HPN/dashboard-crm/src/app/api/webhooks/crm/route.ts): agregados los bloques `deal.deletion` (hard delete, igual que lead/company/invoice) y `deal.upsert` (resuelve el Lead dueño del Deal —por el Deal local existente o preguntándole al CRM si es nuevo— y llama a `syncDealsForLead`).
+- **Fix Crítico — Ventana de 20s Bloqueaba Actualizaciones desde Webhook:** `syncDealsForLead` tiene un guard que descarta actualizaciones si el Deal local fue tocado en los últimos 20 segundos (pensado para que el polling de auto-sanación en background no pise ediciones locales recién hechas — ver sección del 2 de junio). Como crear un Deal desde la app ya "toca" `updatedAt` (al marcarlo `crmSynced: true`), cambiar su stage en HubSpot dentro de esos ~20s hacía que el webhook llegara bien pero la actualización se descartara silenciosamente, sin ningún log. Se agregó el parámetro `options.bypassRecencyGuard` a `syncDealsForLead`, seteado en `true` únicamente cuando se llama desde el webhook (ahí el CRM es la fuente de verdad de un cambio en tiempo real, no hay riesgo real de pisar una edición local reciente). El guard de `!existingDeal.crmSynced` se mantiene siempre, para no pisar cambios locales genuinamente pendientes de subir.
+- **Configuración de Suscripciones de Webhook en HubSpot (Private App):**
+  - **Deals:** `deal.creation`, `deal.deletion` y `deal.propertyChange` sobre las propiedades `dealstage`, `dealname`, `amount`, `description`, `closedate`, `hubspot_owner_id` (las mismas 6 que lee `fetchDealsByLead`).
+  - **Contacts:** `contact.creation`, `contact.deletion` y `contact.propertyChange` sobre `firstname`, `lastname`, `email`, `phone`, `national_id_number` (las únicas 5 propiedades que traduce el mapeo de `hubspot.ts`/`route.ts`).
+  - Se detectó y corrigió un error de configuración: el **Target URL** de las suscripciones apuntaba solo al dominio raíz de ngrok, sin el path `/api/webhooks/crm` — por eso ningún evento llegaba al servidor (confirmado revisando que no aparecía ninguna request en el inspector de ngrok, `http://127.0.0.1:4040`, al disparar el evento en HubSpot).
+
+### Cómo levantar ngrok para probar webhooks en local
+
+El proyecto usa un dominio estático reservado de ngrok (`clamp-limit-gruffly.ngrok-free.dev`) en vez de uno aleatorio, para no tener que reconfigurar el Target URL en HubSpot/Salesforce cada vez que se reinicia el túnel:
+
+```bash
+ngrok http 3000 --domain=clamp-limit-gruffly.ngrok-free.dev
+```
+
+- Requiere tener el servidor de Next.js corriendo en el puerto `3000` (`npm run dev` o `npm run build && npm start`).
+- El **Target URL** configurado en cada proveedor de CRM debe incluir el path completo del endpoint, no solo el dominio:
+  - HubSpot (Private App → Webhooks): `https://clamp-limit-gruffly.ngrok-free.dev/api/webhooks/crm`
+  - Salesforce (Remote Site Setting `DashboardCRM_Webhook`, ver sección del 6 de julio): mismo dominio, mismo path.
+- Para depurar por qué un webhook no llega a la app, en ese orden:
+  1. Abrir `http://127.0.0.1:4040` (inspector local de ngrok) y disparar el evento en el CRM — si no aparece ninguna request, el problema es 100% de configuración en el CRM (Target URL incompleto/incorrecto, suscripción pausada, o el switch maestro de "Webhooks enabled" de la Private App apagado), no del código.
+  2. Si la request sí llega pero con error, revisar el código de respuesta y el log del servidor (`[Webhook CRM] ...`).
+  3. En HubSpot, cada suscripción tiene un panel de **Details** con el historial de entregas recientes (delivered/failed) y el código de respuesta recibido.
+- Nota: al reiniciar `npm start` (build de producción) tras un cambio de frontend, conviene desregistrar el Service Worker de la PWA (DevTools → Application → Service Workers → Unregister) o probar en incógnito — de lo contrario el navegador puede seguir sirviendo el bundle JS cacheado de la versión anterior.
+
+_Última actualización: 2026-07-24_
+

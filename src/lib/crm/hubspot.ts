@@ -1260,6 +1260,25 @@ export class HubSpotProvider implements ICRMProvider {
     }
   }
 
+  async fetchLeadIdAssociatedWithDeal(dealCrmId: string): Promise<string | null> {
+    try {
+      const assocResult = await this.request<{
+        results: { id: string; type: string }[]
+      }>(`/deals/${dealCrmId}/associations/contacts`, { method: 'GET' })
+
+      if (assocResult.results && assocResult.results.length > 0) {
+        return assocResult.results[0].id
+      }
+      return null
+    } catch (err) {
+      console.error(
+        `[HubSpot Provider] Error al obtener el contacto asociado al Deal ${dealCrmId}:`,
+        err,
+      )
+      return null
+    }
+  }
+
   async verifyAndParseWebhook(
     req: Request,
     rawBody: string,
@@ -1336,6 +1355,8 @@ export class HubSpotProvider implements ICRMProvider {
           subscriptionType.startsWith('customObject.')
         ) {
           mappedType = subscriptionType.endsWith('.deletion') ? 'invoice.deletion' : 'invoice.upsert'
+        } else if (subscriptionType.startsWith('deal.')) {
+          mappedType = subscriptionType.endsWith('.deletion') ? 'deal.deletion' : 'deal.upsert'
         } else if (subscriptionType === 'association.creation') {
           mappedType = 'association.creation'
         } else if (subscriptionType === 'association.deletion') {

@@ -139,6 +139,11 @@ export interface ICRMProvider {
   fetchLeadIdAssociatedWithInvoice(invoiceCrmId: string): Promise<string | null>
 
   /**
+   * Obtiene el ID del contacto (Lead) asociado a un negocio (Deal) en el CRM.
+   */
+  fetchLeadIdAssociatedWithDeal(dealCrmId: string): Promise<string | null>
+
+  /**
    * Verifica la firma y parsea los eventos recibidos del webhook de CRM.
    */
   verifyAndParseWebhook(req: Request, rawBody: string): Promise<ParsedCRMWebhookEvent[] | null>
@@ -152,6 +157,8 @@ export interface ParsedCRMWebhookEvent {
     | 'company.upsert'
     | 'invoice.deletion'
     | 'invoice.upsert'
+    | 'deal.deletion'
+    | 'deal.upsert'
     | 'association.creation'
     | 'association.deletion'
   crmId: string

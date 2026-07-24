@@ -520,6 +520,21 @@ export class SalesforceProvider implements ICRMProvider {
     }
   }
 
+  async fetchLeadIdAssociatedWithDeal(dealCrmId: string): Promise<string | null> {
+    try {
+      const result = await this.withConnection(async (conn) =>
+        conn.query<any>(
+          `SELECT ContactId FROM OpportunityContactRole WHERE OpportunityId = '${dealCrmId}' LIMIT 1`
+        )
+      )
+      if (result.totalSize === 0 || !result.records[0]) return null
+      return result.records[0].ContactId || null
+    } catch (err) {
+      console.error('[Salesforce Provider] Error obteniendo Contacto asociado a Oportunidad:', err)
+      return null
+    }
+  }
+
   async verifyAndParseWebhook(req: Request, rawBody: string): Promise<ParsedCRMWebhookEvent[] | null> {
     try {
       // Opcional: verificación de token de seguridad enviado por los flujos de Salesforce

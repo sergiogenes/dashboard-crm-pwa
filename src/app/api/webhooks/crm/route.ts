@@ -4,8 +4,10 @@ import Lead from '@/models/Lead'
 import Company from '@/models/Company'
 import User from '@/models/User'
 import Invoice from '@/models/Invoice'
+import Deal from '@/models/Deal'
 import { CRMProviderFactory } from '@/lib/crm/factory'
 import { hash } from '@/lib/crypto'
+import { syncDealsForLead } from '@/app/actions/sync'
 
 export async function POST(req: Request) {
   try {
@@ -270,6 +272,54 @@ export async function POST(req: Request) {
             `[Webhook CRM] Scoring de Lead ${leadDoc.crmId} recalculado: ${leadDoc.scoring}`,
           )
         }
+      }
+
+      if (subscriptionType === 'deal.deletion') {
+        await Deal.deleteOne({ crmId })
+        console.log(`[Webhook CRM] Deal crmId ${crmId} eliminado por acción en CRM.`)
+        continue
+      }
+
+      if (subscriptionType === 'deal.upsert') {
+        // Resolvemos el Lead dueño del Deal: si ya existe localmente lo tomamos
+        // de ahí, si no, le preguntamos al CRM a qué contacto está asociado.
+        const existingDeal = await Deal.findOne({ crmId })
+        let leadDoc = existingDeal
+          ? await Lead.findById(existingDeal.leadId)
+          : null
+
+        if (!leadDoc) {
+          const leadCrmId = await crm.fetchLeadIdAssociatedWithDeal(crmId)
+          if (!leadCrmId) {
+            console.warn(
+              `[Webhook CRM] No se encontró contacto asociado para Deal crmId ${crmId}`,
+            )
+            continue
+          }
+          leadDoc = await Lead.findOne({ crmId: leadCrmId })
+          if (!leadDoc) {
+            console.warn(
+              `[Webhook CRM] Lead local no encontrado para leadCrmId ${leadCrmId} de Deal crmId ${crmId}`,
+            )
+            continue
+          }
+        }
+
+        if (!leadDoc.crmId) {
+          console.warn(
+            `[Webhook CRM] Lead ${leadDoc._id} del Deal crmId ${crmId} aún no tiene crmId asignado.`,
+          )
+          continue
+        }
+
+        // Reutilizamos la misma rutina que ya usa el flujo de polling: trae el
+        // estado completo y autoritativo de los deals del lead desde el CRM
+        // (mapeo de stage, metadata de termMonths/interestRate, etc.) en vez
+        // de parchear campo a campo, igual que con las facturas.
+        await syncDealsForLead(leadDoc, leadDoc.crmId, crm, leadDoc.userId, {
+          bypassRecencyGuard: true,
+        })
+        console.log(`[Webhook CRM] Deals del lead ${leadDoc.crmId} resincronizados por evento de Deal crmId ${crmId}.`)
       }
 
       if (subscriptionType === 'association.creation') {

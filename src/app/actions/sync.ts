@@ -824,11 +824,12 @@ async function syncActivitiesForLead(
 /**
  * Función auxiliar para sincronizar deals del lead desde HubSpot a MongoDB.
  */
-async function syncDealsForLead(
+export async function syncDealsForLead(
   leadDoc: ILeadSchema,
   crmLeadCrmId: string,
   crm: ICRMProvider,
   userId: string,
+  options: { bypassRecencyGuard?: boolean } = {},
 ) {
   try {
     const crmDeals = await crm.fetchDealsByLead(crmLeadCrmId)
@@ -866,11 +867,16 @@ async function syncDealsForLead(
             if (!existingDeal.crmSynced) {
               continue
             }
-            // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de los últimos 20 segundos)
-            const timeSinceLastUpdate =
-              Date.now() - existingDeal.updatedAt.getTime()
-            if (timeSinceLastUpdate < 20000) {
-              continue
+            // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de
+            // los últimos 20 segundos). Este resguardo es para el polling de auto-sanación
+            // en background; cuando la llamada viene de un webhook, el CRM es la fuente de
+            // verdad del cambio en tiempo real y este resguardo no debe aplicar.
+            if (!options.bypassRecencyGuard) {
+              const timeSinceLastUpdate =
+                Date.now() - existingDeal.updatedAt.getTime()
+              if (timeSinceLastUpdate < 20000) {
+                continue
+              }
             }
           }
 

@@ -248,6 +248,10 @@ export class MockCRMProvider implements ICRMProvider {
     return firstLead
   }
 
+  async fetchLeadIdAssociatedWithDeal(dealCrmId: string): Promise<string | null> {
+    return this.dealAssociations.get(dealCrmId) || null
+  }
+
   async verifyAndParseWebhook(
     req: Request,
     rawBody: string,
