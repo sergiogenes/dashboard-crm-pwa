@@ -30,6 +30,11 @@ export const BADGE = {
   ok: 'border-ok-bd bg-ok-bg text-ok',
   warn: 'border-warn-bd bg-warn-bg text-warn',
   bad: 'border-bad-bd bg-bad-bg text-bad',
+  /** Texto en el verde oscuro por defecto (--ink), sin tinte semántico. Se
+   * usa donde se pidió reservar el color solo para la única señal que
+   * realmente importa (ej. En Mora en la pantalla de Negocios), dejando
+   * todo lo demás "neutral" con el color de texto estándar de la app. */
+  default: 'border-border bg-surface-2 text-ink',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -39,21 +44,21 @@ export const BADGE = {
 export function getDealStageConfig(stage: LocalDeal['stage']): { label: string; style: string } {
   switch (stage) {
     case 'draft':
-      return { label: 'Borrador', style: BADGE.neutral }
+      return { label: 'Borrador', style: BADGE.default }
     case 'under_evaluation':
-      return { label: 'Evaluación', style: BADGE.info }
+      return { label: 'Evaluación', style: BADGE.default }
     case 'approved':
-      return { label: 'Aprobado', style: BADGE.ok }
+      return { label: 'Aprobado', style: BADGE.default }
     case 'disbursed':
-      return { label: 'Desembolsado', style: `${BADGE.ok} font-bold` }
+      return { label: 'Desembolsado', style: BADGE.default }
     case 'completed':
-      return { label: 'Completado', style: `${BADGE.ok} font-bold` }
+      return { label: 'Completado', style: BADGE.default }
     case 'refused':
-      return { label: 'Rechazado', style: `${BADGE.bad} font-bold` }
+      return { label: 'Rechazado', style: BADGE.default }
     case 'overdue':
       return { label: 'En Mora', style: `${BADGE.bad} font-bold animate-pulse` }
     default:
-      return { label: stage, style: BADGE.neutral }
+      return { label: stage, style: BADGE.default }
   }
 }
 
