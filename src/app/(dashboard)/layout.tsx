@@ -47,8 +47,8 @@ export default function DashboardLayout({
   // Spinner de carga inicial para la sesión
   if (status === 'loading') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 text-slate-400">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent mb-4" />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-bg text-ink-2">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4" />
         <p className="text-sm font-medium animate-pulse">Verificando credenciales de seguridad...</p>
       </div>
     )
@@ -62,7 +62,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen md:h-screen bg-slate-950 text-slate-100 animate-fade-in overflow-x-hidden md:overflow-hidden">
+    <div className="flex min-h-screen md:h-screen bg-bg text-ink animate-fade-in overflow-x-hidden md:overflow-hidden">
       {/* Barra lateral de navegación sticky */}
       <Sidebar />
 

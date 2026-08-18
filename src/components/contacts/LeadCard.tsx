@@ -41,26 +41,26 @@ export default function LeadCard({
             className={`cursor-pointer space-y-3 rounded-2xl border p-4 transition-all duration-300 ${
               selectedLeadForInvoice?.id === lead.id ||
               selectedLeadForInvoice?.tempId === lead.tempId
-                ? 'border-indigo-500 bg-slate-900/40 shadow-md ring-1 ring-indigo-500/20'
-                : 'border-slate-800 bg-slate-900/20'
+                ? 'border-primary bg-surface-2 shadow-md ring-1 ring-primary/20'
+                : 'border-border bg-surface'
             }`}
           >
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-sm font-bold text-white">
+                <h3 className="text-sm font-bold text-ink">
                   {lead.firstName} {lead.lastName}
                 </h3>
-                <p className="mt-0.5 text-xs text-slate-400">
+                <p className="mt-0.5 text-xs text-ink-2">
                   {lead.email}
                 </p>
                 {lead.documentId && (
-                  <p className="mt-0.5 font-mono text-[11px] text-slate-400">
+                  <p className="mt-0.5 font-mono text-[11px] text-ink-2">
                     ID: {lead.documentId}
                   </p>
                 )}
                 {lead.phone && (
                   <div>
-                    <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                    <p className="mt-0.5 font-mono text-[11px] text-ink-3">
                       {lead.phone}
                     </p>
                     {(() => {
@@ -69,14 +69,14 @@ export default function LeadCard({
                       return (
                         <div className="mt-1 flex items-center gap-1.5">
                           <span className={`h-1.5 w-1.5 rounded-full ${
-                            status.active 
-                              ? 'bg-emerald-500 animate-pulse' 
-                              : 'bg-slate-600'
+                            status.active
+                              ? 'bg-ok animate-pulse'
+                              : 'bg-ink-3'
                           }`} />
                           <span className={`text-[10px] font-semibold tracking-wide ${
-                            status.active 
-                              ? 'text-emerald-400' 
-                              : 'text-slate-500'
+                            status.active
+                              ? 'text-ok'
+                              : 'text-ink-3'
                           }`}>
                             WA: {status.text}
                           </span>
@@ -92,14 +92,14 @@ export default function LeadCard({
               >
                 {lead.synced ? (
                   <span
-                    className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 p-1 text-emerald-400"
+                    className="inline-flex items-center rounded-full border border-ok-bd bg-ok-bg p-1 text-ok"
                     title="CloudDb"
                   >
                     <Cloud className="h-3.5 w-3.5" />
                   </span>
                 ) : (
                   <span
-                    className="inline-flex animate-pulse items-center rounded-full border border-amber-500/20 bg-amber-500/10 p-1 text-amber-400"
+                    className="inline-flex animate-pulse items-center rounded-full border border-warn-bd bg-warn-bg p-1 text-warn"
                     title="LocalDb"
                   >
                     <Database className="h-3.5 w-3.5" />
@@ -109,9 +109,9 @@ export default function LeadCard({
               </div>
             </div>
 
-            <div className="border-slate-850 flex items-center justify-between border-t pt-2">
+            <div className="border-border-2 flex items-center justify-between border-t pt-2">
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded border border-slate-800/80 bg-slate-950 px-2 py-0.5 text-[10px] text-slate-400">
+                <span className="inline-flex items-center rounded border border-border bg-surface px-2 py-0.5 text-[10px] text-ink-2">
                   {getCompanyName(lead.companyId)}
                 </span>
                 {getLeadStatusBadge(lead)}
@@ -123,7 +123,7 @@ export default function LeadCard({
               >
                 <button
                   onClick={() => setSelectedLeadForInvoice(lead)}
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-indigo-400"
+                  className="rounded-lg p-1.5 text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
                   title="Ver Historial Crediticio"
                 >
                   <FileText className="h-4 w-4" />
@@ -136,8 +136,8 @@ export default function LeadCard({
                   disabled={lead.userId !== userId}
                   className={`rounded-lg p-1.5 transition-colors ${
                     lead.userId !== userId
-                      ? 'text-slate-750 cursor-not-allowed opacity-40'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      ? 'text-ink-3 cursor-not-allowed opacity-40'
+                      : 'text-ink-2 hover:bg-surface-2 hover:text-ink'
                   }`}
                   title={
                     lead.userId !== userId
@@ -152,8 +152,8 @@ export default function LeadCard({
                   disabled={lead.userId !== userId}
                   className={`rounded-lg p-1.5 transition-colors ${
                     lead.userId !== userId
-                      ? 'text-slate-750 cursor-not-allowed opacity-40'
-                      : 'text-slate-400 hover:bg-red-500/20 hover:text-red-400'
+                      ? 'text-ink-3 cursor-not-allowed opacity-40'
+                      : 'text-ink-2 hover:bg-bad-bg hover:text-bad'
                   }`}
                   title={
                     lead.userId !== userId
@@ -168,7 +168,7 @@ export default function LeadCard({
           </div>
         ))
       ) : (
-        <p className="py-12 text-center text-xs text-slate-500">
+        <p className="py-12 text-center text-xs text-ink-3">
           No se encontraron contactos.
         </p>
       )}

@@ -3,7 +3,7 @@
 import React from 'react'
 import { Cloud, Database, Inbox } from 'lucide-react'
 import { LocalDeal } from '@/lib/db'
-import { getStageConfig } from './DealTable'
+import { getDealStageConfig } from '@/lib/theme/status'
 
 interface DealCardProps {
   filteredDeals: LocalDeal[]
@@ -24,23 +24,23 @@ export default function DealCard({
     <div className="grid grid-cols-1 gap-4 md:hidden">
       {filteredDeals.length > 0 ? (
         filteredDeals.map((deal) => {
-          const stageConfig = getStageConfig(deal.stage)
+          const stageConfig = getDealStageConfig(deal.stage)
           return (
             <div
               key={deal.id || deal.tempId}
-              className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/20 p-4"
+              className="space-y-3 rounded-2xl border border-border bg-surface p-4"
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white">
+                  <h3 className="text-sm font-bold text-ink">
                     {getBorrowerName(deal.leadId)}
                   </h3>
                   {isSupervisor && (
-                    <span className="mt-0.5 block text-[10px] font-semibold text-indigo-400">
+                    <span className="mt-0.5 block text-[10px] font-semibold text-primary">
                       Asesor: {advisors[deal.userId] || 'Cargando asesor...'}
                     </span>
                   )}
-                  <span className="mt-0.5 block font-mono text-[10px] text-slate-500">
+                  <span className="mt-0.5 block font-mono text-[10px] text-ink-3">
                     Registro: {new Date(deal.createdAt).toLocaleDateString()}
                   </span>
                 </div>
@@ -51,50 +51,50 @@ export default function DealCard({
                 </span>
               </div>
 
-              <div className="border-slate-850 grid grid-cols-3 gap-2 border-y py-2">
+              <div className="border-border-2 grid grid-cols-3 gap-2 border-y py-2">
                 <div>
-                  <span className="text-slate-550 block text-[8px] uppercase">
+                  <span className="text-ink-3 block text-[8px] uppercase">
                     Monto
                   </span>
-                  <span className="mt-0.5 block font-mono text-xs font-bold text-white">
+                  <span className="mt-0.5 block font-mono text-xs font-bold text-ink">
                     ${deal.amount.toLocaleString()}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-550 block text-[8px] uppercase">
+                  <span className="text-ink-3 block text-[8px] uppercase">
                     Plazo
                   </span>
-                  <span className="mt-0.5 block text-xs font-semibold text-slate-300">
+                  <span className="mt-0.5 block text-xs font-semibold text-ink-2">
                     {deal.termMonths} meses
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-550 block text-[8px] uppercase">
+                  <span className="text-ink-3 block text-[8px] uppercase">
                     Interés
                   </span>
-                  <span className="mt-0.5 block text-xs font-semibold text-slate-300">
+                  <span className="mt-0.5 block text-xs font-semibold text-ink-2">
                     {deal.interestRate}%
                   </span>
                 </div>
               </div>
 
               {deal.notes && (
-                <p className="rounded border border-slate-900/50 bg-slate-950 p-2 font-mono text-[11px] leading-relaxed text-slate-400">
+                <p className="rounded border border-border-2 bg-surface-2 p-2 font-mono text-[11px] leading-relaxed text-ink-2">
                   {deal.notes}
                 </p>
               )}
 
               <div className="flex items-center justify-between pt-1 text-[10px]">
-                <span className="text-slate-500">
+                <span className="text-ink-3">
                   Estado de Sincronización
                 </span>
                 {deal.synced ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-400">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-ok-bd bg-ok-bg px-2 py-0.5 font-medium text-ok">
                     <Cloud className="h-3 w-3" />
                     Cloud
                   </span>
                 ) : (
-                  <span className="inline-flex animate-pulse items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-400">
+                  <span className="inline-flex animate-pulse items-center gap-1.5 rounded-full border border-warn-bd bg-warn-bg px-2 py-0.5 font-medium text-warn">
                     <Database className="h-3 w-3" />
                     Local
                   </span>
@@ -104,8 +104,8 @@ export default function DealCard({
           )
         })
       ) : (
-        <div className="text-slate-550 py-12 text-center">
-          <Inbox className="mx-auto mb-2 h-8 w-8 text-slate-700" />
+        <div className="text-ink-3 py-12 text-center">
+          <Inbox className="mx-auto mb-2 h-8 w-8 text-ink-3" />
           <p className="text-xs">No se encontraron solicitudes.</p>
         </div>
       )}
