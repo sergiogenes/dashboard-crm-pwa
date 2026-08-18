@@ -2,8 +2,82 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Paleta B · 2026 — Negofin. Este es el ÚNICO bloque a editar ante un futuro cambio de paleta. */
+  --bg: #F0F3F1;
+  --surface: #FFFFFF;
+  --surface-2: #F6F9F7;
+  --border: #DFE7E4;
+  --border-2: #EDF2F0;
+
+  --ink: #11383F;
+  --ink-2: #526C71;
+  --ink-3: #8AA2A7;
+
+  --primary: #00C080;
+  --accent: #11383F;
+  --accent-2: #A5E59E;
+
+  --ok: #00805A;
+  --ok-bg: #E4F7E4;
+  --ok-bd: #A5E59E;
+
+  --warn: #8A6407;
+  --warn-bg: #FDF3D8;
+  --warn-bd: #EFB930;
+
+  --bad: #B32A1E;
+  --bad-bg: #FFE4E1;
+  --bad-bd: #FFB4AD;
+
+  --info: #0A7F99;
+  --chip: #E2F5FA;
+  --chip-bd: #9FDCE9;
+  --chip-ink: #0A6F86;
+
+  --badge: #FF594B;
+  --cta-bg: #11383F;
+  --cta-ink: #FFFFFF;
+
+  --font: 'Arimo', Arial, Helvetica, sans-serif;
+
+  --s1: #0A6F86;
+  --s1-bg: linear-gradient(to right, #E2F5FA, #F1FAFC);
+  --s1-bd: #9FDCE9;
+
+  --s2: #8A6407;
+  --s2-bg: linear-gradient(to right, #FDF3D8, #FEFAED);
+  --s2-bd: #EFB930;
+
+  --s3: #00805A;
+  --s3-bg: linear-gradient(to right, #E4F7E4, #F2FBF1);
+  --s3-bd: #A5E59E;
+
+  --s4: #B32A1E;
+  --s4-bg: linear-gradient(to right, #FFE4E1, #FFF2F1);
+  --s4-bd: #FFB4AD;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+@layer components {
+  /* Filas del embudo/pipeline: el fondo es un gradiente, que no puede vivir en
+     theme.extend.colors de Tailwind (background-color no acepta gradientes).
+     Se aplican como clase plana junto a las utilities de Tailwind, ej:
+     className="stage-1 flex w-full items-center ..." */
+  .stage-1 { background: var(--s1-bg); border-color: var(--s1-bd); }
+  .stage-1 .stage-label, .stage-1 .stage-pct { color: var(--s1); }
+
+  .stage-2 { background: var(--s2-bg); border-color: var(--s2-bd); }
+  .stage-2 .stage-label, .stage-2 .stage-pct { color: var(--s2); }
+
+  .stage-3 { background: var(--s3-bg); border-color: var(--s3-bd); }
+  .stage-3 .stage-label, .stage-3 .stage-pct { color: var(--s3); }
+
+  .stage-4 { background: var(--s4-bg); border-color: var(--s4-bd); }
+  .stage-4 .stage-label, .stage-4 .stage-pct { color: var(--s4); }
 }

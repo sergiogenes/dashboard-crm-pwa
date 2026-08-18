@@ -36,8 +36,8 @@ export default function DealsPage() {
 
   if (status === 'loading' || !userId) {
     return (
-      <div className="flex h-96 flex-col items-center justify-center text-slate-400">
-        <div className="mb-4 h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+      <div className="flex h-96 flex-col items-center justify-center text-ink-2">
+        <div className="mb-4 h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         <p className="animate-pulse text-sm font-medium">
           Cargando solicitudes...
         </p>
@@ -49,11 +49,11 @@ export default function DealsPage() {
     <div className="space-y-6">
       {/* Sección de Encabezado */}
       <div>
-        <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-          <Wallet className="h-8 w-8 text-indigo-400" />
+        <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+          <Wallet className="h-8 w-8 text-accent" />
           Solicitudes y Contratos (Deals)
         </h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-ink-2">
           Monitor de solicitudes de microcréditos y estado del flujo de aprobación en el CRM.
         </p>
       </div>
@@ -61,94 +61,94 @@ export default function DealsPage() {
       {/* Tarjetas de Métricas (Dashboard Superior) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Métrica 1: Total Solicitado */}
-        <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/10 p-5 backdrop-blur-md">
+        <div className="flex items-center justify-between rounded-2xl border border-border bg-surface p-5">
           <div>
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-ink-3">
               Total Solicitado
             </span>
-            <span className="mt-1 block text-xl font-bold text-white">
+            <span className="mt-1 block text-xl font-bold text-ink">
               $
               {totalApplied.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
               })}
             </span>
-            <span className="mt-0.5 block text-[10px] text-slate-400">
+            <span className="mt-0.5 block text-[10px] text-ink-2">
               {dealsLength} solicitudes totales
             </span>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-2.5 text-indigo-400">
+          <div className="rounded-xl border border-border bg-surface-2 p-2.5 text-accent">
             <Wallet className="h-5 w-5" />
           </div>
         </div>
 
         {/* Métrica 2: En Proceso de Aprobación */}
-        <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/10 p-5 backdrop-blur-md">
+        <div className="flex items-center justify-between rounded-2xl border border-border bg-surface p-5">
           <div>
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-ink-3">
               En Evaluación
             </span>
-            <span className="mt-1 block text-xl font-bold text-indigo-400">
+            <span className="mt-1 block text-xl font-bold text-info">
               $
               {totalActiveAmount.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
               })}
             </span>
-            <span className="mt-0.5 block text-[10px] text-slate-400">
+            <span className="mt-0.5 block text-[10px] text-ink-2">
               {activeLoans.length} solicitudes activas
             </span>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-2.5 text-indigo-400">
+          <div className="rounded-xl border border-chip-bd bg-chip p-2.5 text-chip-ink">
             <TrendingUp className="h-5 w-5" />
           </div>
         </div>
 
         {/* Métrica 3: Desembolsado */}
-        <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/10 p-5 backdrop-blur-md">
+        <div className="flex items-center justify-between rounded-2xl border border-border bg-surface p-5">
           <div>
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-ink-3">
               Desembolsado
             </span>
-            <span className="mt-1 block text-xl font-bold text-emerald-400">
+            <span className="mt-1 block text-xl font-bold text-ok">
               $
               {totalDisbursedAmount.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
               })}
             </span>
-            <span className="mt-0.5 block text-[10px] text-slate-400">
+            <span className="mt-0.5 block text-[10px] text-ink-2">
               {disbursedLoans.length} créditos vigentes
             </span>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-2.5 text-emerald-400">
+          <div className="rounded-xl border border-ok-bd bg-ok-bg p-2.5 text-ok">
             <CheckCircle2 className="h-5 w-5" />
           </div>
         </div>
 
         {/* Métrica 4: Mora / Alerta */}
         <div
-          className={`flex items-center justify-between rounded-2xl border p-5 backdrop-blur-md transition-colors ${
+          className={`flex items-center justify-between rounded-2xl border p-5 transition-colors ${
             overdueCount > 0
-              ? 'border-rose-500/20 bg-rose-500/5'
-              : 'border-slate-800 bg-slate-900/10'
+              ? 'border-bad-bd bg-bad-bg'
+              : 'border-border bg-surface'
           }`}
         >
           <div>
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-ink-3">
               Créditos en Mora
             </span>
             <span
-              className={`mt-1 block text-xl font-bold ${overdueCount > 0 ? 'text-rose-500' : 'text-white'}`}
+              className={`mt-1 block text-xl font-bold ${overdueCount > 0 ? 'text-bad' : 'text-ink'}`}
             >
               {overdueCount}
             </span>
-            <span className="mt-0.5 block text-[10px] text-slate-400">
+            <span className="mt-0.5 block text-[10px] text-ink-2">
               Requieren gestión urgente
             </span>
           </div>
           <div
             className={`rounded-xl border p-2.5 ${
               overdueCount > 0
-                ? 'animate-pulse border-rose-500/20 bg-rose-500/10 text-rose-400'
-                : 'border-slate-800 bg-slate-900 text-slate-400'
+                ? 'animate-pulse border-bad-bd bg-bad-bg text-bad'
+                : 'border-border bg-surface-2 text-ink-2'
             }`}
           >
             <ShieldAlert className="h-5 w-5" />
@@ -157,11 +157,11 @@ export default function DealsPage() {
       </div>
 
       {/* Buscador y Barra de Filtros */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/20 p-5 backdrop-blur-md">
+      <div className="rounded-2xl border border-border bg-surface p-5">
         <div className="flex flex-col items-center gap-4 sm:flex-row">
           {/* Buscador de Prestatario / Comentarios */}
           <div className="relative w-full sm:flex-1">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-ink-3">
               <Search className="h-4.5 w-4.5" />
             </div>
             <input
@@ -169,19 +169,19 @@ export default function DealsPage() {
               placeholder="Buscar por prestatario o notas..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-4 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="block w-full rounded-xl border border-border bg-surface-2 py-2.5 pl-10 pr-4 text-xs text-ink placeholder-ink-3 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
 
           {/* Filtro por Etapa */}
           <div className="relative w-full sm:w-64">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-ink-3">
               <Filter className="h-4.5 w-4.5" />
             </div>
             <select
               value={filterStage}
               onChange={(e) => setFilterStage(e.target.value)}
-              className="block w-full cursor-pointer appearance-none rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-10 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="block w-full cursor-pointer appearance-none rounded-xl border border-border bg-surface-2 py-2.5 pl-10 pr-10 text-xs text-ink placeholder-ink-3 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="ALL">Todas las etapas</option>
               <option value="draft">Borrador</option>
@@ -192,7 +192,7 @@ export default function DealsPage() {
               <option value="refused">Rechazado</option>
               <option value="overdue">En Mora</option>
             </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[10px] text-slate-500">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[10px] text-ink-3">
               ▼
             </div>
           </div>

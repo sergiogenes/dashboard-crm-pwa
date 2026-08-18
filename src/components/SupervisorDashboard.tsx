@@ -24,6 +24,7 @@ import {
   Check,
   X,
 } from 'lucide-react'
+import { BADGE } from '@/lib/theme/status'
 
 interface SalespersonPerf {
   id: string
@@ -284,8 +285,8 @@ export default function SupervisorDashboard() {
 
   if (loading) {
     return (
-      <div className="flex h-96 flex-col items-center justify-center text-slate-400">
-        <Loader2 className="mb-4 h-10 w-10 animate-spin text-indigo-500" />
+      <div className="flex h-96 flex-col items-center justify-center text-ink-2">
+        <Loader2 className="mb-4 h-10 w-10 animate-spin text-primary" />
         <p className="animate-pulse text-sm font-medium">
           Cargando datos de supervisión...
         </p>
@@ -301,23 +302,23 @@ export default function SupervisorDashboard() {
     : 0
 
   return (
-    <div className="animate-fade-in space-y-8 text-white">
+    <div className="animate-fade-in space-y-8 text-ink">
       {/* Encabezado */}
       <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h1 className="bg-gradient-to-r from-indigo-200 via-slate-100 to-violet-200 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-3xl">
+          <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">
             Panel de Supervisión y Control
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-ink-2">
             Visualiza el progreso de desembolsos de tu equipo, administra
             prospectos y delega leads.
           </p>
         </div>
 
         {/* Configuración de Objetivo */}
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 backdrop-blur-sm">
+        <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3">
           <div className="text-right">
-            <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <span className="block text-[10px] font-semibold uppercase tracking-wider text-ink-2">
               Objetivo de Desembolsos
             </span>
             {isEditingGoal ? (
@@ -326,12 +327,12 @@ export default function SupervisorDashboard() {
                   type="number"
                   value={newGoal}
                   onChange={(e) => setNewGoal(e.target.value)}
-                  className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-24 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <button
                   onClick={handleUpdateGoal}
                   disabled={actionLoading}
-                  className="rounded-lg bg-emerald-500/20 p-1 text-emerald-400 hover:bg-emerald-500/30"
+                  className="rounded-lg bg-ok-bg p-1 text-ok hover:bg-ok-bd/40"
                 >
                   <Check className="h-3.5 w-3.5" />
                 </button>
@@ -340,13 +341,13 @@ export default function SupervisorDashboard() {
                     setIsEditingGoal(false)
                     setNewGoal(stats?.disbursementGoal.toString() || '')
                   }}
-                  className="rounded-lg bg-rose-500/20 p-1 text-rose-400 hover:bg-rose-500/30"
+                  className="rounded-lg bg-bad-bg p-1 text-bad hover:bg-bad-bd/40"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             ) : (
-              <span className="mt-0.5 block text-sm font-extrabold text-indigo-400">
+              <span className="mt-0.5 block text-sm font-bold text-primary">
                 ${stats?.disbursementGoal.toLocaleString()} USD
               </span>
             )}
@@ -354,7 +355,7 @@ export default function SupervisorDashboard() {
           {!isEditingGoal && (
             <button
               onClick={() => setIsEditingGoal(true)}
-              className="rounded-lg bg-slate-800 p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white"
+              className="rounded-lg bg-surface-2 p-1.5 text-ink-2 hover:bg-border-2 hover:text-ink"
             >
               <Edit3 className="h-4 w-4" />
             </button>
@@ -365,108 +366,108 @@ export default function SupervisorDashboard() {
       {/* Grid de Estadísticas */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {/* Desembolsos */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30 p-6 backdrop-blur">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-2">
                 Total Desembolsado
               </p>
-              <h3 className="mt-2 text-2xl font-black text-white">
+              <h3 className="mt-2 text-2xl font-bold text-ink">
                 ${stats?.totalDisbursed.toLocaleString()} USD
               </h3>
             </div>
-            <div className="rounded-xl bg-emerald-500/10 p-3 text-emerald-400">
+            <div className="rounded-xl bg-ok-bg p-3 text-ok">
               <DollarSign className="h-6 w-6" />
             </div>
           </div>
           <div className="mt-4 space-y-2">
-            <div className="flex justify-between text-xs text-slate-500">
+            <div className="flex justify-between text-xs text-ink-3">
               <span>Progreso de Meta</span>
-              <span className="font-semibold text-emerald-400">
+              <span className="font-semibold text-ok">
                 {disbursementProgress}%
               </span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
               <div
                 style={{ width: `${disbursementProgress}%` }}
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                className="h-full rounded-full bg-ok"
               />
             </div>
           </div>
         </div>
 
         {/* Total Operaciones */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30 p-6 backdrop-blur">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-2">
                 Total Operaciones (Deals)
               </p>
-              <h3 className="mt-2 text-3xl font-extrabold text-white">
+              <h3 className="mt-2 text-3xl font-bold text-ink">
                 {stats?.totalOperations}
               </h3>
             </div>
-            <div className="rounded-xl bg-indigo-500/10 p-3 text-indigo-400">
+            <div className="rounded-xl bg-chip p-3 text-chip-ink">
               <TrendingUp className="h-6 w-6" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+          <div className="mt-4 flex items-center gap-2 text-xs text-ink-3">
+            <span className="h-1.5 w-1.5 rounded-full bg-info" />
             <span>Operaciones de préstamos activas</span>
           </div>
         </div>
 
         {/* En aprobación */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30 p-6 backdrop-blur">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-2">
                 En Aprobación
               </p>
-              <h3 className="mt-2 text-3xl font-extrabold text-white">
+              <h3 className="mt-2 text-3xl font-bold text-ink">
                 {stats?.pendingApprovalCount}
               </h3>
             </div>
-            <div className="rounded-xl bg-amber-500/10 p-3 text-amber-400">
+            <div className="rounded-xl bg-warn-bg p-3 text-warn">
               <CheckCircle2 className="h-6 w-6" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <div className="mt-4 flex items-center gap-2 text-xs text-ink-3">
+            <span className="h-1.5 w-1.5 rounded-full bg-warn" />
             <span>Pendientes de desembolsar</span>
           </div>
         </div>
 
         {/* Vendedores a cargo */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30 p-6 backdrop-blur">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface p-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-2">
                 Asesores a Cargo
               </p>
-              <h3 className="mt-2 text-3xl font-extrabold text-white">
+              <h3 className="mt-2 text-3xl font-bold text-ink">
                 {stats?.salespeople.length}
               </h3>
             </div>
-            <div className="rounded-xl bg-violet-500/10 p-3 text-violet-400">
+            <div className="rounded-xl border border-border bg-surface-2 p-3 text-accent">
               <Users className="h-6 w-6" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+          <div className="mt-4 flex items-center gap-2 text-xs text-ink-3">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             <span>Vendedores en tu equipo</span>
           </div>
         </div>
       </div>
 
       {/* Selector de Pestañas */}
-      <div className="flex border-b border-slate-800">
+      <div className="flex border-b border-border">
         <button
           onClick={() => setActiveTab('team')}
           className={`border-b-2 px-6 py-3 text-sm font-semibold transition-colors ${
             activeTab === 'team'
-              ? 'border-indigo-500 text-white'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-primary text-ink'
+              : 'border-transparent text-ink-2 hover:text-ink'
           }`}
         >
           Rendimiento del Equipo
@@ -475,8 +476,8 @@ export default function SupervisorDashboard() {
           onClick={() => setActiveTab('import')}
           className={`border-b-2 px-6 py-3 text-sm font-semibold transition-colors ${
             activeTab === 'import'
-              ? 'border-indigo-500 text-white'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-primary text-ink'
+              : 'border-transparent text-ink-2 hover:text-ink'
           }`}
         >
           Cargar Prospectos (CSV)
@@ -485,8 +486,8 @@ export default function SupervisorDashboard() {
           onClick={() => setActiveTab('assign')}
           className={`border-b-2 px-6 py-3 text-sm font-semibold transition-colors ${
             activeTab === 'assign'
-              ? 'border-indigo-500 text-white'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-primary text-ink'
+              : 'border-transparent text-ink-2 hover:text-ink'
           }`}
         >
           Asignar Contactos ({stats?.prospects.length || 0})
@@ -497,8 +498,8 @@ export default function SupervisorDashboard() {
       <div className="space-y-6">
         {/* Pestaña: Rendimiento del Equipo */}
         {activeTab === 'team' && (
-          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/20 backdrop-blur-md">
-            <div className="flex items-center justify-between border-b border-slate-800 px-6 py-5">
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <div className="flex items-center justify-between border-b border-border px-6 py-5">
               <h4 className="text-base font-bold">
                 Listado de Vendedores del Equipo
               </h4>
@@ -506,19 +507,19 @@ export default function SupervisorDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-800 bg-slate-900/20 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-border bg-surface-2 text-xs font-semibold uppercase tracking-wider text-ink-3">
                     <th className="px-6 py-4">Vendedor</th>
                     <th className="px-6 py-4 text-center">Deals Totales</th>
                     <th className="px-6 py-4 text-center">Deals Pendientes</th>
                     <th className="px-6 py-4 text-right">Total Desembolsado</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
+                <tbody className="divide-y divide-border">
                   {stats?.salespeople.length === 0 ? (
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-8 text-center text-slate-500"
+                        className="py-8 text-center text-ink-3"
                       >
                         No hay vendedores asignados a tu cuenta de supervisor.
                       </td>
@@ -527,34 +528,34 @@ export default function SupervisorDashboard() {
                     stats?.salespeople.map((sp) => (
                       <tr
                         key={sp.id}
-                        className="transition-colors hover:bg-slate-900/10"
+                        className="transition-colors hover:bg-surface-2"
                       >
                         <td className="px-6 py-4">
-                          <div className="font-semibold text-white">
+                          <div className="font-semibold text-ink">
                             {sp.name}
                           </div>
-                          <div className="mt-0.5 text-xs text-slate-400">
+                          <div className="mt-0.5 text-xs text-ink-2">
                             {sp.email}
                           </div>
-                          <div className="mt-1 text-[10px] text-slate-500">
+                          <div className="mt-1 text-[10px] text-ink-3">
                             CRM Owner ID: {sp.crmOwnerId}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-center font-semibold text-slate-300">
+                        <td className="px-6 py-4 text-center font-semibold text-ink-2">
                           {sp.totalDeals}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span
                             className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
                               sp.pendingDeals > 0
-                                ? 'bg-amber-500/15 text-amber-400'
-                                : 'bg-slate-800 text-slate-500'
+                                ? 'bg-warn-bg text-warn'
+                                : 'bg-surface-2 text-ink-3'
                             }`}
                           >
                             {sp.pendingDeals}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right font-bold text-emerald-400">
+                        <td className="px-6 py-4 text-right font-bold text-ok">
                           ${sp.totalDisbursed.toLocaleString()} USD
                         </td>
                       </tr>
@@ -569,31 +570,31 @@ export default function SupervisorDashboard() {
         {/* Pestaña: Cargar Prospectos (CSV) */}
         {activeTab === 'import' && (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-800 bg-slate-950/20 p-6 backdrop-blur-md">
+            <div className="rounded-2xl border border-border bg-surface p-6">
               <h4 className="mb-2 text-base font-bold">Importar Archivo CSV</h4>
-              <p className="mb-6 text-xs text-slate-400">
+              <p className="mb-6 text-xs text-ink-2">
                 Sube una lista de contactos en formato `.csv` con separador de
                 comas (,) o punto y coma (;). El archivo debe contener
                 encabezados para
-                <strong className="text-indigo-400">
+                <strong className="text-primary">
                   {' '}
                   DNI/Cédula, Nombre y Email
                 </strong>{' '}
                 (el teléfono es opcional).
               </p>
 
-              <div className="relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-800 bg-slate-950/40 p-8 text-center transition-colors hover:border-indigo-500/50">
+              <div className="relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-surface-2 p-8 text-center transition-colors hover:border-primary/50">
                 <input
                   type="file"
                   accept=".csv"
                   onChange={handleFileChange}
                   className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 />
-                <UploadCloud className="mb-3 h-10 w-10 text-indigo-400" />
-                <span className="text-sm font-semibold text-white">
+                <UploadCloud className="mb-3 h-10 w-10 text-primary" />
+                <span className="text-sm font-semibold text-ink">
                   Selecciona tu archivo CSV
                 </span>
-                <span className="mt-1 text-xs text-slate-500">
+                <span className="mt-1 text-xs text-ink-3">
                   O arrastra el archivo aquí
                 </span>
               </div>
@@ -602,14 +603,14 @@ export default function SupervisorDashboard() {
               {parsedLeads.length > 0 && (
                 <div className="mt-8 space-y-4">
                   <div className="flex items-center justify-between">
-                    <h5 className="text-sm font-bold text-slate-200">
+                    <h5 className="text-sm font-bold text-ink">
                       Vista Previa: {parsedLeads.length} prospectos listos para
                       cargar
                     </h5>
                     <button
                       onClick={handleImportProspects}
                       disabled={actionLoading}
-                      className="flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2 text-xs font-bold text-white shadow-lg transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                      className="flex items-center gap-2 rounded-xl bg-cta-bg px-4 py-2 text-xs font-bold text-cta-ink shadow-lg transition-colors hover:bg-accent disabled:opacity-50"
                     >
                       {actionLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -620,9 +621,9 @@ export default function SupervisorDashboard() {
                     </button>
                   </div>
 
-                  <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/50">
+                  <div className="max-h-60 overflow-y-auto rounded-xl border border-border bg-surface">
                     <table className="w-full text-left text-xs">
-                      <thead className="sticky top-0 bg-slate-900 uppercase tracking-wider text-slate-400">
+                      <thead className="sticky top-0 bg-surface-2 uppercase tracking-wider text-ink-3">
                         <tr>
                           <th className="px-4 py-2.5">DNI/Cédula</th>
                           <th className="px-4 py-2.5">Nombre</th>
@@ -630,7 +631,7 @@ export default function SupervisorDashboard() {
                           <th className="px-4 py-2.5">Teléfono</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                      <tbody className="divide-y divide-border text-ink-2">
                         {parsedLeads.map((pl, idx) => (
                           <tr key={idx}>
                             <td className="px-4 py-2 font-mono">
@@ -651,19 +652,19 @@ export default function SupervisorDashboard() {
 
               {/* Logs del resultado de importación */}
               {importResult && (
-                <div className="mt-8 space-y-3 rounded-xl border border-slate-800 bg-slate-950/50 p-5">
-                  <h5 className="flex items-center gap-2 text-sm font-bold text-slate-200">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                <div className="mt-8 space-y-3 rounded-xl border border-border bg-surface p-5">
+                  <h5 className="flex items-center gap-2 text-sm font-bold text-ink">
+                    <CheckCircle2 className="h-4 w-4 text-ok" />
                     Resultado de la Carga
                   </h5>
                   <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-center text-emerald-400">
+                    <div className="rounded-lg border border-ok-bd bg-ok-bg p-3 text-center text-ok">
                       <span className="block text-xl font-bold">
                         {importResult.importedCount}
                       </span>
                       <span>Prospectos Creados</span>
                     </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-900 p-3 text-center text-slate-400">
+                    <div className="rounded-lg border border-border bg-surface-2 p-3 text-center text-ink-2">
                       <span className="block text-xl font-bold">
                         {importResult.skippedCount}
                       </span>
@@ -673,11 +674,11 @@ export default function SupervisorDashboard() {
 
                   {importResult.errors.length > 0 && (
                     <div className="mt-4">
-                      <span className="mb-2 flex items-center gap-1.5 text-xs font-bold text-rose-400">
+                      <span className="mb-2 flex items-center gap-1.5 text-xs font-bold text-bad">
                         <AlertCircle className="h-3.5 w-3.5" />
                         Listado de Errores de Validación:
                       </span>
-                      <ul className="max-h-36 list-disc space-y-1 overflow-y-auto rounded-lg border border-rose-500/15 bg-rose-500/5 p-3 pl-5 text-[11px] text-rose-300">
+                      <ul className="max-h-36 list-disc space-y-1 overflow-y-auto rounded-lg border border-bad-bd bg-bad-bg p-3 pl-5 text-[11px] text-bad">
                         {importResult.errors.map((err, idx) => (
                           <li key={idx}>{err}</li>
                         ))}
@@ -692,12 +693,12 @@ export default function SupervisorDashboard() {
 
         {/* Pestaña: Asignar Contactos */}
         {activeTab === 'assign' && (
-          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/20 backdrop-blur-md">
-            <div className="border-b border-slate-800 px-6 py-5">
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <div className="border-b border-border px-6 py-5">
               <h4 className="text-base font-bold">
                 Listado de prospectos sin asignar
               </h4>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-ink-2">
                 Selecciona a un vendedor de tu equipo para derivarle cada
                 prospecto. El vendedor podrá gestionarlo en su dashboard local
                 inmediatamente.
@@ -706,19 +707,19 @@ export default function SupervisorDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-800 bg-slate-900/20 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-border bg-surface-2 text-xs font-semibold uppercase tracking-wider text-ink-3">
                     <th className="px-6 py-4">Prospecto</th>
                     <th className="px-6 py-4">Contacto</th>
                     <th className="px-6 py-4 text-center">Estado Sinc.</th>
                     <th className="px-6 py-4 text-right">Asignar a Vendedor</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
+                <tbody className="divide-y divide-border">
                   {stats?.prospects.length === 0 ? (
                     <tr>
                       <td
                         colSpan={4}
-                        className="py-12 text-center text-slate-500"
+                        className="py-12 text-center text-ink-3"
                       >
                         No tienes prospectos pendientes de asignación. Carga un
                         archivo CSV para ingresar nuevos prospectos.
@@ -728,32 +729,30 @@ export default function SupervisorDashboard() {
                     stats?.prospects.map((pr) => (
                       <tr
                         key={pr.id}
-                        className="transition-colors hover:bg-slate-900/10"
+                        className="transition-colors hover:bg-surface-2"
                       >
                         <td className="px-6 py-4">
-                          <div className="font-semibold text-white">
+                          <div className="font-semibold text-ink">
                             {pr.firstName} {pr.lastName}
                           </div>
-                          <div className="mt-0.5 font-mono text-[10px] text-slate-500">
+                          <div className="mt-0.5 font-mono text-[10px] text-ink-3">
                             DNI/Cédula: {pr.documentId}
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-xs text-slate-300">
+                          <div className="text-xs text-ink-2">
                             {pr.email}
                           </div>
                           {pr.phone && (
-                            <div className="mt-0.5 text-[10px] text-slate-400">
+                            <div className="mt-0.5 text-[10px] text-ink-2">
                               {pr.phone}
                             </div>
                           )}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                              pr.crmSynced
-                                ? 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
-                                : 'border border-amber-500/20 bg-amber-500/10 text-amber-400'
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                              pr.crmSynced ? BADGE.ok : BADGE.warn
                             }`}
                           >
                             {pr.crmSynced ? 'Sincronizado' : 'Pendiente Sync'}
@@ -769,7 +768,7 @@ export default function SupervisorDashboard() {
                                   [pr.id]: e.target.value,
                                 })
                               }
-                              className="w-48 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-48 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-ink placeholder-ink-3 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             >
                               <option value="">Selecciona Vendedor...</option>
                               {salespeopleList.map((sp) => (
@@ -783,7 +782,7 @@ export default function SupervisorDashboard() {
                               disabled={
                                 actionLoading || !selectedSalespeople[pr.id]
                               }
-                              className="flex items-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs font-bold text-white shadow shadow-indigo-500/10 transition-colors hover:bg-indigo-600 disabled:opacity-40"
+                              className="flex items-center gap-1.5 rounded-xl bg-cta-bg px-3 py-2 text-xs font-bold text-cta-ink shadow transition-colors hover:bg-accent disabled:opacity-40"
                             >
                               <UserPlus className="h-3.5 w-3.5" />
                               Derivar

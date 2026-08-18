@@ -125,29 +125,29 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-12 sm:px-6 lg:px-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg px-4 py-12 sm:px-6 lg:px-8">
       {/* Luces de fondo (Gradientes Ambientales) */}
-      <div className="absolute top-1/4 left-1/4 -z-10 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-600/10 blur-[100px]" />
-      <div className="absolute bottom-1/4 right-1/4 -z-10 h-96 w-96 translate-x-1/2 translate-y-1/2 rounded-full bg-violet-600/10 blur-[100px]" />
+      <div className="absolute top-1/4 left-1/4 -z-10 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/10 blur-[100px]" />
+      <div className="absolute bottom-1/4 right-1/4 -z-10 h-96 w-96 translate-x-1/2 translate-y-1/2 rounded-full bg-accent-2/20 blur-[100px]" />
 
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/30">
-            <Activity className="h-6 w-6 text-white animate-pulse" />
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-cta-bg shadow-lg">
+            <Activity className="h-6 w-6 text-cta-ink animate-pulse" />
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-white sm:text-4xl bg-gradient-to-r from-indigo-200 via-indigo-100 to-violet-200 bg-clip-text text-transparent">
+          <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
             {isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}
           </h2>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-ink-2">
             {isLogin ? 'Accede al panel del CRM Offline-First' : 'Registra un nuevo usuario para las pruebas'}
           </p>
         </div>
 
         <div className="mt-8">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 shadow-2xl backdrop-blur-xl">
+          <div className="rounded-2xl border border-border bg-surface p-8 shadow-2xl">
             {error && (
-              <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-200">
-                <AlertCircle className="h-5 w-5 shrink-0 text-red-400" />
+              <div className="mb-6 flex items-start gap-3 rounded-lg border border-bad-bd bg-bad-bg p-4 text-sm text-bad">
+                <AlertCircle className="h-5 w-5 shrink-0 text-bad" />
                 <span>{error}</span>
               </div>
             )}
@@ -155,12 +155,12 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
             <form className="space-y-6" onSubmit={handleSubmit} method="POST">
               {!isLogin && (
                 <div>
-                  <label htmlFor="name" className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <label htmlFor="name" className="block text-xs font-semibold uppercase tracking-wider text-ink-2">
                     Nombre Completo
                   </label>
                   <div className="relative mt-1">
                     <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                      <User className="h-5 w-5 text-slate-500" />
+                      <User className="h-5 w-5 text-ink-3" />
                     </div>
                     <input
                       id="name"
@@ -170,19 +170,19 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Juan Pérez"
-                      className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="block w-full rounded-xl border border-border bg-surface py-3 pl-10 pr-4 text-sm text-ink placeholder-ink-3 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
                 </div>
               )}
 
               <div>
-                <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-wider text-ink-2">
                   Email
                 </label>
                 <div className="relative mt-1">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                    <Mail className="h-5 w-5 text-slate-500" />
+                    <Mail className="h-5 w-5 text-ink-3" />
                   </div>
                   <input
                     id="email"
@@ -192,18 +192,18 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="email@ejemplo.com"
-                    className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="block w-full rounded-xl border border-border bg-surface py-3 pl-10 pr-4 text-sm text-ink placeholder-ink-3 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-wider text-ink-2">
                   Contraseña
                 </label>
                 <div className="relative mt-1">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                    <Lock className="h-5 w-5 text-slate-500" />
+                    <Lock className="h-5 w-5 text-ink-3" />
                   </div>
                   <input
                     id="password"
@@ -213,7 +213,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="block w-full rounded-xl border border-slate-800 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="block w-full rounded-xl border border-border bg-surface py-3 pl-10 pr-4 text-sm text-ink placeholder-ink-3 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
               </div>
@@ -222,7 +222,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
                 <div className="flex justify-end">
                   <Link
                     href="/auth/forgot-password"
-                    className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+                    className="text-xs font-medium text-primary hover:text-accent transition-colors"
                   >
                     ¿Olvidaste tu contraseña?
                   </Link>
@@ -233,10 +233,10 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="group relative flex w-full justify-center rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 py-3.5 px-4 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:from-indigo-600 hover:to-violet-700 hover:shadow-indigo-500/35 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50"
+                  className="group relative flex w-full justify-center rounded-xl bg-cta-bg py-3.5 px-4 text-sm font-semibold text-cta-ink shadow-lg transition-all hover:bg-accent focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface disabled:opacity-50"
                 >
                   {loading ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-cta-ink border-t-transparent" />
                   ) : (
                     <span className="flex items-center gap-2">
                       {isLogin ? 'Ingresar' : 'Registrarse'}
@@ -254,7 +254,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
                   setIsLogin(!isLogin)
                   setError(null)
                 }}
-                className="text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="text-sm font-medium text-primary hover:text-accent transition-colors"
               >
                 {isLogin
                   ? '¿No tienes una cuenta? Regístrate gratis'

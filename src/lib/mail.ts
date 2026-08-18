@@ -16,17 +16,17 @@ export async function sendPasswordResetEmail(to: string, resetLink: string): Pro
     subject: 'Restablecer contraseña - CRM Dashboard',
     text: `Para restablecer tu contraseña, ingresa al siguiente enlace:\n${resetLink}\nEste enlace expirará en 30 minutos.`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-        <h2 style="color: #4f46e5; text-align: center;">Restablecer Contraseña</h2>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #DFE7E4; border-radius: 8px;">
+        <h2 style="color: #11383F; text-align: center;">Restablecer Contraseña</h2>
         <p>Hola,</p>
         <p>Has recibido este correo porque se solicitó un restablecimiento de contraseña para tu cuenta en el CRM Dashboard.</p>
         <p>Para continuar con el restablecimiento, haz clic en el siguiente botón:</p>
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${resetLink}" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Restablecer Contraseña</a>
+          <a href="${resetLink}" style="background-color: #11383F; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Restablecer Contraseña</a>
         </div>
         <p>Este enlace expirará en <strong>30 minutos</strong> y solo puede ser utilizado una vez. Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
-        <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 20px 0;" />
-        <p style="font-size: 12px; color: #888888; text-align: center;">Dashboard CRM PWA - Seguridad y Sincronización</p>
+        <hr style="border: 0; border-top: 1px solid #EDF2F0; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #526C71; text-align: center;">Dashboard CRM PWA - Seguridad y Sincronización</p>
       </div>
     `,
   }
