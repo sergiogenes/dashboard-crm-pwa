@@ -4,6 +4,7 @@ import React from 'react'
 import { Calendar, Cloud, Database, Inbox } from 'lucide-react'
 import { LocalDeal } from '@/lib/db'
 import { getDealStageConfig } from '@/lib/theme/status'
+import { formatGs } from '@/lib/format'
 
 interface DealTableProps {
   filteredDeals: LocalDeal[]
@@ -72,7 +73,7 @@ export default function DealTable({
                       </td>
                     )}
                     <td className="px-6 py-4 font-mono font-medium text-ink">
-                      ${deal.amount.toLocaleString()} USD
+                      {formatGs(deal.amount)}
                     </td>
                     <td className="text-ink-2 px-6 py-4">
                       {deal.termMonths} meses

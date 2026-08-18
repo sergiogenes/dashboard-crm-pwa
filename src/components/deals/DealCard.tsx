@@ -4,6 +4,7 @@ import React from 'react'
 import { Cloud, Database, Inbox } from 'lucide-react'
 import { LocalDeal } from '@/lib/db'
 import { getDealStageConfig } from '@/lib/theme/status'
+import { formatGs } from '@/lib/format'
 
 interface DealCardProps {
   filteredDeals: LocalDeal[]
@@ -57,7 +58,7 @@ export default function DealCard({
                     Monto
                   </span>
                   <span className="mt-0.5 block font-mono text-xs font-bold text-ink">
-                    ${deal.amount.toLocaleString()}
+                    {formatGs(deal.amount)}
                   </span>
                 </div>
                 <div>
