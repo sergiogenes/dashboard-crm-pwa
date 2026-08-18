@@ -65,11 +65,11 @@ export default function Sidebar() {
             <img
               src="/negofin-logo.png"
               alt="NegoFIN"
-              className={isCollapsed ? 'h-6 w-auto' : 'h-9 w-auto'}
+              className={isCollapsed ? 'h-6 w-auto shrink-0' : 'h-8 w-auto shrink-0'}
             />
             {!isCollapsed && (
-              <span className="ml-2.5 truncate border-l border-border-2 pl-2.5 text-xs font-bold uppercase tracking-wider text-ink-2">
-                Portal
+              <span className="ml-2.5 truncate border-l border-border-2 pl-2.5 text-[9px] font-bold uppercase leading-tight tracking-wide text-ink-3">
+                Portal de<br />Vendedores
               </span>
             )}
           </div>
