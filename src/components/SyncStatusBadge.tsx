@@ -4,6 +4,7 @@ import { useSync } from '@/hooks/useSync'
 import { localDb } from '@/lib/db'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Cloud, CloudOff, CloudUpload, AlertCircle, RefreshCw } from 'lucide-react'
+import { SYNC_STATUS_STYLES } from '@/lib/theme/status'
 
 interface SyncStatusBadgeProps {
   userId: string | undefined
@@ -39,15 +40,16 @@ export default function SyncStatusBadge({ userId }: SyncStatusBadgeProps) {
 
   // 1. Caso Offline
   if (!isOnline) {
+    const s = SYNC_STATUS_STYLES.offline
     return (
       <div
         title="Estás trabajando sin conexión. Los cambios se guardarán localmente."
-        className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/80 px-3.5 py-1.5 text-xs font-medium text-slate-400 backdrop-blur"
+        className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur ${s.container}`}
       >
-        <CloudOff className="h-4 w-4 text-slate-500" />
+        <CloudOff className={`h-4 w-4 ${s.icon}`} />
         <span className="hidden md:inline">Sin Conexión</span>
         {unsyncedCount > 0 && (
-          <span className="flex h-5 items-center justify-center rounded-full bg-slate-700 px-2 text-[10px] font-bold text-slate-200">
+          <span className="flex h-5 items-center justify-center rounded-full bg-surface-2 px-2 text-[10px] font-bold text-ink-2">
             {unsyncedCount}
           </span>
         )}
@@ -57,9 +59,10 @@ export default function SyncStatusBadge({ userId }: SyncStatusBadgeProps) {
 
   // 2. Caso Sincronizando
   if (syncStatus === 'syncing') {
+    const s = SYNC_STATUS_STYLES.syncing
     return (
-      <div className="flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3.5 py-1.5 text-xs font-medium text-blue-300 backdrop-blur">
-        <CloudUpload className="h-4 w-4 text-blue-400 animate-pulse" />
+      <div className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur ${s.container}`}>
+        <CloudUpload className={`h-4 w-4 animate-pulse ${s.icon}`} />
         <span className="hidden md:inline">Sincronizando...</span>
       </div>
     )
@@ -67,30 +70,32 @@ export default function SyncStatusBadge({ userId }: SyncStatusBadgeProps) {
 
   // 3. Caso Errores persistentes
   if (syncStatus === 'error') {
+    const s = SYNC_STATUS_STYLES.error
     return (
       <button
         onClick={handleSyncClick}
         title={`Error al sincronizar: ${syncError}. Haz clic para reintentar.`}
-        className="flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-3.5 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/25 backdrop-blur"
+        className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors hover:bg-bad-bg/70 backdrop-blur ${s.container}`}
       >
-        <AlertCircle className="h-4 w-4 text-red-400" />
+        <AlertCircle className={`h-4 w-4 ${s.icon}`} />
         <span className="hidden md:inline">Error de Sincronización</span>
-        <RefreshCw className="h-3.5 w-3.5 text-red-400" />
+        <RefreshCw className={`h-3.5 w-3.5 ${s.icon}`} />
       </button>
     )
   }
 
   // 4. Caso Cambios locales pendientes (Online)
   if (unsyncedCount > 0) {
+    const s = SYNC_STATUS_STYLES.pending
     return (
       <button
         onClick={handleSyncClick}
         title="Hay cambios locales pendientes. Haz clic para sincronizar ahora."
-        className="flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-3.5 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/25 backdrop-blur animate-pulse"
+        className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors hover:bg-warn-bg/70 backdrop-blur ${s.container}`}
       >
-        <CloudUpload className="h-4 w-4 text-amber-400" />
+        <CloudUpload className={`h-4 w-4 ${s.icon}`} />
         <span className="hidden md:inline">Cambios Pendientes</span>
-        <span className="flex h-5 items-center justify-center rounded-full bg-amber-500/20 px-2 text-[10px] font-bold text-amber-200">
+        <span className="flex h-5 items-center justify-center rounded-full bg-warn-bd px-2 text-[10px] font-bold text-warn">
           {unsyncedCount}
         </span>
       </button>
@@ -98,12 +103,13 @@ export default function SyncStatusBadge({ userId }: SyncStatusBadgeProps) {
   }
 
   // 5. Sincronizado Completamente (Online)
+  const s = SYNC_STATUS_STYLES.synced
   return (
     <div
       title="Todos los datos están en la nube."
-      className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-300 backdrop-blur"
+      className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium backdrop-blur ${s.container}`}
     >
-      <Cloud className="h-4 w-4 text-emerald-400" />
+      <Cloud className={`h-4 w-4 ${s.icon}`} />
       <span className="hidden md:inline">Sincronizado</span>
     </div>
   )

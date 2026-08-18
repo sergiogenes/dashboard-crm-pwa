@@ -1,14 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Arimo } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 
-const inter = Inter({ subsets: ["latin"] });
+const arimo = Arimo({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-arimo",
+});
 
 export const metadata: Metadata = {
-  title: "PWA CRM Dashboard",
-  description: "Dashboard CRM offline-first con sincronización asíncrona a HubSpot",
+  title: "Portal de Vendedores",
+  description: "Portal de vendedores offline-first con sincronización asíncrona a HubSpot",
   manifest: "/manifest.json",
   icons: {
     icon: "/favicon.png",
@@ -18,7 +22,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "CRM Dashboard",
+    title: "Portal Vendedores",
   },
   formatDetection: {
     telephone: false,
@@ -29,7 +33,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#4f46e5",
+  themeColor: "#11383F",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -41,8 +45,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className="h-full bg-slate-950 text-slate-100 selection:bg-indigo-500 selection:text-white">
-      <body className={`${inter.className} h-full min-h-screen antialiased`}>
+    <html lang="es" className={`h-full bg-bg text-ink selection:bg-primary selection:text-white ${arimo.variable}`}>
+      <body className="font-sans h-full min-h-screen antialiased">
         <Providers>
           <ServiceWorkerRegistration />
           {children}

@@ -32,10 +32,10 @@ export default function LeadTable({
   handleDeleteLead,
 }: LeadTableProps) {
   return (
-    <div className="hidden overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-md md:block">
+    <div className="hidden overflow-hidden rounded-2xl border border-border bg-surface md:block">
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left text-sm text-slate-300">
-          <thead className="border-b border-slate-800 bg-slate-900/60 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <table className="w-full border-collapse text-left text-sm text-ink-2">
+          <thead className="border-b border-border bg-surface-2 text-xs font-semibold uppercase tracking-wider text-ink-3">
             <tr>
               <th scope="col" className="px-6 py-4">
                 Nombre
@@ -63,31 +63,31 @@ export default function LeadTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60 bg-transparent">
+          <tbody className="divide-y divide-border-2 bg-transparent">
             {filteredLeads.length > 0 ? (
               filteredLeads.map((lead) => (
                 <tr
                   key={lead.id || lead.tempId}
-                  className={`cursor-pointer transition-colors hover:bg-slate-900/40 ${
+                  className={`cursor-pointer transition-colors hover:bg-surface-2 ${
                     selectedLeadForInvoice?.id === lead.id ||
                     selectedLeadForInvoice?.tempId === lead.tempId
-                      ? 'border-l-2 border-indigo-500 bg-slate-900/60'
+                      ? 'border-l-2 border-primary bg-surface-2'
                       : ''
                   }`}
                   onClick={() => setSelectedLeadForInvoice(lead)}
                 >
                   <td className="px-6 py-4">
-                    <div className="font-semibold text-white">
+                    <div className="font-semibold text-ink">
                       {lead.firstName} {lead.lastName}
                     </div>
                     {lead.documentId && (
-                      <div className="mt-0.5 font-mono text-[11px] text-slate-500">
+                      <div className="mt-0.5 font-mono text-[11px] text-ink-3">
                         ID: {lead.documentId}
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-slate-300">{lead.email}</td>
-                  <td className="px-6 py-4 text-slate-400">
+                  <td className="px-6 py-4 text-ink-2">{lead.email}</td>
+                  <td className="px-6 py-4 text-ink-2">
                     <div>{lead.phone || '-'}</div>
                     {(() => {
                       const status = getWhatsAppWindowStatus(lead)
@@ -95,14 +95,14 @@ export default function LeadTable({
                       return (
                         <div className="mt-1 flex items-center gap-1.5">
                           <span className={`h-1.5 w-1.5 rounded-full ${
-                            status.active 
-                              ? 'bg-emerald-500 animate-pulse' 
-                              : 'bg-slate-600'
+                            status.active
+                              ? 'bg-ok animate-pulse'
+                              : 'bg-ink-3'
                           }`} />
                           <span className={`text-[10px] font-semibold tracking-wide ${
-                            status.active 
-                              ? 'text-emerald-400' 
-                              : 'text-slate-500'
+                            status.active
+                              ? 'text-ok'
+                              : 'text-ink-3'
                           }`}>
                             WA: {status.text}
                           </span>
@@ -111,7 +111,7 @@ export default function LeadTable({
                     })()}
                   </td>
                   <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1 rounded border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs text-slate-300">
+                    <span className="inline-flex items-center gap-1 rounded border border-border bg-surface-2 px-2.5 py-1 text-xs text-ink-2">
                       {getCompanyName(lead.companyId)}
                     </span>
                   </td>
@@ -124,12 +124,12 @@ export default function LeadTable({
                     onClick={(e) => e.stopPropagation()}
                   >
                     {lead.synced ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-ok-bd bg-ok-bg px-2.5 py-0.5 text-xs font-medium text-ok">
                         <Cloud className="h-3.5 w-3.5" />
                         CloudDb
                       </span>
                     ) : (
-                      <span className="inline-flex animate-pulse items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400">
+                      <span className="inline-flex animate-pulse items-center gap-1.5 rounded-full border border-warn-bd bg-warn-bg px-2.5 py-0.5 text-xs font-medium text-warn">
                         <Database className="h-3.5 w-3.5" />
                         LocalDb
                       </span>
@@ -142,7 +142,7 @@ export default function LeadTable({
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setSelectedLeadForInvoice(lead)}
-                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-indigo-400"
+                        className="rounded-lg p-1.5 text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
                         title="Ver Historial Crediticio"
                       >
                         <FileText className="h-4 w-4" />
@@ -155,8 +155,8 @@ export default function LeadTable({
                         disabled={lead.userId !== userId}
                         className={`rounded-lg p-1.5 transition-colors ${
                           lead.userId !== userId
-                            ? 'text-slate-750 cursor-not-allowed opacity-40'
-                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                            ? 'text-ink-3 cursor-not-allowed opacity-40'
+                            : 'text-ink-2 hover:bg-surface-2 hover:text-ink'
                         }`}
                         title={
                           lead.userId !== userId
@@ -171,8 +171,8 @@ export default function LeadTable({
                         disabled={lead.userId !== userId}
                         className={`rounded-lg p-1.5 transition-colors ${
                           lead.userId !== userId
-                            ? 'text-slate-750 cursor-not-allowed opacity-40'
-                            : 'text-slate-400 hover:bg-red-500/20 hover:text-red-400'
+                            ? 'text-ink-3 cursor-not-allowed opacity-40'
+                            : 'text-ink-2 hover:bg-bad-bg hover:text-bad'
                         }`}
                         title={
                           lead.userId !== userId
@@ -190,7 +190,7 @@ export default function LeadTable({
               <tr>
                 <td
                   colSpan={8}
-                  className="px-6 py-12 text-center text-slate-500"
+                  className="px-6 py-12 text-center text-ink-3"
                 >
                   No se encontraron leads registrados.
                 </td>

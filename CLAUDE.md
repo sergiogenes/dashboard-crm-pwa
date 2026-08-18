@@ -1,4 +1,4 @@
-# Dashboard CRM PWA — HPN (Proyecto 307)
+# Portal de Vendedores — HPN (Proyecto 307)
 
 ## Propósito
 PWA de gestión comercial para una financiera de microcréditos. Permite a vendedores gestionar contactos (leads), empresas, solicitudes de préstamo (deals) y actividades (notas, llamadas, WhatsApp) de forma offline-first, sincronizando con MongoDB Atlas como base intermedia y HubSpot como CRM externo.
@@ -115,6 +115,20 @@ node scripts/migrate-encryption.js
 
 ## Patrones de Desarrollo Importantes
 
+### Paleta de colores centralizada (obligatorio para todo componente nuevo)
+
+La app usa la **Paleta B · 2026** (manual de marca Negofin) mediante un sistema de tokens centralizado. **Ningún componente nuevo ni modificación de uno existente debe usar un color literal de Tailwind** (`bg-indigo-500`, `text-slate-400`, `border-emerald-500/20`, gradientes `from-*-to-*`, etc.). En su lugar:
+
+1. **Fuente de verdad única:** `src/app/globals.css` (`:root`) define las variables CSS (`--bg`, `--surface`, `--surface-2`, `--border`, `--border-2`, `--ink`/`-2`/`-3`, `--primary`, `--accent`/`-2`, `--ok`/`-bg`/`-bd`, `--warn`/`-bg`/`-bd`, `--bad`/`-bg`/`-bd`, `--info`, `--chip`/`-bd`/`-ink`, `--badge`, `--cta-bg`/`-ink`, `--s1..s4` + variantes). Un futuro cambio de paleta se hace editando **solo ese archivo**.
+2. **Clases Tailwind semánticas:** `tailwind.config.ts` mapea esos tokens a utilities normales — `bg-surface`, `text-ink-2`, `border-border`, `bg-primary`, `text-ok`, `bg-ok-bg`, `border-ok-bd`, `bg-chip`, `text-chip-ink`, `bg-cta-bg`, `text-cta-ink`, etc. Usalas igual que cualquier clase de Tailwind.
+3. **Patrón "badge suave"** (fondo tenue + borde + texto del mismo significado): `border-{ok|warn|bad|chip}-bd bg-{ok|warn|bad|chip}-bg text-{ok|warn|bad|chip-ink}`. No agregar sufijos de opacidad (`/10`, `/20`) — los tokens ya son tintes pre-mezclados para la paleta clara.
+4. **CTA / acciones primarias:** `bg-cta-bg text-cta-ink` con `hover:bg-accent`. No usar gradientes (`bg-gradient-to-r from-* to-*`) — Paleta B no tiene gradientes de marca.
+5. **Etapas del embudo/pipeline** (si se necesita ese patrón visual): usar las clases de componente `.stage-1`..`.stage-4` de `globals.css` (fondo con gradiente + borde), no reinventar con utilities sueltas.
+6. **Helper de color por estado/semántica:** antes de escribir un `switch`/`if` que devuelva clases por estado (aprobado/rechazado/pendiente/sincronizado/etc.), revisar `src/lib/theme/status.ts` — ya centraliza `getDealStageConfig`, `getScoringBadge`, `getLeadStatusBadge`, `getSyncStatusStyle`, `getActivityTypeConfig`, `getDealStepStyle`, y expone `BADGE` con los 5 estilos base (`neutral`/`info`/`ok`/`warn`/`bad`). Agregar ahí cualquier mapeo nuevo en vez de duplicarlo en el componente.
+7. **Tipografía:** Arimo (vía `next/font/google`, variable `--font-arimo`), aplicada globalmente por `font-sans` — no importar otra fuente en componentes individuales.
+
+Antes de escribir un componente nuevo, mirar un componente ya migrado (`src/components/deals/DealCard.tsx`, `src/components/SyncStatusBadge.tsx`) como referencia del patrón esperado.
+
 ### Agregar una nueva entidad sincronizable
 Seguir el checklist en el orden exacto:
 1. `src/lib/db.ts` — agregar interfaz local + incrementar versión Dexie
@@ -143,7 +157,7 @@ Seguir el checklist en el orden exacto:
 
 ## Estado Actual
 
-**Rama activa:** `feature/encryption-and-sliding-cache`
+**Rama activa:** `feature/palette-b-2026`
 
 **Implementado (completo):**
 - Clean Architecture (entidades, repositorios, infraestructura)
@@ -154,6 +168,7 @@ Seguir el checklist en el orden exacto:
 - Webhooks desacoplados (CRM y WhatsApp)
 - Integración WhatsApp (Infobip) con UI de chat
 - Scoring crediticio en tiempo real
+- Sistema de tokens de color centralizado (Paleta B · 2026 + tipografía Arimo) — ver sección "Paleta de colores centralizada" arriba
 
 **Pendiente de implementar (próxima feature):**
 - **Modelo de Franquicias/Royalties** — ver diseño en memoria del proyecto (`project_franchise_pending`)

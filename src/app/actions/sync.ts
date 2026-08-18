@@ -637,6 +637,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
     })),
     activities: updatedActivities.map((act) => ({
       id: act._id.toString(),
+      tempId: act.tempId,
       leadId: act.leadId.toString(),
       userId: act.userId,
       type: act.type,
@@ -651,6 +652,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
     })),
     deals: updatedDeals.map((d) => ({
       id: d._id.toString(),
+      tempId: d.tempId,
       leadId: d.leadId.toString(),
       userId: d.userId,
       name: d.name,
@@ -824,11 +826,12 @@ async function syncActivitiesForLead(
 /**
  * Función auxiliar para sincronizar deals del lead desde HubSpot a MongoDB.
  */
-async function syncDealsForLead(
+export async function syncDealsForLead(
   leadDoc: ILeadSchema,
   crmLeadCrmId: string,
   crm: ICRMProvider,
   userId: string,
+  options: { bypassRecencyGuard?: boolean } = {},
 ) {
   try {
     const crmDeals = await crm.fetchDealsByLead(crmLeadCrmId)
@@ -866,11 +869,16 @@ async function syncDealsForLead(
             if (!existingDeal.crmSynced) {
               continue
             }
-            // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de los últimos 20 segundos)
-            const timeSinceLastUpdate =
-              Date.now() - existingDeal.updatedAt.getTime()
-            if (timeSinceLastUpdate < 20000) {
-              continue
+            // Evitar sobreescribir si hubo una actualización local muy reciente (dentro de
+            // los últimos 20 segundos). Este resguardo es para el polling de auto-sanación
+            // en background; cuando la llamada viene de un webhook, el CRM es la fuente de
+            // verdad del cambio en tiempo real y este resguardo no debe aplicar.
+            if (!options.bypassRecencyGuard) {
+              const timeSinceLastUpdate =
+                Date.now() - existingDeal.updatedAt.getTime()
+              if (timeSinceLastUpdate < 20000) {
+                continue
+              }
             }
           }
 
@@ -983,6 +991,7 @@ export async function searchGlobalLeads(query: string) {
 
     if (isCrmOnline) {
       const crmLeads = await crm.searchLeads(cleanQuery)
+      const importedIds: any[] = []
       for (const crmLead of crmLeads) {
         if (crmLead.crmId) {
           // Determinar dueño local
@@ -1005,7 +1014,7 @@ export async function searchGlobalLeads(query: string) {
 
           const hasPendingChanges = existingLead?.crmSynced === false
 
-          await Lead.findOneAndUpdate(
+          const upsertedLead = await Lead.findOneAndUpdate(
             { crmId: crmLead.crmId },
             {
               $setOnInsert: {
@@ -1026,13 +1035,23 @@ export async function searchGlobalLeads(query: string) {
                     }),
               },
             },
-            { upsert: true },
+            { upsert: true, new: true },
           )
+          if (upsertedLead) importedIds.push(upsertedLead._id)
         }
       }
 
-      // Volver a consultar MongoDB para incluir los leads recién importados
-      localLeads = await Lead.find(mongoQuery).limit(20)
+      // Volver a consultar MongoDB incluyendo tanto el match exacto por
+      // hash como los leads recién importados desde HubSpot (que pueden
+      // haber sido encontrados por nombre/teléfono, no solo DNI o email)
+      localLeads = await Lead.find({
+        deleted: false,
+        $or: [
+          { documentIdHash: hash(cleanQuery) },
+          { emailHash: hash(cleanQueryLower) },
+          { _id: { $in: importedIds } },
+        ],
+      }).limit(20)
     }
   } catch (err) {
     console.error(

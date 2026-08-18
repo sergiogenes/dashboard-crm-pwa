@@ -22,6 +22,7 @@ import { localDb, LocalLead, LocalActivity, LocalDeal, LocalInvoice } from '@/li
 import { sendWhatsAppMessage } from '@/app/actions/whatsapp'
 import { useSession } from 'next-auth/react'
 import { encryptActivity } from '@/lib/client-crypto'
+import { getActivityTypeConfig, getScoringBadge, getDealStepStyle } from '@/lib/theme/status'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
 const getTomorrowString = () => {
@@ -177,40 +178,9 @@ export default function LeadDrawer({
   const overdueInvoices = invoices?.filter((inv) => inv.status === 'OVERDUE') || []
   const paymentRatio = invoices && invoices.length > 0 ? Math.round((paidInvoices.length / invoices.length) * 100) : 100
 
-  // Configuración de estilos según tipo de actividad en Timeline
-  const getActivityConfig = (type: LocalActivity['type']) => {
-    switch (type) {
-      case 'CALL':
-        return { icon: Phone, bg: 'bg-blue-500/10', border: 'border-blue-500/20', text: 'text-blue-400' }
-      case 'MEETING':
-        return { icon: Calendar, bg: 'bg-purple-500/10', border: 'border-purple-500/20', text: 'text-purple-400' }
-      case 'EMAIL':
-        return { icon: Mail, bg: 'bg-amber-500/10', border: 'border-amber-500/20', text: 'text-amber-400' }
-      case 'TASK':
-        return { icon: CheckSquare, bg: 'bg-rose-500/10', border: 'border-rose-500/20', text: 'text-rose-400' }
-      case 'WHATSAPP':
-        return { icon: MessageCircle, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400' }
-      case 'NOTE':
-      default:
-        return { icon: MessageSquare, bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400' }
-    }
-  }
-
-  const getScoringBadge = (scoring?: string) => {
-    switch (scoring) {
-      case 'A+':
-      case 'A':
-      case 'B':
-        return <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">Score {scoring} (Excelente)</span>
-      case 'C':
-      case 'D':
-        return <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-400">Score {scoring} (Riesgo Medio)</span>
-      case 'E':
-      case 'F':
-        return <span className="inline-flex items-center rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-bold text-red-400">Score {scoring} (Riesgo Alto)</span>
-      default:
-        return <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs font-bold text-slate-400">Sin Score</span>
-    }
+  const renderScoringBadge = (scoring?: string) => {
+    const { label, style } = getScoringBadge(scoring, 'full')
+    return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${style}`}>{label}</span>
   }
 
   // Registrar una actividad
@@ -290,6 +260,13 @@ export default function LeadDrawer({
         }
       }
 
+      // Si se define un recordatorio y la actividad no es ya una Tarea,
+      // se registra por separado como una Task acompañante (para que se
+      // sincronice como Task en el CRM), dejando la actividad principal
+      // sin recordatorio propio.
+      const needsCompanionTask =
+        reminderTimestamp !== undefined && activityType !== 'TASK'
+
       const newMainAct: LocalActivity = {
         tempId: crypto.randomUUID(),
         leadId: selectedLeadId,
@@ -298,7 +275,7 @@ export default function LeadDrawer({
         title: titleVal,
         body: bodyVal,
         timestamp: now,
-        reminderDate: reminderTimestamp,
+        reminderDate: needsCompanionTask ? undefined : reminderTimestamp,
         reminderRead: false,
         synced: false,
         createdAt: now,
@@ -307,6 +284,25 @@ export default function LeadDrawer({
 
       const encryptedMainAct = await encryptActivity(newMainAct, dbKey)
       await localDb.activities.put(encryptedMainAct)
+
+      if (needsCompanionTask) {
+        const newTaskAct: LocalActivity = {
+          tempId: crypto.randomUUID(),
+          leadId: selectedLeadId,
+          userId,
+          type: 'TASK',
+          title: titleVal,
+          body: bodyVal,
+          timestamp: now,
+          reminderDate: reminderTimestamp,
+          reminderRead: false,
+          synced: false,
+          createdAt: now,
+          updatedAt: now,
+        }
+        const encryptedTaskAct = await encryptActivity(newTaskAct, dbKey)
+        await localDb.activities.put(encryptedTaskAct)
+      }
 
       setActivityTitle('')
       setActivityBody('')
@@ -431,50 +427,50 @@ export default function LeadDrawer({
       {/* Backdrop overlay */}
       <div
         onClick={() => setSelectedLeadForInvoice(null)}
-        className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-300"
+        className="fixed inset-0 z-40 bg-ink/60 backdrop-blur-sm transition-opacity duration-300"
       />
-      <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-slate-800 bg-slate-950/95 shadow-2xl">
+      <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
         {/* Cabecera del Drawer */}
-        <div className="flex items-center justify-between border-b border-slate-800 p-6">
+        <div className="flex items-center justify-between border-b border-border p-6">
           <div>
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-primary">
               Detalle del Contacto
             </span>
-            <h3 className="mt-1 text-lg font-bold text-white">
+            <h3 className="mt-1 text-lg font-bold text-ink">
               {selectedLeadForInvoice.firstName} {selectedLeadForInvoice.lastName}
             </h3>
-            <p className="mt-0.5 font-mono text-xs text-slate-500">
+            <p className="mt-0.5 font-mono text-xs text-ink-3">
               {selectedLeadForInvoice.email}
             </p>
             {selectedLeadForInvoice.documentId && (
-              <p className="mt-0.5 font-mono text-xs text-slate-400">
+              <p className="mt-0.5 font-mono text-xs text-ink-2">
                 DNI/Cédula: {selectedLeadForInvoice.documentId}
               </p>
             )}
           </div>
           <button
             onClick={() => setSelectedLeadForInvoice(null)}
-            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-900 hover:text-white"
+            className="rounded-lg p-1.5 text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {isForeign && (
-          <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-6 py-2.5 text-xs text-amber-400">
-            <ShieldAlert className="h-4.5 w-4.5 shrink-0 text-amber-400" />
+          <div className="flex items-center gap-2 border-b border-warn-bd bg-warn-bg px-6 py-2.5 text-xs text-warn">
+            <ShieldAlert className="h-4.5 w-4.5 shrink-0 text-warn" />
             <span>Contacto de otro asesor. Modo Solo Lectura habilitado.</span>
           </div>
         )}
 
         {/* Selectores de Pestaña */}
-        <div className="flex border-b border-slate-800 bg-slate-900/10 px-6">
+        <div className="flex border-b border-border bg-surface-2/50 px-6">
           <button
             onClick={() => setActiveTab('finance')}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
               activeTab === 'finance'
-                ? 'border-indigo-500 text-white'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'border-primary text-ink'
+                : 'border-transparent text-ink-3 hover:text-ink-2'
             }`}
           >
             Finanzas
@@ -483,8 +479,8 @@ export default function LeadDrawer({
             onClick={() => setActiveTab('activities')}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
               activeTab === 'activities'
-                ? 'border-indigo-500 text-white'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'border-primary text-ink'
+                : 'border-transparent text-ink-3 hover:text-ink-2'
             }`}
           >
             Actividades
@@ -493,8 +489,8 @@ export default function LeadDrawer({
             onClick={() => setActiveTab('deals')}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
               activeTab === 'deals'
-                ? 'border-indigo-500 text-white'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'border-primary text-ink'
+                : 'border-transparent text-ink-3 hover:text-ink-2'
             }`}
           >
             Préstamos
@@ -504,8 +500,8 @@ export default function LeadDrawer({
         {/* Contenido del Drawer */}
         <div className="flex-1 overflow-y-auto p-6">
           {isLoadingForeign ? (
-            <div className="flex h-64 flex-col items-center justify-center text-slate-500">
-              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+            <div className="flex h-64 flex-col items-center justify-center text-ink-3">
+              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               <p className="animate-pulse text-xs">
                 Cargando detalles desde el servidor...
               </p>
@@ -513,35 +509,35 @@ export default function LeadDrawer({
           ) : activeTab === 'finance' ? (
             <div className="space-y-6">
               {/* Sección: Resumen de Score */}
-              <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+              <div className="space-y-4 rounded-xl border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-400">
+                  <span className="text-xs font-medium text-ink-2">
                     Scoring Crediticio
                   </span>
-                  {getScoringBadge(selectedLeadForInvoice.scoring)}
+                  {renderScoringBadge(selectedLeadForInvoice.scoring)}
                 </div>
-                <div className="grid grid-cols-3 gap-2 border-t border-slate-800/50 pt-2">
+                <div className="grid grid-cols-3 gap-2 border-t border-border-2 pt-2">
                   <div>
-                    <span className="block text-[9px] uppercase text-slate-500">
+                    <span className="block text-[9px] uppercase text-ink-3">
                       Total Adeudado
                     </span>
-                    <span className="text-rose-450 mt-0.5 block truncate text-xs font-bold">
+                    <span className="text-bad mt-0.5 block truncate text-xs font-bold">
                       ${totalBalanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div>
-                    <span className="block text-[9px] uppercase text-slate-500">
+                    <span className="block text-[9px] uppercase text-ink-3">
                       Cumplimiento
                     </span>
-                    <span className="mt-0.5 block text-xs font-bold text-emerald-400">
+                    <span className="mt-0.5 block text-xs font-bold text-ok">
                       {paymentRatio}%
                     </span>
                   </div>
                   <div>
-                    <span className="block text-[9px] uppercase text-slate-500">
+                    <span className="block text-[9px] uppercase text-ink-3">
                       Facturas
                     </span>
-                    <span className="mt-0.5 block text-xs font-bold text-white">
+                    <span className="mt-0.5 block text-xs font-bold text-ink">
                       {invoices?.length || 0}
                     </span>
                   </div>
@@ -550,8 +546,8 @@ export default function LeadDrawer({
 
               {/* Alertas de Vencimiento */}
               {overdueInvoices.length > 0 && (
-                <div className="flex gap-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-xs text-rose-300">
-                  <ShieldAlert className="h-5 w-5 shrink-0 text-rose-400" />
+                <div className="flex gap-3 rounded-xl border border-bad-bd bg-bad-bg p-4 text-xs text-bad">
+                  <ShieldAlert className="h-5 w-5 shrink-0 text-bad" />
                   <div>
                     <span className="block font-bold">¡Facturas Vencidas!</span>
                     <span>
@@ -563,7 +559,7 @@ export default function LeadDrawer({
 
               {/* Listado de Facturas */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
                   Detalle de Facturas
                 </h4>
                 <div className="space-y-3">
@@ -571,21 +567,21 @@ export default function LeadDrawer({
                     invoices.map((inv) => (
                       <div
                         key={inv.id}
-                        className="flex items-start justify-between rounded-xl border border-slate-900 bg-slate-950 p-4"
+                        className="flex items-start justify-between rounded-xl border border-border-2 bg-surface p-4"
                       >
                         <div className="space-y-1.5">
-                          <span className="block font-mono text-[10px] text-slate-500">
+                          <span className="block font-mono text-[10px] text-ink-3">
                             INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}
                           </span>
-                          <span className="block text-sm font-bold text-white">
+                          <span className="block text-sm font-bold text-ink">
                             ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
                           </span>
                           {inv.status !== 'PAID' && inv.balanceDue !== undefined && inv.balanceDue !== inv.amount && (
-                            <span className="text-slate-455 block text-[10px] font-semibold text-rose-400">
+                            <span className="block text-[10px] font-semibold text-bad">
                               Pendiente: ${inv.balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
                             </span>
                           )}
-                          <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                          <div className="flex items-center gap-1 text-[10px] text-ink-3">
                             <Calendar className="h-3 w-3" />
                             <span>Vencimiento: {new Date(inv.dueDate).toLocaleDateString()}</span>
                           </div>
@@ -593,22 +589,22 @@ export default function LeadDrawer({
 
                         <div className="text-right">
                           {inv.status === 'PAID' && (
-                            <span className="inline-flex items-center rounded border border-emerald-500/10 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                            <span className="inline-flex items-center rounded border border-ok-bd bg-ok-bg px-2 py-0.5 text-[10px] font-bold text-ok">
                               Pagado
                             </span>
                           )}
                           {inv.status === 'PENDING' && (
-                            <span className="inline-flex items-center rounded border border-amber-500/10 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                            <span className="inline-flex items-center rounded border border-warn-bd bg-warn-bg px-2 py-0.5 text-[10px] font-bold text-warn">
                               Pendiente
                             </span>
                           )}
                           {inv.status === 'OVERDUE' && (
-                            <span className="inline-flex items-center rounded border border-rose-500/10 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400">
+                            <span className="inline-flex items-center rounded border border-bad-bd bg-bad-bg px-2 py-0.5 text-[10px] font-bold text-bad">
                               Vencido
                             </span>
                           )}
                           {inv.paymentDate && (
-                            <p className="mt-1 text-[9px] text-slate-500">
+                            <p className="mt-1 text-[9px] text-ink-3">
                               Pago: {new Date(inv.paymentDate).toLocaleDateString()}
                             </p>
                           )}
@@ -616,7 +612,7 @@ export default function LeadDrawer({
                       </div>
                     ))
                   ) : (
-                    <p className="py-6 text-center text-xs text-slate-500">
+                    <p className="py-6 text-center text-xs text-ink-3">
                       No se encontraron facturas asociadas a este contacto.
                     </p>
                   )}
@@ -629,21 +625,21 @@ export default function LeadDrawer({
               {!isForeign ? (
                 <form
                   onSubmit={handleAddActivity}
-                  className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 backdrop-blur-md"
+                  className="space-y-4 rounded-xl border border-border bg-surface-2/20 p-4 backdrop-blur-md"
                 >
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
                     Registrar Actividad
                   </h4>
 
                   <div className={activityType === 'WHATSAPP' ? 'block' : 'grid grid-cols-2 gap-3'}>
                     <div>
-                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                         Tipo
                       </label>
                       <select
                         value={activityType}
                         onChange={(e) => setActivityType(e.target.value as any)}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                        className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
                       >
                         <option value="NOTE">Nota</option>
                         <option value="CALL">Llamada</option>
@@ -655,7 +651,7 @@ export default function LeadDrawer({
                     </div>
                     {activityType !== 'WHATSAPP' && (
                       <div>
-                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                           Título
                         </label>
                         <input
@@ -664,7 +660,7 @@ export default function LeadDrawer({
                           value={activityTitle}
                           onChange={(e) => setActivityTitle(e.target.value)}
                           required
-                          className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                          className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                         />
                       </div>
                     )}
@@ -674,8 +670,8 @@ export default function LeadDrawer({
                     <div className="space-y-4">
                       <div className={`rounded-lg p-2.5 text-center text-xs font-semibold border ${
                         wsActive
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                          : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                          ? 'bg-ok-bg border-ok-bd text-ok'
+                          : 'bg-warn-bg border-warn-bd text-warn'
                       }`}>
                         {wsText}
                       </div>
@@ -683,13 +679,13 @@ export default function LeadDrawer({
                       {!wsActive ? (
                         <div className="space-y-3">
                           <div>
-                            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                               Plantilla Homologada
                             </label>
                             <select
                               value={selectedTemplateName}
                               onChange={(e) => setSelectedTemplateName(e.target.value)}
-                              className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                              className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
                             >
                               {whatsappTemplates.map((tmpl) => (
                                 <option key={tmpl.name} value={tmpl.name}>
@@ -701,7 +697,7 @@ export default function LeadDrawer({
 
                           {activeTemplate.placeholders.map((ph, idx) => (
                             <div key={idx}>
-                              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-3">
                                 Variable {`{{${idx + 1}}}`} ({ph})
                               </label>
                               <input
@@ -713,16 +709,16 @@ export default function LeadDrawer({
                                   setPlaceholderValues(newVals)
                                 }}
                                 required
-                                className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                                className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                               />
                             </div>
                           ))}
 
-                          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
-                            <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                          <div className="rounded-lg border border-border bg-surface p-3">
+                            <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-ink-3">
                               Vista Previa del Mensaje (Solo Lectura)
                             </span>
-                            <p className="text-xs text-slate-300 whitespace-pre-wrap">
+                            <p className="text-xs text-ink-2 whitespace-pre-wrap">
                               {(() => {
                                 let preview = activeTemplate.text
                                 activeTemplate.placeholders.forEach((ph, idx) => {
@@ -736,7 +732,7 @@ export default function LeadDrawer({
                         </div>
                       ) : (
                         <div>
-                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                             Mensaje de WhatsApp (Texto Libre)
                           </label>
                           <textarea
@@ -745,7 +741,7 @@ export default function LeadDrawer({
                             onChange={(e) => setActivityBody(e.target.value)}
                             required
                             rows={3}
-                            className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                            className="block w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                           />
                         </div>
                       )}
@@ -753,7 +749,7 @@ export default function LeadDrawer({
                   ) : (
                     <>
                       <div>
-                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                           Descripción
                         </label>
                         <textarea
@@ -762,7 +758,7 @@ export default function LeadDrawer({
                           onChange={(e) => setActivityBody(e.target.value)}
                           required
                           rows={3}
-                          className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                          className="block w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                         />
                       </div>
 
@@ -782,11 +778,11 @@ export default function LeadDrawer({
                                 setReminderTimeOnly('')
                               }
                             }}
-                            className="h-3.5 w-3.5 cursor-pointer rounded border-slate-800 bg-slate-950 text-indigo-500 focus:ring-indigo-500"
+                            className="h-3.5 w-3.5 cursor-pointer rounded border-border bg-surface text-primary focus:ring-primary"
                           />
                           <label
                             htmlFor="enable-reminder"
-                            className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                            className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-ink-2"
                           >
                             Programar recordatorio
                           </label>
@@ -794,7 +790,7 @@ export default function LeadDrawer({
                         {showReminderPicker && (
                           <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1">
-                              <label className="text-[9px] font-bold uppercase text-slate-500">
+                              <label className="text-[9px] font-bold uppercase text-ink-3">
                                 Fecha
                               </label>
                               <div className="relative">
@@ -806,7 +802,7 @@ export default function LeadDrawer({
                                       try { dateInputRef.current.showPicker() } catch (_) {}
                                     }
                                   }}
-                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
+                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3 transition-colors hover:text-primary focus:outline-none"
                                 >
                                   <Calendar className="h-3.5 w-3.5" />
                                 </button>
@@ -821,12 +817,12 @@ export default function LeadDrawer({
                                     }
                                   }}
                                   required={showReminderPicker}
-                                  className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                                  className="block w-full cursor-pointer rounded-lg border border-border bg-surface py-1.5 pl-8 pr-2.5 text-xs text-ink focus:border-primary focus:outline-none"
                                 />
                               </div>
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[9px] font-bold uppercase text-slate-500">
+                              <label className="text-[9px] font-bold uppercase text-ink-3">
                                 Hora
                               </label>
                               <div className="relative">
@@ -838,7 +834,7 @@ export default function LeadDrawer({
                                       try { timeInputRef.current.showPicker() } catch (_) {}
                                     }
                                   }}
-                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-indigo-400 focus:outline-none"
+                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3 transition-colors hover:text-primary focus:outline-none"
                                 >
                                   <Clock className="h-3.5 w-3.5" />
                                 </button>
@@ -853,7 +849,7 @@ export default function LeadDrawer({
                                     }
                                   }}
                                   required={showReminderPicker}
-                                  className="block w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                                  className="block w-full cursor-pointer rounded-lg border border-border bg-surface py-1.5 pl-8 pr-2.5 text-xs text-ink focus:border-primary focus:outline-none"
                                 />
                               </div>
                             </div>
@@ -866,10 +862,10 @@ export default function LeadDrawer({
                   <button
                     type="submit"
                     disabled={isSubmittingActivity}
-                    className={`flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${
+                    className={`flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
                       activityType === 'WHATSAPP'
-                        ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/20'
-                        : 'bg-indigo-500 hover:bg-indigo-600 shadow-lg shadow-indigo-500/20'
+                        ? 'bg-ok text-white hover:bg-accent shadow-lg'
+                        : 'bg-cta-bg text-cta-ink hover:bg-accent shadow-lg'
                     }`}
                   >
                     {activityType === 'WHATSAPP' ? (
@@ -886,23 +882,23 @@ export default function LeadDrawer({
                   </button>
                 </form>
               ) : (
-                <div className="rounded-xl border border-slate-800 bg-slate-900/10 p-4 text-center text-xs text-slate-500">
+                <div className="rounded-xl border border-border bg-surface-2/10 p-4 text-center text-xs text-ink-3">
                   No tienes permisos para registrar actividades en este contacto (Modo Solo Lectura).
                 </div>
               )}
 
               {/* Timeline de Actividades */}
               <div className="space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
                   Historial de Actividades
                 </h4>
 
-                <div className="relative ml-3.5 space-y-6 border-l border-slate-800 pl-6">
+                <div className="relative ml-3.5 space-y-6 border-l border-border pl-6">
                   {activities && activities.length > 0 ? (
                     [...activities]
                       .sort((a, b) => b.timestamp - a.timestamp)
                       .map((act) => {
-                        const config = getActivityConfig(act.type)
+                        const config = getActivityTypeConfig(act.type)
                         const IconComponent = config.icon
                         const isWhatsApp = act.type === 'WHATSAPP'
                         const isOutgoing = act.title === 'WhatsApp Enviado'
@@ -920,9 +916,9 @@ export default function LeadDrawer({
                             <div className={`absolute -left-[38px] top-1.5 rounded-full border p-1 ${
                               isWhatsApp
                                 ? isOutgoing
-                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                  : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
-                                : `${config.bg} ${config.border} ${config.text}`
+                                  ? 'bg-ok-bg border-ok-bd text-ok'
+                                  : 'bg-chip border-chip-bd text-chip-ink'
+                                : config.style
                             } shadow-md`}>
                               <IconComponent className="h-3.5 w-3.5" />
                             </div>
@@ -934,38 +930,38 @@ export default function LeadDrawer({
                                   id={`activity-${act.id || act.tempId}`}
                                   className={`relative max-w-[85%] rounded-xl px-3 py-2 border transition-all duration-300 ${
                                     isOutgoing
-                                      ? 'bg-emerald-950/40 border-emerald-500/20 text-slate-100 rounded-tr-none'
-                                      : 'bg-slate-900 border-slate-850 text-slate-100 rounded-tl-none'
+                                      ? 'bg-ok-bg border-ok-bd text-ink rounded-tr-none'
+                                      : 'bg-chip border-chip-bd text-ink rounded-tl-none'
                                   } ${
                                     highlightedActivityId === act.id || highlightedActivityId === act.tempId
-                                      ? 'ring-2 ring-indigo-500 scale-[1.02]'
+                                      ? 'ring-2 ring-primary scale-[1.02]'
                                       : ''
                                   }`}
                                 >
                                   {/* Mensaje */}
-                                  <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
+                                  <p className="whitespace-pre-line text-xs leading-relaxed text-ink-2">
                                     {act.body}
                                   </p>
 
                                   {/* Meta: Hora y Estados */}
-                                  <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[9px] text-slate-500">
+                                  <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[9px] text-ink-3">
                                     <span className="font-mono">{formattedTime}</span>
 
                                     {/* Indicadores de Sincronización y Borrado */}
                                     <div className="flex items-center gap-1 opacity-40 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
                                       {act.synced ? (
                                         <span title="Sincronizado con HubSpot">
-                                          <Cloud className="h-3 w-3 text-emerald-400" />
+                                          <Cloud className="h-3 w-3 text-ok" />
                                         </span>
                                       ) : (
                                         <span title="Guardado localmente, pendiente de sincronización">
-                                          <Database className="h-3 w-3 animate-pulse text-amber-500" />
+                                          <Database className="h-3 w-3 animate-pulse text-warn" />
                                         </span>
                                       )}
 
                                       <button
                                         onClick={() => handleDeleteActivity(act)}
-                                        className="rounded p-0.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-red-400"
+                                        className="rounded p-0.5 text-ink-3 transition-colors hover:bg-surface-2 hover:text-bad"
                                         title="Eliminar mensaje de WhatsApp"
                                       >
                                         <Trash2 className="h-2.5 w-2.5" />
@@ -980,16 +976,16 @@ export default function LeadDrawer({
                                 id={`activity-${act.id || act.tempId}`}
                                 className={`space-y-2 rounded-xl border p-4 transition-all duration-500 ${
                                   highlightedActivityId === act.id || highlightedActivityId === act.tempId
-                                    ? 'scale-[1.02] border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/20'
-                                    : 'border-slate-900 bg-slate-950/80'
+                                    ? 'scale-[1.02] border-primary bg-chip ring-2 ring-primary/20'
+                                    : 'border-border-2 bg-surface/80'
                                 }`}
                               >
                                 <div className="flex items-start justify-between">
                                   <div>
-                                    <span className="block font-mono text-[9px] text-slate-500">
+                                    <span className="block font-mono text-[9px] text-ink-3">
                                       {new Date(act.timestamp).toLocaleString()}
                                     </span>
-                                    <h5 className="mt-0.5 text-xs font-bold text-white">
+                                    <h5 className="mt-0.5 text-xs font-bold text-ink">
                                       {act.reminderDate ? `Recordatorio: ${act.title}` : act.title}
                                     </h5>
                                   </div>
@@ -997,16 +993,16 @@ export default function LeadDrawer({
                                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                                     {act.synced ? (
                                       <span title="Sincronizado con HubSpot">
-                                        <Cloud className="h-3.5 w-3.5 text-emerald-500" />
+                                        <Cloud className="h-3.5 w-3.5 text-ok" />
                                       </span>
                                     ) : (
                                       <span title="Guardado localmente, pendiente de sincronización">
-                                        <Database className="h-3.5 w-3.5 animate-pulse text-amber-500" />
+                                        <Database className="h-3.5 w-3.5 animate-pulse text-warn" />
                                       </span>
                                     )}
                                     <button
                                       onClick={() => handleDeleteActivity(act)}
-                                      className="rounded p-1 text-slate-600 transition-colors hover:bg-slate-900 hover:text-red-400"
+                                      className="rounded p-1 text-ink-3 transition-colors hover:bg-surface-2 hover:text-bad"
                                       title="Eliminar actividad"
                                     >
                                       <Trash2 className="h-3 w-3" />
@@ -1014,23 +1010,23 @@ export default function LeadDrawer({
                                   </div>
                                 </div>
 
-                                <p className="whitespace-pre-line text-xs leading-relaxed text-slate-400">
+                                <p className="whitespace-pre-line text-xs leading-relaxed text-ink-2">
                                   {act.body}
                                 </p>
 
                                 {act.reminderDate && (
-                                  <div className="mt-2 flex max-w-md flex-col gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-950/40 p-2.5">
-                                    <div className="flex items-center gap-1.5 text-[10px] text-indigo-300">
-                                      <Bell className="h-3.5 w-3.5 animate-pulse text-indigo-400" />
+                                  <div className="mt-2 flex max-w-md flex-col gap-1.5 rounded-lg border border-chip-bd bg-chip p-2.5">
+                                    <div className="flex items-center gap-1.5 text-[10px] text-chip-ink">
+                                      <Bell className="h-3.5 w-3.5 animate-pulse text-chip-ink" />
                                       <span className="font-medium">
                                         Recordatorio: {new Date(act.reminderDate).toLocaleString()}
                                       </span>
                                       {act.reminderRead ? (
-                                        <span className="ml-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-1.5 py-0.5 text-[8px] text-indigo-200">
+                                        <span className="ml-1 rounded border border-chip-bd bg-surface px-1.5 py-0.5 text-[8px] text-chip-ink">
                                           Leído
                                         </span>
                                       ) : (
-                                        <span className="ml-1 rounded border border-amber-500/30 bg-amber-500/20 px-1.5 py-0.5 text-[8px] text-amber-200">
+                                        <span className="ml-1 rounded border border-warn-bd bg-warn-bg px-1.5 py-0.5 text-[8px] text-warn">
                                           Activo
                                         </span>
                                       )}
@@ -1041,7 +1037,7 @@ export default function LeadDrawer({
                                           <button
                                             type="button"
                                             onClick={() => handleMarkReminderAsRead(act)}
-                                            className="flex items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/20 px-2 py-1 text-[9px] font-bold text-indigo-300 transition-colors hover:bg-indigo-500/30 hover:text-indigo-200"
+                                            className="flex items-center gap-1 rounded border border-chip-bd bg-surface px-2 py-1 text-[9px] font-bold text-chip-ink transition-colors hover:bg-chip"
                                           >
                                             <CheckSquare className="h-3 w-3" />
                                             Marcar Leído
@@ -1050,7 +1046,7 @@ export default function LeadDrawer({
                                         <button
                                           type="button"
                                           onClick={() => handleRemoveReminder(act)}
-                                          className="flex items-center gap-1 rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[9px] font-bold text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-350"
+                                          className="flex items-center gap-1 rounded border border-bad-bd bg-bad-bg px-2 py-1 text-[9px] font-bold text-bad transition-colors hover:bg-bad-bd/40"
                                         >
                                           <X className="h-3 w-3" />
                                           Quitar Alarma
@@ -1065,7 +1061,7 @@ export default function LeadDrawer({
                         )
                       })
                   ) : (
-                    <p className="-ml-3.5 py-6 text-center text-xs text-slate-500">
+                    <p className="-ml-3.5 py-6 text-center text-xs text-ink-3">
                       No se encontraron actividades registradas para este contacto.
                     </p>
                   )}
@@ -1078,15 +1074,15 @@ export default function LeadDrawer({
               {!isForeign ? (
                 <form
                   onSubmit={handleAddDeal}
-                  className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 backdrop-blur-md"
+                  className="space-y-4 rounded-xl border border-border bg-surface-2/20 p-4 backdrop-blur-md"
                 >
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
                     Nueva Solicitud de Préstamo
                   </h4>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                         Monto (USD)
                       </label>
                       <input
@@ -1096,17 +1092,17 @@ export default function LeadDrawer({
                         onChange={(e) => setDealAmount(e.target.value)}
                         required
                         min="1"
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                        className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                         Plazo (Meses)
                       </label>
                       <select
                         value={dealTermMonths}
                         onChange={(e) => setDealTermMonths(e.target.value)}
-                        className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                        className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
                       >
                         <option value="3">3 meses</option>
                         <option value="6">6 meses</option>
@@ -1118,7 +1114,7 @@ export default function LeadDrawer({
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                       Tasa de Interés (%)
                     </label>
                     <input
@@ -1129,12 +1125,12 @@ export default function LeadDrawer({
                       onChange={(e) => setDealInterestRate(e.target.value)}
                       required
                       min="0"
-                      className="block w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                      className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
                       Notas / Justificación
                     </label>
                     <textarea
@@ -1142,28 +1138,28 @@ export default function LeadDrawer({
                       value={dealNotes}
                       onChange={(e) => setDealNotes(e.target.value)}
                       rows={3}
-                      className="block w-full resize-none rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                      className="block w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                     />
                   </div>
 
                   <button
                     type="submit"
                     disabled={isSubmittingDeal}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2 text-xs font-semibold text-white hover:bg-indigo-600 disabled:opacity-50"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-cta-bg py-2 text-xs font-semibold text-cta-ink hover:bg-accent disabled:opacity-50"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Enviar Solicitud
                   </button>
                 </form>
               ) : (
-                <div className="rounded-xl border border-slate-800 bg-slate-900/10 p-4 text-center text-xs text-slate-500">
+                <div className="rounded-xl border border-border bg-surface-2/10 p-4 text-center text-xs text-ink-3">
                   No tienes permisos para solicitar préstamos para este contacto (Modo Solo Lectura).
                 </div>
               )}
 
               {/* Listado Préstamos */}
               <div className="space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
                   Solicitudes de Préstamos
                 </h4>
                 <div className="space-y-4">
@@ -1189,16 +1185,16 @@ export default function LeadDrawer({
                       }
 
                       return (
-                        <div key={deal.id || deal.tempId} className="space-y-3 rounded-xl border border-slate-900 bg-slate-950 p-4">
+                        <div key={deal.id || deal.tempId} className="space-y-3 rounded-xl border border-border-2 bg-surface p-4">
                           <div className="flex items-start justify-between">
                             <div>
-                              <span className="block font-mono text-[10px] text-slate-500">
+                              <span className="block font-mono text-[10px] text-ink-3">
                                 Creado: {new Date(deal.createdAt).toLocaleDateString()}
                               </span>
-                              <h5 className="mt-0.5 text-sm font-bold text-white">
+                              <h5 className="mt-0.5 text-sm font-bold text-ink">
                                 ${deal.amount.toLocaleString()} USD
                               </h5>
-                              <p className="mt-0.5 text-[10px] text-slate-400">
+                              <p className="mt-0.5 text-[10px] text-ink-2">
                                 Plazo: {deal.termMonths} meses | Tasa: {deal.interestRate}%
                               </p>
                             </div>
@@ -1206,17 +1202,17 @@ export default function LeadDrawer({
                             <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                               {deal.synced ? (
                                 <span title="Sincronizado con el CRM">
-                                  <Cloud className="h-3.5 w-3.5 text-emerald-500" />
+                                  <Cloud className="h-3.5 w-3.5 text-ok" />
                                 </span>
                               ) : (
                                 <span title="Pendiente de Sincronización">
-                                  <Database className="h-3.5 w-3.5 animate-pulse text-amber-500" />
+                                  <Database className="h-3.5 w-3.5 animate-pulse text-warn" />
                                 </span>
                               )}
                               {!isForeign && (
                                 <button
                                   onClick={() => handleDeleteDeal(deal)}
-                                  className="rounded p-1 text-slate-600 transition-colors hover:bg-slate-900 hover:text-red-400"
+                                  className="rounded p-1 text-ink-3 transition-colors hover:bg-surface-2 hover:text-bad"
                                   title="Eliminar préstamo"
                                 >
                                   <Trash2 className="h-3 w-3" />
@@ -1226,7 +1222,7 @@ export default function LeadDrawer({
                           </div>
 
                           {deal.notes && (
-                            <p className="rounded border border-slate-900 bg-slate-900/50 p-2 font-mono text-xs leading-relaxed text-slate-400">
+                            <p className="rounded border border-border-2 bg-surface-2 p-2 font-mono text-xs leading-relaxed text-ink-2">
                               {deal.notes}
                             </p>
                           )}
@@ -1234,9 +1230,9 @@ export default function LeadDrawer({
                           {/* Stepper Horizontal */}
                           {deal.stage !== 'refused' && deal.stage !== 'overdue' && deal.stage !== 'completed' ? (
                             <div className="relative mt-4 flex items-center justify-between px-2 pb-1 pt-2">
-                              <div className="absolute left-4 right-4 top-1/2 -z-10 h-0.5 -translate-y-[10px] bg-slate-800" />
+                              <div className="absolute left-4 right-4 top-1/2 -z-10 h-0.5 -translate-y-[10px] bg-border" />
                               <div
-                                className="absolute left-4 top-1/2 -z-10 h-0.5 -translate-y-[10px] bg-emerald-500 transition-all duration-500"
+                                className="absolute left-4 top-1/2 -z-10 h-0.5 -translate-y-[10px] bg-ok transition-all duration-500"
                                 style={{
                                   width:
                                     deal.stage === 'draft'
@@ -1250,28 +1246,15 @@ export default function LeadDrawer({
                               />
                               {steps.map((step, idx) => {
                                 const status = getStepStatus(deal.stage, step.stage)
+                                const stepStyle = getDealStepStyle(status)
                                 return (
                                   <div key={step.stage} className="z-10 flex flex-col items-center">
                                     <div
-                                      className={`flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-bold transition-all ${
-                                        status === 'completed'
-                                          ? 'border-emerald-500 bg-emerald-500 text-slate-950'
-                                          : status === 'active'
-                                            ? 'border-indigo-500 bg-indigo-950 text-indigo-400 ring-2 ring-indigo-500/20'
-                                            : 'border-slate-850 bg-slate-950 text-slate-500'
-                                      }`}
+                                      className={`flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-bold transition-all ${stepStyle.circle}`}
                                     >
                                       {status === 'completed' ? '✓' : idx + 1}
                                     </div>
-                                    <span
-                                      className={`mt-1.5 text-[8px] font-semibold ${
-                                        status === 'completed'
-                                          ? 'text-emerald-400'
-                                          : status === 'active'
-                                            ? 'font-bold text-indigo-400'
-                                            : 'text-slate-500'
-                                      }`}
-                                    >
+                                    <span className={`mt-1.5 text-[8px] font-semibold ${stepStyle.label}`}>
                                       {step.label}
                                     </span>
                                   </div>
@@ -1281,21 +1264,21 @@ export default function LeadDrawer({
                           ) : null}
 
                           {deal.stage === 'refused' && (
-                            <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-xs font-semibold text-red-400">
+                            <div className="mt-2 flex items-center gap-2 rounded-lg border border-bad-bd bg-bad-bg p-2 text-xs font-semibold text-bad">
                               <ShieldAlert className="h-4 w-4 shrink-0" />
                               <span>Solicitud Rechazada por Riesgos</span>
                             </div>
                           )}
 
                           {deal.stage === 'overdue' && (
-                            <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-xs font-semibold text-red-400">
+                            <div className="mt-2 flex items-center gap-2 rounded-lg border border-bad-bd bg-bad-bg p-2 text-xs font-semibold text-bad">
                               <ShieldAlert className="h-4 w-4 shrink-0" />
                               <span>Crédito en Mora (Vencido)</span>
                             </div>
                           )}
 
                           {deal.stage === 'completed' && (
-                            <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-2 text-xs font-semibold text-emerald-400">
+                            <div className="mt-2 flex items-center gap-2 rounded-lg border border-ok-bd bg-ok-bg p-2 text-xs font-semibold text-ok">
                               <CheckSquare className="h-4 w-4 shrink-0" />
                               <span>Crédito Completado (Pagado)</span>
                             </div>
@@ -1304,7 +1287,7 @@ export default function LeadDrawer({
                       )
                     })
                   ) : (
-                    <p className="py-6 text-center text-xs text-slate-500">
+                    <p className="py-6 text-center text-xs text-ink-3">
                       No se encontraron solicitudes de préstamos registradas.
                     </p>
                   )}

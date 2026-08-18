@@ -3,6 +3,10 @@ import withPWA from 'next-pwa'
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Los tests E2E (Playwright) levantan su propio `next dev -p 3001` en paralelo
+  // al `npm run dev` normal (puerto 3000). Sin esto, ambos procesos comparten la
+  // misma carpeta .next y se corrompen mutuamente la caché de webpack en Windows.
+  distDir: process.env.IS_PLAYWRIGHT_TEST === 'true' ? '.next-test' : '.next',
   async headers() {
     return [
       {

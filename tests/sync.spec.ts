@@ -317,9 +317,17 @@ test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y
   })
   await page.getByRole('button', { name: 'Quitar Alarma' }).first().click()
 
-  // Confirmar que ya no se ve la sección de alarma (pero la nota sigue visible)
+  // Confirmar que ya no se ve la sección de alarma (pero la nota sigue visible).
+  // Nota: al crear una actividad con recordatorio, handleAddActivity registra
+  // dos entradas a propósito (la Nota principal + una Task acompañante para
+  // que el recordatorio sincronice como Task en el CRM, ver comentario ahí).
+  // Ambas comparten título/cuerpo, así que tras quitar la alarma coexisten dos
+  // encabezados idénticos en el timeline — se verifica con .first() en vez de
+  // esperar una coincidencia única.
   await expect(page.getByText('Quitar Alarma')).not.toBeVisible()
-  await expect(page.getByText('Recordatorio Test Playwright')).toBeVisible()
+  await expect(
+    page.getByText('Recordatorio Test Playwright').first(),
+  ).toBeVisible()
 })
 
 test('Debe registrar una nota general sin recordatorio', async ({ page }) => {
