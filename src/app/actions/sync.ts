@@ -637,6 +637,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
     })),
     activities: updatedActivities.map((act) => ({
       id: act._id.toString(),
+      tempId: act.tempId,
       leadId: act.leadId.toString(),
       userId: act.userId,
       type: act.type,
@@ -651,6 +652,7 @@ export async function pullServerUpdates(lastSyncTime: number) {
     })),
     deals: updatedDeals.map((d) => ({
       id: d._id.toString(),
+      tempId: d.tempId,
       leadId: d.leadId.toString(),
       userId: d.userId,
       name: d.name,

@@ -403,6 +403,15 @@ export function useSync(userId: string | undefined) {
               .where('id')
               .equals(serverAct.id)
               .first()
+            // Si el push-ack todavía no resolvió el id en el registro local (carrera
+            // con el siguiente ciclo de pull), buscar por tempId antes de crear un
+            // registro duplicado con clave primaria distinta.
+            if (!existingLocal && (serverAct as any).tempId) {
+              existingLocal = await localDb.activities
+                .where('tempId')
+                .equals((serverAct as any).tempId)
+                .first()
+            }
 
             // Resolver leadId local si tiene tempId en lugar de ID de MongoDB
             let localLead = await localDb.leads
@@ -412,7 +421,7 @@ export function useSync(userId: string | undefined) {
             const resolvedLeadId = localLead?.tempId || serverAct.leadId
 
             const actToSave: LocalActivity = {
-              tempId: existingLocal?.tempId || serverAct.id,
+              tempId: existingLocal?.tempId || (serverAct as any).tempId || serverAct.id,
               id: serverAct.id,
               leadId: resolvedLeadId,
               userId: serverAct.userId,
@@ -443,6 +452,14 @@ export function useSync(userId: string | undefined) {
               .where('id')
               .equals(serverDeal.id)
               .first()
+            // Ídem que en actividades: evitar duplicar el registro local si el
+            // push-ack todavía no había resuelto el id cuando corrió este pull.
+            if (!existingLocal && (serverDeal as any).tempId) {
+              existingLocal = await localDb.deals
+                .where('tempId')
+                .equals((serverDeal as any).tempId)
+                .first()
+            }
             let localLead = await localDb.leads
               .where('id')
               .equals(serverDeal.leadId)
@@ -450,7 +467,7 @@ export function useSync(userId: string | undefined) {
             const resolvedLeadId = localLead?.tempId || serverDeal.leadId
 
             await localDb.deals.put({
-              tempId: existingLocal?.tempId || serverDeal.id,
+              tempId: existingLocal?.tempId || (serverDeal as any).tempId || serverDeal.id,
               id: serverDeal.id,
               leadId: resolvedLeadId,
               userId: serverDeal.userId,
