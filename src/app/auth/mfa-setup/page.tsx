@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { generateMfaSetup, enableMFA } from '@/app/actions/mfa'
-import { KeyRound, ShieldCheck, Download, Copy, AlertCircle, ClipboardCheck, ArrowRight } from 'lucide-react'
+import { ShieldCheck, Download, Copy, AlertCircle, ClipboardCheck, ArrowRight } from 'lucide-react'
 
 export default function MfaSetupPage() {
   const { data: session, update } = useSession()
@@ -107,9 +107,8 @@ export default function MfaSetupPage() {
 
       <div className="w-full max-w-lg space-y-8">
         <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-cta-bg shadow-lg">
-            <KeyRound className="h-6 w-6 text-cta-ink animate-pulse" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/negofin-logo.png" alt="NegoFIN" className="mx-auto h-14 w-auto" />
           <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-ink">
             Configurar Seguridad (MFA)
           </h2>

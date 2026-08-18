@@ -1,4 +1,4 @@
-# Registro de Progreso - PWA CRM Dashboard
+# Registro de Progreso - Portal de Vendedores
 
 ## Progreso por Fases
 

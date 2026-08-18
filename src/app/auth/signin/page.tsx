@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { signIn } from 'next-auth/react'
 import { registerUser } from '@/app/actions/auth'
-import { Lock, Mail, User, ArrowRight, Activity, AlertCircle } from 'lucide-react'
+import { Lock, Mail, User, ArrowRight, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 
 interface SignInPageProps {
@@ -132,14 +132,13 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
 
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-cta-bg shadow-lg">
-            <Activity className="h-6 w-6 text-cta-ink animate-pulse" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/negofin-logo.png" alt="NegoFIN" className="mx-auto h-14 w-auto" />
           <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
             {isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}
           </h2>
           <p className="mt-2 text-sm text-ink-2">
-            {isLogin ? 'Accede al panel del CRM Offline-First' : 'Registra un nuevo usuario para las pruebas'}
+            {isLogin ? 'Accedé al portal de vendedores para gestionar tus contactos y solicitudes de crédito' : 'Registra un nuevo usuario para las pruebas'}
           </p>
         </div>
 

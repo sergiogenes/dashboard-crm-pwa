@@ -1,4 +1,4 @@
-# PWA CRM Dashboard (Offline-First con Sincronización a HubSpot)
+# Portal de Vendedores (Offline-First con Sincronización a HubSpot)
 
 Este proyecto es una Aplicación Web Progresiva (PWA) de nivel empresarial diseñada para gestionar leads (contactos y empresas) en movilidad y bajo condiciones inestables de red. Utiliza una arquitectura **Offline-First**, donde el navegador almacena localmente todos los cambios en IndexedDB y los sincroniza de forma segura y ordenada con una base de datos intermedia (MongoDB Atlas) y un CRM externo (HubSpot) al recuperar la conexión.
 

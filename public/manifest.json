@@ -1,12 +1,12 @@
 {
-  "theme_color": "#4f46e5",
-  "background_color": "#020617",
+  "theme_color": "#11383F",
+  "background_color": "#F0F3F1",
   "display": "standalone",
   "scope": "/",
   "start_url": "/",
-  "name": "Resilient CRM Dashboard",
-  "short_name": "CRM PWA",
-  "description": "Dashboard CRM offline-first con sincronización automática a HubSpot y IndexedDB",
+  "name": "Portal de Vendedores",
+  "short_name": "Portal Vendedores",
+  "description": "Portal de vendedores offline-first con sincronización automática a HubSpot y IndexedDB",
   "orientation": "any",
   "icons": [
     {

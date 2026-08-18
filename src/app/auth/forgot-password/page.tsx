@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { requestPasswordReset } from '@/app/actions/password-reset'
-import { Mail, ArrowRight, Activity, AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react'
+import { Mail, ArrowRight, AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
 export default function ForgotPasswordPage() {
@@ -53,9 +53,8 @@ export default function ForgotPasswordPage() {
 
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-cta-bg shadow-lg">
-            <Activity className="h-6 w-6 text-cta-ink animate-pulse" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/negofin-logo.png" alt="NegoFIN" className="mx-auto h-14 w-auto" />
           <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
             Recuperar Acceso
           </h2>

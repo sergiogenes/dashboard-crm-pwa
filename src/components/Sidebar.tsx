@@ -13,7 +13,6 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Activity,
   ShieldAlert,
 } from 'lucide-react'
 
@@ -60,14 +59,17 @@ export default function Sidebar() {
         {/* Cabecera del Sidebar */}
         <div className="relative flex h-16 items-center border-b border-border-2 px-4">
           <div
-            className={`flex items-center gap-3 overflow-hidden ${isCollapsed ? 'mx-auto justify-center' : ''}`}
+            className={`flex items-center overflow-hidden ${isCollapsed ? 'mx-auto justify-center' : ''}`}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cta-bg shadow-md">
-              <Activity className="h-5 w-5 animate-pulse text-cta-ink" />
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/negofin-logo.png"
+              alt="NegoFIN"
+              className={isCollapsed ? 'h-6 w-auto shrink-0' : 'h-8 w-auto shrink-0'}
+            />
             {!isCollapsed && (
-              <span className="truncate text-sm font-bold tracking-wider text-ink">
-                CRM PWA
+              <span className="ml-2.5 truncate border-l border-border-2 pl-2.5 text-[9px] font-bold uppercase leading-tight tracking-wide text-ink-3">
+                Portal de<br />Vendedores
               </span>
             )}
           </div>

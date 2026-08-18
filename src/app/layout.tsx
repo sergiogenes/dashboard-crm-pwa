@@ -11,8 +11,8 @@ const arimo = Arimo({
 });
 
 export const metadata: Metadata = {
-  title: "PWA CRM Dashboard",
-  description: "Dashboard CRM offline-first con sincronización asíncrona a HubSpot",
+  title: "Portal de Vendedores",
+  description: "Portal de vendedores offline-first con sincronización asíncrona a HubSpot",
   manifest: "/manifest.json",
   icons: {
     icon: "/favicon.png",
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "CRM Dashboard",
+    title: "Portal Vendedores",
   },
   formatDetection: {
     telephone: false,
