@@ -1,15 +1,42 @@
 import { test, expect } from '@playwright/test'
 import mongoose from 'mongoose'
 import { generate } from 'otplib'
+import dotenv from 'dotenv'
+import fs from 'fs'
+import path from 'path'
+
+// Leemos la URI directamente de .env.test (no de process.env.MONGODB_URI):
+// dotenv no sobreescribe variables ya presentes en el proceso, así que si
+// MONGODB_URI quedó seteada en la shell que corre `playwright test` (p. ej.
+// por una sesión anterior), este archivo terminaría conectándose a la base
+// real y corriendo el deleteMany({}) de abajo sobre datos de producción.
+// Leer el archivo explícitamente evita depender de ese estado ambiental.
+const testEnvPath = path.resolve(process.cwd(), '.env.test')
+const testEnv = fs.existsSync(testEnvPath)
+  ? dotenv.parse(fs.readFileSync(testEnvPath))
+  : {}
 
 const MONGODB_URI =
-  process.env.MONGODB_URI || 'mongodb://localhost:27017/testdb'
+  testEnv.MONGODB_URI || 'mongodb://127.0.0.1:27017/dashboard-pwa-test'
 
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
   if (mongoose.connection.readyState === 0) {
     await mongoose.connect(MONGODB_URI)
+  }
+
+  // Guarda de seguridad final: sin importar de dónde vino la URI, nos
+  // negamos a operar (y sobre todo a hacer el deleteMany masivo de abajo)
+  // si el nombre de la base activa no es inequívocamente de pruebas.
+  const activeDbName = mongoose.connection.db?.databaseName || ''
+  if (!activeDbName.includes('test')) {
+    await mongoose.disconnect()
+    throw new Error(
+      `[sync.spec.ts] Abortando: la base conectada es "${activeDbName}", que no contiene ` +
+        `"test" en su nombre. Este archivo hace deleteMany({}) sobre todas las colecciones ` +
+        `y nunca debe correr contra una base que no sea de pruebas.`,
+    )
   }
 })
 

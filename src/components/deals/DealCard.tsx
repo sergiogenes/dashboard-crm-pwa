@@ -42,7 +42,8 @@ export default function DealCard({
                     </span>
                   )}
                   <span className="mt-0.5 block font-mono text-[10px] text-ink-3">
-                    Registro: {new Date(deal.createdAt).toLocaleDateString()}
+                    Fecha de Creación:{' '}
+                    {new Date(deal.createdAt).toLocaleDateString()}
                   </span>
                 </div>
                 <span

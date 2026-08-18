@@ -1,19 +1,6 @@
-import fs from 'fs'
-import path from 'path'
-
-async function globalTeardown() {
-  const envLocalPath = path.resolve(process.cwd(), '.env.local')
-  const envLocalTmpPath = path.resolve(process.cwd(), '.env.local.tmp')
-
-  console.log('\n--- [Playwright Teardown] Limpiando archivos temporales ---')
-  if (fs.existsSync(envLocalPath)) {
-    fs.unlinkSync(envLocalPath)
-  }
-
-  if (fs.existsSync(envLocalTmpPath)) {
-    console.log('--- [Playwright Teardown] Restaurando .env.local de desarrollo ---')
-    fs.renameSync(envLocalTmpPath, envLocalPath)
-  }
-}
+// Ya no hay swap de .env.local que restaurar: la config de test se inyecta
+// directamente en el `env` del proceso hijo del webServer (ver playwright.config.ts),
+// sin tocar nunca ningún archivo compartido con un `npm run dev` real.
+async function globalTeardown() {}
 
 export default globalTeardown
