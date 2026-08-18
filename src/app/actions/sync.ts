@@ -1,6 +1,7 @@
 'use server'
 
 import mongoose from 'mongoose'
+import { headers } from 'next/headers'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
@@ -27,6 +28,25 @@ async function getUserIdOrThrow(): Promise<string> {
   return session.user.id
 }
 
+/**
+ * IP de origen del request actual, para trazabilidad de operaciones destructivas
+ * (soft-deletes que el motor de sync puede propagar como borrado real al CRM).
+ * Detrás de ngrok/un proxy, la IP real del cliente viaja en x-forwarded-for
+ * (la primera de la lista); si no está, caemos a x-real-ip.
+ */
+function getSourceIp(): string {
+  try {
+    const h = headers()
+    const forwardedFor = h.get('x-forwarded-for')
+    if (forwardedFor) {
+      return forwardedFor.split(',')[0].trim()
+    }
+    return h.get('x-real-ip') || 'desconocida'
+  } catch {
+    return 'desconocida'
+  }
+}
+
 export async function pushClientChanges(
   leads: Omit<LocalLead, 'synced'>[],
   companies: Omit<LocalCompany, 'synced'>[],
@@ -35,6 +55,7 @@ export async function pushClientChanges(
 ) {
   const userId = await getUserIdOrThrow()
   await dbConnect()
+  const sourceIp = getSourceIp()
 
   console.log(
     `[pushClientChanges] Recibidas ${companies.length} empresas:`,
@@ -44,6 +65,30 @@ export async function pushClientChanges(
     `[pushClientChanges] Recibidos ${leads.length} leads:`,
     JSON.stringify(leads),
   )
+
+  // Traza de auditoría: cualquier soft-delete que llegue en este push puede
+  // terminar en un borrado REAL en el CRM externo (ver sync-engine.ts), así
+  // que dejamos registro de quién (userId) y desde dónde (IP) lo disparó.
+  const deletedLeadIds = leads.filter((l) => l.deleted).map((l) => l.id || l.tempId)
+  const deletedCompanyIds = companies
+    .filter((c) => c.deleted)
+    .map((c) => c.id || c.tempId)
+  const deletedDealIds = deals.filter((d) => d.deleted).map((d) => d.id || d.tempId)
+  const deletedActivityIds = activities
+    .filter((a) => a.deleted)
+    .map((a) => a.id || a.tempId)
+  if (
+    deletedLeadIds.length ||
+    deletedCompanyIds.length ||
+    deletedDealIds.length ||
+    deletedActivityIds.length
+  ) {
+    console.warn(
+      `[pushClientChanges][AUDIT] userId=${userId} ip=${sourceIp} solicita borrado de: ` +
+        `leads=[${deletedLeadIds.join(',')}] companies=[${deletedCompanyIds.join(',')}] ` +
+        `deals=[${deletedDealIds.join(',')}] activities=[${deletedActivityIds.join(',')}]`,
+    )
+  }
 
   const companyMappings: { tempId: string; id: string }[] = []
   const leadMappings: { tempId: string; id: string }[] = []
@@ -841,15 +886,42 @@ export async function syncDealsForLead(
         .map((d) => d.crmId)
         .filter(Boolean) as string[]
 
-      // 1. Marcar como eliminados en MongoDB los deals de este lead que ya no existen en el CRM
-      await Deal.updateMany(
-        {
-          leadId: leadDoc._id,
-          crmSynced: true,
-          crmId: { $nin: activeCrmIds },
-        },
-        { $set: { deleted: true } },
-      )
+      // 1. Los deals locales que no aparecen en la lista de asociados del contacto
+      // pueden estar realmente borrados en el CRM, O simplemente haber perdido la
+      // asociación con el contacto sin haberse borrado (pasó de verdad: un deal
+      // creado mientras el contacto estaba temporalmente ausente del CRM quedó
+      // huérfano y este código lo re-marcaba `deleted` en cada ciclo, sin fin,
+      // aunque el deal siguiera existiendo — ver memoria project_deal_webhook_sync).
+      // Por eso, antes de asumir "no asociado = borrado", intentamos autosanar
+      // restableciendo la asociación; solo si el CRM confirma con 404 que el deal
+      // ya no existe lo marcamos borrado de verdad.
+      const missingLocalDeals = await Deal.find({
+        leadId: leadDoc._id,
+        crmSynced: true,
+        crmId: { $nin: activeCrmIds },
+      })
+
+      for (const missingDeal of missingLocalDeals) {
+        if (!missingDeal.crmId) continue
+        try {
+          await crm.associateDealWithLead(missingDeal.crmId, crmLeadCrmId)
+          console.warn(
+            `[syncDealsForLead] Deal ${missingDeal.crmId} no estaba asociado al contacto ${crmLeadCrmId}; asociación restablecida automáticamente (no se marca borrado).`,
+          )
+        } catch (assocErr: any) {
+          const is404 =
+            assocErr.status === 404 || assocErr.message?.includes('404')
+          if (is404) {
+            missingDeal.deleted = true
+            await missingDeal.save()
+          } else {
+            console.warn(
+              `[syncDealsForLead] No se pudo verificar/reasociar el deal ${missingDeal.crmId} (error no confirma que esté borrado, se deja como estaba):`,
+              assocErr.message,
+            )
+          }
+        }
+      }
 
       // 2. Realizar upsert de los deals recuperados del CRM
       for (const d of crmDeals) {
@@ -927,6 +999,18 @@ export async function syncDealsForLead(
             }
           }
 
+          // El motor de salida (sync-engine.ts) escribe la description en HubSpot como
+          // "Asesor: <userId>\nNotas: <texto>\n<!-- loan_metadata:... -->". Al traerla de
+          // vuelta hay que extraer solo <texto> — quedarse con el bloque completo (bug
+          // encontrado 18/8/2026) hace que las notas reales queden precedidas por
+          // "Asesor: <id>\nNotas: " cada vez que un deal se importa/actualiza desde el CRM.
+          let parsedNotes = ''
+          if (d.description) {
+            const withoutMetadata = d.description.split('\n<!--')[0]
+            const notasMatch = withoutMetadata.match(/\nNotas: ([\s\S]*)$/)
+            parsedNotes = notasMatch ? notasMatch[1] : withoutMetadata
+          }
+
           await Deal.findOneAndUpdate(
             { crmId: d.crmId },
             {
@@ -941,7 +1025,7 @@ export async function syncDealsForLead(
                 termMonths,
                 interestRate,
                 stage: resolvedStage,
-                notes: d.description ? d.description.split('\n<!--')[0] : '',
+                notes: parsedNotes,
                 crmSynced: true,
                 deleted: false,
               },
