@@ -138,7 +138,7 @@ export default function SignInPage({ searchParams }: SignInPageProps) {
             {isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}
           </h2>
           <p className="mt-2 text-sm text-ink-2">
-            {isLogin ? 'Accede al panel del CRM Offline-First' : 'Registra un nuevo usuario para las pruebas'}
+            {isLogin ? 'Accedé al portal de vendedores para gestionar tus contactos y solicitudes de crédito' : 'Registra un nuevo usuario para las pruebas'}
           </p>
         </div>
 

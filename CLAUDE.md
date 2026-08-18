@@ -1,4 +1,4 @@
-# Dashboard CRM PWA — HPN (Proyecto 307)
+# Portal de Vendedores — HPN (Proyecto 307)
 
 ## Propósito
 PWA de gestión comercial para una financiera de microcréditos. Permite a vendedores gestionar contactos (leads), empresas, solicitudes de préstamo (deals) y actividades (notas, llamadas, WhatsApp) de forma offline-first, sincronizando con MongoDB Atlas como base intermedia y HubSpot como CRM externo.

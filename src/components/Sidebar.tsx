@@ -67,6 +67,11 @@ export default function Sidebar() {
               alt="NegoFIN"
               className={isCollapsed ? 'h-6 w-auto' : 'h-9 w-auto'}
             />
+            {!isCollapsed && (
+              <span className="ml-2.5 truncate border-l border-border-2 pl-2.5 text-xs font-bold uppercase tracking-wider text-ink-2">
+                Portal
+              </span>
+            )}
           </div>
 
           <button
