@@ -4,8 +4,10 @@ import Lead from '@/models/Lead'
 import Company from '@/models/Company'
 import User from '@/models/User'
 import Invoice from '@/models/Invoice'
+import Deal from '@/models/Deal'
 import { CRMProviderFactory } from '@/lib/crm/factory'
 import { hash } from '@/lib/crypto'
+import { syncDealsForLead } from '@/app/actions/sync'
 
 export async function POST(req: Request) {
   try {
@@ -201,25 +203,28 @@ export async function POST(req: Request) {
             invoiceDate: new Date(),
             dueDate: new Date(),
           })
-
-          const fullInvoice = await crm.fetchInvoiceById(crmId)
-          if (fullInvoice) {
-            invoice.amount = fullInvoice.amount
-            invoice.balanceDue =
-              fullInvoice.balanceDue ??
-              (fullInvoice.status === 'PAID' ? 0 : fullInvoice.amount)
-            invoice.status = fullInvoice.status
-            invoice.invoiceDate = new Date(fullInvoice.invoiceDate)
-            invoice.dueDate = new Date(fullInvoice.dueDate)
-            if (fullInvoice.paymentDate) {
-              invoice.paymentDate = new Date(fullInvoice.paymentDate)
-            }
-          }
         } else {
           leadDoc = await Lead.findById(invoice.leadId)
         }
 
-        if (event.propertyName && event.propertyValue !== undefined) {
+        // Siempre traemos el estado completo y autoritativo desde el CRM en vez de
+        // parchear campo a campo: así el webhook solo necesita avisar el ID que cambió
+        // (válido para cualquier proveedor) y no se pierde información si algún evento
+        // intermedio no llega.
+        const fullInvoice = await crm.fetchInvoiceById(crmId)
+        if (fullInvoice) {
+          invoice.amount = fullInvoice.amount
+          invoice.balanceDue =
+            fullInvoice.balanceDue ??
+            (fullInvoice.status === 'PAID' ? 0 : fullInvoice.amount)
+          invoice.status = fullInvoice.status
+          invoice.invoiceDate = new Date(fullInvoice.invoiceDate)
+          invoice.dueDate = new Date(fullInvoice.dueDate)
+          if (fullInvoice.paymentDate) {
+            invoice.paymentDate = new Date(fullInvoice.paymentDate)
+          }
+        } else if (event.propertyName && event.propertyValue !== undefined) {
+          // Fallback si el proveedor no pudo recuperar el registro completo (p. ej. ya se borró)
           const val = event.propertyValue
           switch (event.propertyName) {
             case 'amount':
@@ -267,6 +272,54 @@ export async function POST(req: Request) {
             `[Webhook CRM] Scoring de Lead ${leadDoc.crmId} recalculado: ${leadDoc.scoring}`,
           )
         }
+      }
+
+      if (subscriptionType === 'deal.deletion') {
+        await Deal.deleteOne({ crmId })
+        console.log(`[Webhook CRM] Deal crmId ${crmId} eliminado por acción en CRM.`)
+        continue
+      }
+
+      if (subscriptionType === 'deal.upsert') {
+        // Resolvemos el Lead dueño del Deal: si ya existe localmente lo tomamos
+        // de ahí, si no, le preguntamos al CRM a qué contacto está asociado.
+        const existingDeal = await Deal.findOne({ crmId })
+        let leadDoc = existingDeal
+          ? await Lead.findById(existingDeal.leadId)
+          : null
+
+        if (!leadDoc) {
+          const leadCrmId = await crm.fetchLeadIdAssociatedWithDeal(crmId)
+          if (!leadCrmId) {
+            console.warn(
+              `[Webhook CRM] No se encontró contacto asociado para Deal crmId ${crmId}`,
+            )
+            continue
+          }
+          leadDoc = await Lead.findOne({ crmId: leadCrmId })
+          if (!leadDoc) {
+            console.warn(
+              `[Webhook CRM] Lead local no encontrado para leadCrmId ${leadCrmId} de Deal crmId ${crmId}`,
+            )
+            continue
+          }
+        }
+
+        if (!leadDoc.crmId) {
+          console.warn(
+            `[Webhook CRM] Lead ${leadDoc._id} del Deal crmId ${crmId} aún no tiene crmId asignado.`,
+          )
+          continue
+        }
+
+        // Reutilizamos la misma rutina que ya usa el flujo de polling: trae el
+        // estado completo y autoritativo de los deals del lead desde el CRM
+        // (mapeo de stage, metadata de termMonths/interestRate, etc.) en vez
+        // de parchear campo a campo, igual que con las facturas.
+        await syncDealsForLead(leadDoc, leadDoc.crmId, crm, leadDoc.userId, {
+          bypassRecencyGuard: true,
+        })
+        console.log(`[Webhook CRM] Deals del lead ${leadDoc.crmId} resincronizados por evento de Deal crmId ${crmId}.`)
       }
 
       if (subscriptionType === 'association.creation') {

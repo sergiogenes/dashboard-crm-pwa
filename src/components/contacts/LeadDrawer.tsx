@@ -290,6 +290,13 @@ export default function LeadDrawer({
         }
       }
 
+      // Si se define un recordatorio y la actividad no es ya una Tarea,
+      // se registra por separado como una Task acompañante (para que se
+      // sincronice como Task en el CRM), dejando la actividad principal
+      // sin recordatorio propio.
+      const needsCompanionTask =
+        reminderTimestamp !== undefined && activityType !== 'TASK'
+
       const newMainAct: LocalActivity = {
         tempId: crypto.randomUUID(),
         leadId: selectedLeadId,
@@ -298,7 +305,7 @@ export default function LeadDrawer({
         title: titleVal,
         body: bodyVal,
         timestamp: now,
-        reminderDate: reminderTimestamp,
+        reminderDate: needsCompanionTask ? undefined : reminderTimestamp,
         reminderRead: false,
         synced: false,
         createdAt: now,
@@ -307,6 +314,25 @@ export default function LeadDrawer({
 
       const encryptedMainAct = await encryptActivity(newMainAct, dbKey)
       await localDb.activities.put(encryptedMainAct)
+
+      if (needsCompanionTask) {
+        const newTaskAct: LocalActivity = {
+          tempId: crypto.randomUUID(),
+          leadId: selectedLeadId,
+          userId,
+          type: 'TASK',
+          title: titleVal,
+          body: bodyVal,
+          timestamp: now,
+          reminderDate: reminderTimestamp,
+          reminderRead: false,
+          synced: false,
+          createdAt: now,
+          updatedAt: now,
+        }
+        const encryptedTaskAct = await encryptActivity(newTaskAct, dbKey)
+        await localDb.activities.put(encryptedTaskAct)
+      }
 
       setActivityTitle('')
       setActivityBody('')
