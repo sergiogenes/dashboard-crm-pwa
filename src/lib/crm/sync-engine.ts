@@ -275,8 +275,11 @@ export async function syncMongoDBToCRM(): Promise<void> {
         const user = await User.findById(deal.userId)
         const ownerId = user?.crmOwnerId || undefined
 
-        // Empaquetar metadatos de microcrédito en la descripción
-        const description = `Asesor: ${deal.userId}\nNotas: ${deal.notes || ''}\n<!-- loan_metadata:{"termMonths":${deal.termMonths},"interestRate":${deal.interestRate},"localStage":"${deal.stage}"} -->`
+        // Empaquetar metadatos de microcrédito en la descripción. El nombre/email
+        // del vendedor (no su ObjectId de Mongo, ilegible para quien mira el deal
+        // directamente en HubSpot) se usa para la línea "Asesor".
+        const advisorLabel = user?.name || user?.email || deal.userId
+        const description = `Asesor: ${advisorLabel}\nNotas: ${deal.notes || ''}\n<!-- loan_metadata:{"termMonths":${deal.termMonths},"interestRate":${deal.interestRate},"localStage":"${deal.stage}"} -->`
 
         const crmId = await crm.upsertDeal({
           crmId: deal.crmId,

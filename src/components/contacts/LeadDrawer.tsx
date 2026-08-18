@@ -373,7 +373,10 @@ export default function LeadDrawer({
       const now = Date.now()
       const amountVal = parseFloat(dealAmount)
       const termVal = parseInt(dealTermMonths)
-      const rateVal = parseFloat(dealInterestRate)
+      // dealInterestRate se tipea con "," como separador decimal (convención
+      // local); se normaliza a "." solo acá, para parsear — lo que se guarda
+      // en Dexie/Mongo/CRM es el número normal, sin cambios.
+      const rateVal = parseFloat(dealInterestRate.replace(',', '.'))
 
       if (isNaN(amountVal) || amountVal <= 0) {
         alert('Por favor ingresa un monto válido.')
@@ -1087,12 +1090,23 @@ export default function LeadDrawer({
                         Monto (Gs.)
                       </label>
                       <input
-                        type="number"
-                        placeholder="Ej. 5000000"
-                        value={dealAmount}
-                        onChange={(e) => setDealAmount(e.target.value)}
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Ej. 5.000.000"
+                        // dealAmount guarda solo dígitos (sin separadores); acá se
+                        // muestra formateado con separador de miles es-PY, pero lo
+                        // que se persiste en Dexie/Mongo/CRM sigue siendo el número
+                        // plano — esto es puramente visual, para reducir errores al
+                        // tipear montos de 6-7 cifras en guaraníes.
+                        value={
+                          dealAmount
+                            ? Number(dealAmount).toLocaleString('es-PY')
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setDealAmount(e.target.value.replace(/\D/g, ''))
+                        }
                         required
-                        min="1"
                         className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                       />
                     </div>
@@ -1119,13 +1133,23 @@ export default function LeadDrawer({
                       Tasa de Interés (%)
                     </label>
                     <input
-                      type="number"
-                      step="0.1"
-                      placeholder="Ej. 15"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Ej. 15,5"
+                      // Se tipea con "," como separador decimal (ver conversión a
+                      // "." en handleAddDeal antes de guardar). Solo se permiten
+                      // dígitos y una coma.
                       value={dealInterestRate}
-                      onChange={(e) => setDealInterestRate(e.target.value)}
+                      onChange={(e) => {
+                        const cleaned = e.target.value
+                          // El teclado numérico suele tener solo "." como tecla
+                          // decimal (no ","); lo tratamos como equivalente.
+                          .replace(/\./g, ',')
+                          .replace(/[^0-9,]/g, '')
+                          .replace(/(,.*),/g, '$1')
+                        setDealInterestRate(cleaned)
+                      }}
                       required
-                      min="0"
                       className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                     />
                   </div>
