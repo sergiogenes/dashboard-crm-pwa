@@ -12,3 +12,23 @@ export function formatGs(amount: number | undefined | null): string {
   const rounded = Math.round(amount || 0)
   return `Gs. ${rounded.toLocaleString('es-PY')}`
 }
+
+/**
+ * Formateo compacto en millones de guaraníes, para KPIs/tarjetas resumen
+ * donde importa poder leer el número de un vistazo (ej. "Gs. 5,50M") en vez
+ * del monto completo. Siempre en millones, con 2 decimales fijos — incluso
+ * para montos menores a 1.000.000 (ej. "Gs. 0,02M") para no perder toda
+ * precisión en ese caso, aunque en la práctica el acumulado de un KPI rara
+ * vez baja de esa magnitud.
+ *
+ * Usar SOLO para KPIs/resúmenes agregados — el detalle por registro (tabla
+ * de deals, filas de vendedor, drawer de contacto) debe seguir mostrando el
+ * monto completo vía `formatGs`, donde la precisión exacta importa.
+ */
+export function formatGsCompact(amount: number | undefined | null): string {
+  const millions = (amount || 0) / 1_000_000
+  return `Gs. ${millions.toLocaleString('es-PY', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}M`
+}

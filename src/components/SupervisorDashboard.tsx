@@ -25,7 +25,7 @@ import {
   X,
 } from 'lucide-react'
 import { BADGE } from '@/lib/theme/status'
-import { formatGs } from '@/lib/format'
+import { formatGsCompact } from '@/lib/format'
 
 interface SalespersonPerf {
   id: string
@@ -325,10 +325,17 @@ export default function SupervisorDashboard() {
             {isEditingGoal ? (
               <div className="mt-1 flex items-center gap-2">
                 <input
-                  type="number"
-                  value={newGoal}
-                  onChange={(e) => setNewGoal(e.target.value)}
-                  className="w-24 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-primary"
+                  type="text"
+                  inputMode="numeric"
+                  // newGoal guarda solo dígitos; se muestra formateado con
+                  // separador de miles es-PY, igual que el monto de préstamo
+                  // (ver LeadDrawer.tsx) — puramente visual, handleUpdateGoal
+                  // sigue recibiendo/guardando el número plano.
+                  value={newGoal ? Number(newGoal).toLocaleString('es-PY') : ''}
+                  onChange={(e) =>
+                    setNewGoal(e.target.value.replace(/\D/g, ''))
+                  }
+                  className="w-28 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <button
                   onClick={handleUpdateGoal}
@@ -349,7 +356,7 @@ export default function SupervisorDashboard() {
               </div>
             ) : (
               <span className="mt-0.5 block text-sm font-bold text-primary">
-                {formatGs(stats?.disbursementGoal)}
+                {formatGsCompact(stats?.disbursementGoal)}
               </span>
             )}
           </div>
@@ -374,7 +381,7 @@ export default function SupervisorDashboard() {
                 Total Desembolsado
               </p>
               <h3 className="mt-2 text-2xl font-bold text-ink">
-                {formatGs(stats?.totalDisbursed)}
+                {formatGsCompact(stats?.totalDisbursed)}
               </h3>
             </div>
             <div className="rounded-xl bg-ok-bg p-3 text-ok">
@@ -557,7 +564,7 @@ export default function SupervisorDashboard() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right font-bold text-ok">
-                          {formatGs(sp.totalDisbursed)}
+                          {formatGsCompact(sp.totalDisbursed)}
                         </td>
                       </tr>
                     ))
