@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { verifyMFA } from '@/app/actions/mfa'
-import { ShieldCheck, LogOut, AlertCircle, ArrowRight } from 'lucide-react'
+import { LogOut, AlertCircle, ArrowRight } from 'lucide-react'
 
 export default function MfaPage() {
   const { update } = useSession()
@@ -85,9 +85,8 @@ export default function MfaPage() {
 
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-cta-bg shadow-lg">
-            <ShieldCheck className="h-6 w-6 text-cta-ink animate-pulse" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/negofin-logo.png" alt="NegoFIN" className="mx-auto h-14 w-auto" />
           <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-ink">
             Verificación de Seguridad
           </h2>
