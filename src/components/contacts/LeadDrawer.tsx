@@ -23,6 +23,7 @@ import { sendWhatsAppMessage } from '@/app/actions/whatsapp'
 import { useSession } from 'next-auth/react'
 import { encryptActivity } from '@/lib/client-crypto'
 import { getActivityTypeConfig, getScoringBadge, getDealStepStyle } from '@/lib/theme/status'
+import { formatGs } from '@/lib/format'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
 const getTomorrowString = () => {
@@ -372,7 +373,10 @@ export default function LeadDrawer({
       const now = Date.now()
       const amountVal = parseFloat(dealAmount)
       const termVal = parseInt(dealTermMonths)
-      const rateVal = parseFloat(dealInterestRate)
+      // dealInterestRate se tipea con "," como separador decimal (convención
+      // local); se normaliza a "." solo acá, para parsear — lo que se guarda
+      // en Dexie/Mongo/CRM es el número normal, sin cambios.
+      const rateVal = parseFloat(dealInterestRate.replace(',', '.'))
 
       if (isNaN(amountVal) || amountVal <= 0) {
         alert('Por favor ingresa un monto válido.')
@@ -522,7 +526,7 @@ export default function LeadDrawer({
                       Total Adeudado
                     </span>
                     <span className="text-bad mt-0.5 block truncate text-xs font-bold">
-                      ${totalBalanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {formatGs(totalBalanceDue)}
                     </span>
                   </div>
                   <div>
@@ -574,11 +578,11 @@ export default function LeadDrawer({
                             INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}
                           </span>
                           <span className="block text-sm font-bold text-ink">
-                            ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                            {formatGs(inv.amount)}
                           </span>
                           {inv.status !== 'PAID' && inv.balanceDue !== undefined && inv.balanceDue !== inv.amount && (
                             <span className="block text-[10px] font-semibold text-bad">
-                              Pendiente: ${inv.balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                              Pendiente: {formatGs(inv.balanceDue)}
                             </span>
                           )}
                           <div className="flex items-center gap-1 text-[10px] text-ink-3">
@@ -1083,15 +1087,26 @@ export default function LeadDrawer({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
-                        Monto (USD)
+                        Monto (Gs.)
                       </label>
                       <input
-                        type="number"
-                        placeholder="Ej. 5000"
-                        value={dealAmount}
-                        onChange={(e) => setDealAmount(e.target.value)}
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Ej. 5.000.000"
+                        // dealAmount guarda solo dígitos (sin separadores); acá se
+                        // muestra formateado con separador de miles es-PY, pero lo
+                        // que se persiste en Dexie/Mongo/CRM sigue siendo el número
+                        // plano — esto es puramente visual, para reducir errores al
+                        // tipear montos de 6-7 cifras en guaraníes.
+                        value={
+                          dealAmount
+                            ? Number(dealAmount).toLocaleString('es-PY')
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setDealAmount(e.target.value.replace(/\D/g, ''))
+                        }
                         required
-                        min="1"
                         className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                       />
                     </div>
@@ -1118,13 +1133,23 @@ export default function LeadDrawer({
                       Tasa de Interés (%)
                     </label>
                     <input
-                      type="number"
-                      step="0.1"
-                      placeholder="Ej. 15"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Ej. 15,5"
+                      // Se tipea con "," como separador decimal (ver conversión a
+                      // "." en handleAddDeal antes de guardar). Solo se permiten
+                      // dígitos y una coma.
                       value={dealInterestRate}
-                      onChange={(e) => setDealInterestRate(e.target.value)}
+                      onChange={(e) => {
+                        const cleaned = e.target.value
+                          // El teclado numérico suele tener solo "." como tecla
+                          // decimal (no ","); lo tratamos como equivalente.
+                          .replace(/\./g, ',')
+                          .replace(/[^0-9,]/g, '')
+                          .replace(/(,.*),/g, '$1')
+                        setDealInterestRate(cleaned)
+                      }}
                       required
-                      min="0"
                       className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                     />
                   </div>
@@ -1198,7 +1223,7 @@ export default function LeadDrawer({
                                 Creado: {new Date(deal.createdAt).toLocaleDateString()}
                               </span>
                               <h5 className="mt-0.5 text-sm font-bold text-ink">
-                                ${deal.amount.toLocaleString()} USD
+                                {formatGs(deal.amount)}
                               </h5>
                               <p className="mt-0.5 text-[10px] text-ink-2">
                                 Plazo: {deal.termMonths} meses | Tasa: {deal.interestRate}%

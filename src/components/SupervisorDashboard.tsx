@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react'
 import { BADGE } from '@/lib/theme/status'
+import { formatGs } from '@/lib/format'
 
 interface SalespersonPerf {
   id: string
@@ -348,7 +349,7 @@ export default function SupervisorDashboard() {
               </div>
             ) : (
               <span className="mt-0.5 block text-sm font-bold text-primary">
-                ${stats?.disbursementGoal.toLocaleString()} USD
+                {formatGs(stats?.disbursementGoal)}
               </span>
             )}
           </div>
@@ -373,7 +374,7 @@ export default function SupervisorDashboard() {
                 Total Desembolsado
               </p>
               <h3 className="mt-2 text-2xl font-bold text-ink">
-                ${stats?.totalDisbursed.toLocaleString()} USD
+                {formatGs(stats?.totalDisbursed)}
               </h3>
             </div>
             <div className="rounded-xl bg-ok-bg p-3 text-ok">
@@ -556,7 +557,7 @@ export default function SupervisorDashboard() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right font-bold text-ok">
-                          ${sp.totalDisbursed.toLocaleString()} USD
+                          {formatGs(sp.totalDisbursed)}
                         </td>
                       </tr>
                     ))

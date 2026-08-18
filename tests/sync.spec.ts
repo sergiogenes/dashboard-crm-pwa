@@ -460,11 +460,11 @@ test('Debe registrar una nueva solicitud de préstamo en la pestaña Préstamos'
   await page.getByRole('button', { name: 'Préstamos' }).click()
 
   // 3. Completar formulario de préstamo
-  await page.getByPlaceholder('Ej. 5000').fill('15000')
+  await page.getByPlaceholder('Ej. 5.000.000').fill('15000')
   await page
     .locator('form:has-text("Nueva Solicitud de Préstamo") select')
     .selectOption({ value: '24' }) // 24 meses
-  await page.getByPlaceholder('Ej. 15').fill('12.5')
+  await page.getByPlaceholder('Ej. 15,5').fill('12,5')
   await page
     .getByPlaceholder('Escribe comentarios u observaciones del préstamo...')
     .fill('Justificación de préstamo para el test de Playwright')
@@ -473,7 +473,7 @@ test('Debe registrar una nueva solicitud de préstamo en la pestaña Préstamos'
   await page.getByRole('button', { name: 'Enviar Solicitud' }).click()
 
   // 4. Confirmar que aparece en la lista de préstamos activos con estado Borrador
-  await expect(page.getByText('$15,000 USD')).toBeVisible()
+  await expect(page.getByText('Gs. 15.000')).toBeVisible()
   await expect(page.getByText('Plazo: 24 meses | Tasa: 12.5%')).toBeVisible()
   await expect(
     page.getByText('Justificación de préstamo para el test de Playwright'),
