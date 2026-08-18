@@ -1164,7 +1164,13 @@ export default function LeadDrawer({
                 </h4>
                 <div className="space-y-4">
                   {deals && deals.length > 0 ? (
-                    deals.map((deal) => {
+                    [...deals]
+                      .sort(
+                        (a, b) =>
+                          new Date(b.createdAt).getTime() -
+                          new Date(a.createdAt).getTime(),
+                      )
+                      .map((deal) => {
                       const steps = [
                         { stage: 'draft', label: 'Borrador' },
                         { stage: 'under_evaluation', label: 'Riesgo' },
