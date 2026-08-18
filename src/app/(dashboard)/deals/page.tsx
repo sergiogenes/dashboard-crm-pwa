@@ -87,7 +87,7 @@ export default function DealsPage() {
             <span className="block text-[10px] font-bold uppercase tracking-wider text-ink-3">
               En Evaluación
             </span>
-            <span className="mt-1 block text-xl font-bold text-info">
+            <span className="mt-1 block text-xl font-bold text-ink">
               $
               {totalActiveAmount.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -97,7 +97,7 @@ export default function DealsPage() {
               {activeLoans.length} solicitudes activas
             </span>
           </div>
-          <div className="rounded-xl border border-chip-bd bg-chip p-2.5 text-chip-ink">
+          <div className="rounded-xl border border-border bg-surface-2 p-2.5 text-accent">
             <TrendingUp className="h-5 w-5" />
           </div>
         </div>
@@ -108,7 +108,7 @@ export default function DealsPage() {
             <span className="block text-[10px] font-bold uppercase tracking-wider text-ink-3">
               Desembolsado
             </span>
-            <span className="mt-1 block text-xl font-bold text-ok">
+            <span className="mt-1 block text-xl font-bold text-ink">
               $
               {totalDisbursedAmount.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -118,7 +118,7 @@ export default function DealsPage() {
               {disbursedLoans.length} créditos vigentes
             </span>
           </div>
-          <div className="rounded-xl border border-ok-bd bg-ok-bg p-2.5 text-ok">
+          <div className="rounded-xl border border-border bg-surface-2 p-2.5 text-accent">
             <CheckCircle2 className="h-5 w-5" />
           </div>
         </div>

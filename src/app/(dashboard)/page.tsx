@@ -171,7 +171,7 @@ export default function DashboardHome() {
           <p className="text-[10px] font-bold uppercase tracking-wider text-ink-3">
             Conversión
           </p>
-          <h3 className="mt-2 text-2xl font-bold text-primary">
+          <h3 className="mt-2 text-2xl font-bold text-ink">
             {conversionRate}%
           </h3>
           <span className="mt-1 block text-[9px] text-ink-3">
