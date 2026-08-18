@@ -47,7 +47,10 @@ export default function DealTable({
                 Estado (CRM)
               </th>
               <th scope="col" className="px-6 py-4">
-                Registro / Sync
+                Fecha de Creación
+              </th>
+              <th scope="col" className="px-6 py-4">
+                Sync
               </th>
               <th scope="col" className="px-6 py-4">
                 Notas Justificación
@@ -88,23 +91,23 @@ export default function DealTable({
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1">
-                        <span className="flex items-center gap-1 font-mono text-[10px] text-ink-3">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(deal.createdAt).toLocaleDateString()}
+                      <span className="flex items-center gap-1 font-mono text-xs text-ink-2">
+                        <Calendar className="h-3 w-3 text-ink-3" />
+                        {new Date(deal.createdAt).toLocaleDateString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {deal.synced ? (
+                        <span className="py-0.2 inline-flex w-fit items-center gap-1 rounded-full border border-ok-bd bg-ok-bg px-2 text-[9px] font-medium text-ok">
+                          <Cloud className="h-2.5 w-2.5" />
+                          Sincronizado
                         </span>
-                        {deal.synced ? (
-                          <span className="py-0.2 inline-flex w-fit items-center gap-1 rounded-full border border-ok-bd bg-ok-bg px-2 text-[9px] font-medium text-ok">
-                            <Cloud className="h-2.5 w-2.5" />
-                            Sincronizado
-                          </span>
-                        ) : (
-                          <span className="py-0.2 inline-flex w-fit animate-pulse items-center gap-1 rounded-full border border-warn-bd bg-warn-bg px-2 text-[9px] font-medium text-warn">
-                            <Database className="h-2.5 w-2.5" />
-                            Local
-                          </span>
-                        )}
-                      </div>
+                      ) : (
+                        <span className="py-0.2 inline-flex w-fit animate-pulse items-center gap-1 rounded-full border border-warn-bd bg-warn-bg px-2 text-[9px] font-medium text-warn">
+                          <Database className="h-2.5 w-2.5" />
+                          Local
+                        </span>
+                      )}
                     </td>
                     <td
                       className="max-w-xs truncate px-6 py-4 font-mono text-xs text-ink-2"
@@ -118,7 +121,7 @@ export default function DealTable({
             ) : (
               <tr>
                 <td
-                  colSpan={isSupervisor ? 8 : 7}
+                  colSpan={isSupervisor ? 9 : 8}
                   className="px-6 py-12 text-center text-ink-3"
                 >
                   <div className="flex flex-col items-center justify-center gap-2">
