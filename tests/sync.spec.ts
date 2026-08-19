@@ -226,9 +226,9 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
     .getByPlaceholder('juan.perez@email.com', { exact: true })
     .fill('jane.doe@example.com')
   await page
-    .getByPlaceholder('+54 9 11 1234-5678', { exact: true })
+    .getByPlaceholder('0981 123456', { exact: true })
     .fill('+541122334455')
-  await page.getByPlaceholder('1.234.567-8', { exact: true }).fill('12345678')
+  await page.getByPlaceholder('1234567', { exact: true }).fill('12345678')
 
   // Seleccionar la empresa que acabamos de crear (que está local)
   const optionText = await page.evaluate((companyName) => {

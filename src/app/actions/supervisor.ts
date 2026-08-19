@@ -7,6 +7,7 @@ import User from '@/models/User'
 import Lead from '@/models/Lead'
 import Deal from '@/models/Deal'
 import { hash } from '@/lib/crypto'
+import { isValidEmail, isValidPhone } from '@/lib/validation'
 
 // Helper para validar rol de supervisor
 async function getSupervisorIdOrThrow() {
@@ -179,12 +180,27 @@ export async function importProspectsFromCSV(
     const email = p.email?.trim().toLowerCase()
     const firstName = p.firstName?.trim()
     const lastName = p.lastName?.trim()
+    const phone = p.phone?.trim()
+    const displayName = `${firstName || 'Sin nombre'} ${lastName || ''}`.trim()
 
     if (!docId || !email || !firstName || !lastName) {
       skippedCount++
-      errors.push(
-        `Campos incompletos para: ${firstName || 'Sin nombre'} ${lastName || ''}`,
-      )
+      errors.push(`Campos incompletos para: ${displayName}`)
+      continue
+    }
+
+    // El teléfono sigue siendo opcional (igual que en el alta manual de un
+    // contacto), pero si viene con datos, tiene que ser un número válido.
+    // El email es obligatorio y también se valida su formato.
+    if (!isValidEmail(email)) {
+      skippedCount++
+      errors.push(`Email inválido para ${displayName}: "${p.email}"`)
+      continue
+    }
+
+    if (phone && !isValidPhone(phone)) {
+      skippedCount++
+      errors.push(`Teléfono inválido para ${displayName}: "${p.phone}"`)
       continue
     }
 
@@ -205,7 +221,7 @@ export async function importProspectsFromCSV(
         firstName,
         lastName,
         email,
-        phone: p.phone?.trim() || undefined,
+        phone: phone || undefined,
         documentId: docId,
         userId: supervisorId,
         crmSynced: false,
