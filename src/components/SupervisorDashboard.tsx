@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { BADGE } from '@/lib/theme/status'
 import { formatGsCompact } from '@/lib/format'
+import { toast } from 'sonner'
 
 interface SalespersonPerf {
   id: string
@@ -126,7 +127,7 @@ export default function SupervisorDashboard() {
   const handleUpdateGoal = async () => {
     const goalNum = parseFloat(newGoal)
     if (isNaN(goalNum) || goalNum <= 0) {
-      alert('Por favor ingresa un objetivo válido')
+      toast.error('Por favor ingresa un objetivo válido')
       return
     }
 
@@ -138,7 +139,7 @@ export default function SupervisorDashboard() {
       }
       setIsEditingGoal(false)
     } catch (err: any) {
-      alert(err.message)
+      toast.error(err.message)
     } finally {
       setActionLoading(false)
     }
@@ -156,7 +157,7 @@ export default function SupervisorDashboard() {
 
       const lines = text.split(/\r?\n/).filter((line) => line.trim())
       if (lines.length < 2) {
-        alert('El archivo CSV está vacío o no contiene suficientes filas.')
+        toast.error('El archivo CSV está vacío o no contiene suficientes filas.')
         return
       }
 
@@ -202,9 +203,10 @@ export default function SupervisorDashboard() {
       )
 
       if (dniIdx === -1 || nameIdx === -1 || emailIdx === -1) {
-        alert(
-          'No se encontraron las columnas obligatorias en el CSV.\nAsegúrate de tener columnas con encabezados como:\n"DNI" o "Cedula", "Nombre" y "Email".',
-        )
+        toast.error('No se encontraron las columnas obligatorias en el CSV', {
+          description:
+            'Asegurate de tener columnas con encabezados como "DNI" o "Cedula", "Nombre" y "Email".',
+        })
         return
       }
 
@@ -243,7 +245,7 @@ export default function SupervisorDashboard() {
       const updatedData = await getSupervisorDashboardData()
       setStats(updatedData)
     } catch (err: any) {
-      alert(`Error al importar: ${err.message}`)
+      toast.error('Error al importar', { description: err.message })
     } finally {
       setActionLoading(false)
     }
@@ -253,7 +255,7 @@ export default function SupervisorDashboard() {
   const handleAssignLead = async (leadId: string) => {
     const salespersonId = selectedSalespeople[leadId]
     if (!salespersonId) {
-      alert('Por favor selecciona un vendedor del listado')
+      toast.error('Por favor selecciona un vendedor del listado')
       return
     }
 
@@ -274,11 +276,11 @@ export default function SupervisorDashboard() {
       delete updatedSelects[leadId]
       setSelectedSalespeople(updatedSelects)
 
-      alert(
+      toast.success(
         'Prospecto asignado correctamente y programado para sincronizarse con HubSpot.',
       )
     } catch (err: any) {
-      alert(err.message)
+      toast.error(err.message)
     } finally {
       setActionLoading(false)
     }

@@ -338,11 +338,10 @@ test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y
   await page.getByRole('button', { name: 'Marcar Leído' }).first().click()
   await expect(page.getByText('Leído')).toBeVisible()
 
-  // 5. Quitar Alarma
-  page.once('dialog', async (dialog) => {
-    await dialog.accept()
-  })
+  // 5. Quitar Alarma (ahora vía el ConfirmDialog propio de la app, no un
+  // diálogo nativo del navegador — ver useConfirm/ConfirmDialog)
   await page.getByRole('button', { name: 'Quitar Alarma' }).first().click()
+  await page.getByRole('button', { name: 'Quitar' }).click()
 
   // Confirmar que ya no se ve la sección de alarma (pero la nota sigue visible).
   // Nota: al crear una actividad con recordatorio, handleAddActivity registra
