@@ -24,6 +24,8 @@ import { useSession } from 'next-auth/react'
 import { encryptActivity } from '@/lib/client-crypto'
 import { getActivityTypeConfig, getScoringBadge, getDealStepStyle } from '@/lib/theme/status'
 import { formatGs } from '@/lib/format'
+import { toast } from 'sonner'
+import { useConfirm } from '@/hooks/useConfirm'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
 const getTomorrowString = () => {
@@ -75,6 +77,7 @@ export default function LeadDrawer({
   const { data: session } = useSession()
   const isForeign = selectedLeadForInvoice.userId !== userId
   const selectedLeadId = selectedLeadForInvoice.id || selectedLeadForInvoice.tempId
+  const { confirm, ConfirmDialogElement } = useConfirm()
 
   // Estado de Navegación del Drawer
   const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'deals'>('activities')
@@ -96,20 +99,40 @@ export default function LeadDrawer({
   const [isSubmittingDeal, setIsSubmittingDeal] = useState(false)
 
   // Aviso de cambios sin guardar (#17): el título/cuerpo de "Registrar
-  // Actividad" y el monto/notas de "Nueva Solicitud de Préstamo" persisten
-  // en este estado sin importar qué pestaña esté visible — si hay contenido
-  // sin enviar, se confirma antes de cerrar el drawer o cambiar de pestaña.
+  // Actividad" (incluyendo el recordatorio, si está activado) y el
+  // monto/notas de "Nueva Solicitud de Préstamo" persisten en este estado
+  // sin importar qué pestaña esté visible — si hay contenido sin enviar, se
+  // confirma antes de cerrar el drawer o cambiar de pestaña.
   const hasUnsavedChanges =
     activityTitle.trim() !== '' ||
     activityBody.trim() !== '' ||
+    showReminderPicker ||
+    reminderDateOnly.trim() !== '' ||
     dealAmount.trim() !== '' ||
     dealNotes.trim() !== ''
 
-  const confirmDiscardIfDirty = () => {
+  const confirmDiscardIfDirty = async () => {
     if (!hasUnsavedChanges) return true
-    return window.confirm(
-      'Tenés cambios sin guardar en el formulario de Actividad o de Solicitud de Préstamo. ¿Salir sin guardar?',
-    )
+    const ok = await confirm({
+      title: 'Cambios sin guardar',
+      message:
+        'Tenés cambios sin guardar en el formulario de Actividad o de Solicitud de Préstamo. ¿Salir sin guardar?',
+      confirmLabel: 'Salir sin guardar',
+      variant: 'danger',
+    })
+    if (ok) {
+      // Descartar de verdad lo tipeado -- si no, hasUnsavedChanges sigue en
+      // true para siempre y vuelve a preguntar en cualquier pestaña, aunque
+      // no se haya tocado nada después de confirmar la salida.
+      setActivityTitle('')
+      setActivityBody('')
+      setShowReminderPicker(false)
+      setReminderDateOnly('')
+      setReminderTimeOnly('08:00')
+      setDealAmount('')
+      setDealNotes('')
+    }
+    return ok
   }
 
   // WhatsApp Templates local state
@@ -248,7 +271,7 @@ export default function LeadDrawer({
         }
 
         if (!result.success) {
-          alert(`Error al enviar WhatsApp: ${result.error}`)
+          toast.error('Error al enviar WhatsApp', { description: result.error })
           setIsSubmittingActivity(false)
           return
         }
@@ -346,7 +369,13 @@ export default function LeadDrawer({
   // Eliminar actividad
   const handleDeleteActivity = async (act: LocalActivity) => {
     if (isForeign) return
-    if (!confirm('¿Estás seguro de que deseas eliminar esta actividad?')) return
+    const ok = await confirm({
+      title: 'Eliminar actividad',
+      message: '¿Estás seguro de que deseas eliminar esta actividad?',
+      confirmLabel: 'Eliminar',
+      variant: 'danger',
+    })
+    if (!ok) return
     try {
       if (act.id) {
         await localDb.activities.where('id').equals(act.id).modify({ deleted: true, synced: false })
@@ -375,7 +404,13 @@ export default function LeadDrawer({
   // Remover alarma
   const handleRemoveReminder = async (act: LocalActivity) => {
     if (isForeign) return
-    if (!confirm('¿Estás seguro de que deseas quitar el recordatorio?')) return
+    const ok = await confirm({
+      title: 'Quitar recordatorio',
+      message: '¿Estás seguro de que deseas quitar el recordatorio?',
+      confirmLabel: 'Quitar',
+      variant: 'danger',
+    })
+    if (!ok) return
     try {
       if (act.id) {
         await localDb.activities.where('id').equals(act.id).modify({ reminderDate: undefined, reminderRead: false, synced: false })
@@ -404,7 +439,7 @@ export default function LeadDrawer({
       const rateVal = parseFloat(dealInterestRate.replace(',', '.'))
 
       if (isNaN(amountVal) || amountVal <= 0) {
-        alert('Por favor ingresa un monto válido.')
+        toast.error('Por favor ingresa un monto válido.')
         return
       }
 
@@ -439,7 +474,13 @@ export default function LeadDrawer({
   // Eliminar préstamo
   const handleDeleteDeal = async (deal: LocalDeal) => {
     if (isForeign) return
-    if (!confirm('¿Estás seguro de que deseas eliminar este préstamo?')) return
+    const ok = await confirm({
+      title: 'Eliminar préstamo',
+      message: '¿Estás seguro de que deseas eliminar este préstamo?',
+      confirmLabel: 'Eliminar',
+      variant: 'danger',
+    })
+    if (!ok) return
     try {
       if (deal.id) {
         await localDb.deals.where('id').equals(deal.id).modify({ deleted: true, synced: false })
@@ -453,10 +494,11 @@ export default function LeadDrawer({
 
   return (
     <>
+      {ConfirmDialogElement}
       {/* Backdrop overlay */}
       <div
-        onClick={() => {
-          if (confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
+        onClick={async () => {
+          if (await confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
         }}
         className="fixed inset-0 z-40 bg-ink/60 backdrop-blur-sm transition-opacity duration-300"
       />
@@ -480,8 +522,8 @@ export default function LeadDrawer({
             )}
           </div>
           <button
-            onClick={() => {
-              if (confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
+            onClick={async () => {
+              if (await confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
             }}
             className="rounded-lg p-1.5 text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
           >
@@ -499,8 +541,8 @@ export default function LeadDrawer({
         {/* Selectores de Pestaña */}
         <div className="flex border-b border-border bg-surface-2/50 px-6">
           <button
-            onClick={() => {
-              if (activeTab !== 'finance' && confirmDiscardIfDirty())
+            onClick={async () => {
+              if (activeTab !== 'finance' && (await confirmDiscardIfDirty()))
                 setActiveTab('finance')
             }}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
@@ -512,8 +554,8 @@ export default function LeadDrawer({
             Finanzas
           </button>
           <button
-            onClick={() => {
-              if (activeTab !== 'activities' && confirmDiscardIfDirty())
+            onClick={async () => {
+              if (activeTab !== 'activities' && (await confirmDiscardIfDirty()))
                 setActiveTab('activities')
             }}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
@@ -525,8 +567,8 @@ export default function LeadDrawer({
             Actividades
           </button>
           <button
-            onClick={() => {
-              if (activeTab !== 'deals' && confirmDiscardIfDirty())
+            onClick={async () => {
+              if (activeTab !== 'deals' && (await confirmDiscardIfDirty()))
                 setActiveTab('deals')
             }}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${

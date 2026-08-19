@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import {
   getAdminUserData,
   updateUserRoles,
@@ -89,7 +90,7 @@ export function useAdmin() {
 
       if (currentRoles.includes(roleToToggle)) {
         if (currentRoles.length === 1) {
-          alert('Un usuario debe tener al menos un rol asignado.')
+          toast.error('Un usuario debe tener al menos un rol asignado.')
           return
         }
         newRoles = currentRoles.filter((r) => r !== roleToToggle)
@@ -98,12 +99,12 @@ export function useAdmin() {
       }
 
       await updateUserRoles(userId, newRoles)
-      alert('Roles actualizados correctamente.')
+      toast.success('Roles actualizados correctamente.')
 
       // Recargar datos para refrescar las tablas
       await loadData()
     } catch (err: any) {
-      alert(`Error al actualizar roles: ${err.message}`)
+      toast.error('Error al actualizar roles', { description: err.message })
     } finally {
       setActionLoading(false)
     }
@@ -128,12 +129,12 @@ export function useAdmin() {
         selectedSupervisorId,
         assignedSalespeopleIds,
       )
-      alert(
+      toast.success(
         'Asignaciones de vendedores actualizadas correctamente en la base de datos.',
       )
       await loadData()
     } catch (err: any) {
-      alert(`Error al guardar asignaciones: ${err.message}`)
+      toast.error('Error al guardar asignaciones', { description: err.message })
     } finally {
       setActionLoading(false)
     }

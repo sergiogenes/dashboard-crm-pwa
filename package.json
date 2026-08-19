@@ -26,7 +26,8 @@
     "otplib": "^13.4.0",
     "qrcode": "^1.5.4",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "sonner": "^2.0.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
