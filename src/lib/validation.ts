@@ -44,3 +44,21 @@ const EMAIL_REGEX =
 export function isValidEmail(email: string): boolean {
   return EMAIL_REGEX.test(email.trim())
 }
+
+/**
+ * Valida la Cédula de Identidad Civil paraguaya con lo único que se puede
+ * verificar con rigor: solo dígitos, en un rango de longitud razonable.
+ *
+ * A diferencia del RUC (que sí tiene un dígito verificador módulo 11), la
+ * cédula personal es un número puramente secuencial sin estructura interna
+ * ni checksum publicado oficialmente (confirmado 19/8/2026, ver ítem #7 del
+ * feedback de Negofín). Al día de hoy ya se expidieron más de 8.000.000 de
+ * cédulas, así que las más recientes tienen 7-8 dígitos; cédulas antiguas
+ * (emitidas hace décadas) pueden tener bastantes menos. El rango 5-9 es un
+ * supuesto razonable, no una spec oficial confirmada por Negofín todavía.
+ */
+export function isValidParaguayanDocumentId(documentId: string): boolean {
+  const trimmed = documentId.trim()
+  if (!trimmed) return false
+  return /^\d{5,9}$/.test(trimmed)
+}

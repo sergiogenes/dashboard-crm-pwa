@@ -5,7 +5,12 @@ import { localDb, LocalLead, LocalCompany } from '@/lib/db'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useSession } from 'next-auth/react'
 import { encryptLead, decryptLead } from '@/lib/client-crypto'
-import { isValidEmail, isValidPhone, sanitizePhoneInput } from '@/lib/validation'
+import {
+  isValidEmail,
+  isValidParaguayanDocumentId,
+  isValidPhone,
+  sanitizePhoneInput,
+} from '@/lib/validation'
 import {
   X,
   User,
@@ -97,6 +102,14 @@ export default function LeadFormModal({
     if (!isValidPhone(phone)) {
       setError(
         'El número de teléfono no es válido. Ingresalo con código de país (ej. +54 9 11 1234-5678) o, si es de Paraguay, sin código (ej. 0981 123456).',
+      )
+      setLoading(false)
+      return
+    }
+
+    if (!isValidParaguayanDocumentId(documentId)) {
+      setError(
+        'La cédula/DNI no es válida. Debe tener entre 5 y 9 dígitos, solo números.',
       )
       setLoading(false)
       return
@@ -321,7 +334,7 @@ export default function LeadFormModal({
                   setDocumentId(e.target.value.replace(/\D/g, ''))
                 }
                 placeholder="1234567"
-                maxLength={15}
+                maxLength={9}
                 className="block w-full rounded-xl border border-border bg-surface py-2.5 pl-10 pr-4 text-sm text-ink placeholder-ink-3 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>

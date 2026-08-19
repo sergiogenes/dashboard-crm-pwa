@@ -7,7 +7,11 @@ import User from '@/models/User'
 import Lead from '@/models/Lead'
 import Deal from '@/models/Deal'
 import { hash } from '@/lib/crypto'
-import { isValidEmail, isValidPhone } from '@/lib/validation'
+import {
+  isValidEmail,
+  isValidParaguayanDocumentId,
+  isValidPhone,
+} from '@/lib/validation'
 
 // Helper para validar rol de supervisor
 async function getSupervisorIdOrThrow() {
@@ -201,6 +205,14 @@ export async function importProspectsFromCSV(
     if (phone && !isValidPhone(phone)) {
       skippedCount++
       errors.push(`Teléfono inválido para ${displayName}: "${p.phone}"`)
+      continue
+    }
+
+    if (!isValidParaguayanDocumentId(docId)) {
+      skippedCount++
+      errors.push(
+        `Cédula/DNI inválida para ${displayName}: "${p.documentId}" (debe tener entre 5 y 9 dígitos)`,
+      )
       continue
     }
 
