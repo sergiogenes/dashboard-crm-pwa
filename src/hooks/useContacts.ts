@@ -337,6 +337,8 @@ export function useContacts() {
                 timestamp: act.timestamp,
                 reminderDate: act.reminderDate,
                 reminderRead: (act as any).reminderRead || false,
+                reminderStatus: (act as any).reminderStatus || 'active',
+                reminderPriority: (act as any).reminderPriority || 'MEDIUM',
                 synced: true,
                 createdAt: act.createdAt,
                 updatedAt: act.updatedAt,

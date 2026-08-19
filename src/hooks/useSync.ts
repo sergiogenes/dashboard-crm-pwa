@@ -435,6 +435,14 @@ export function useSync(userId: string | undefined) {
               timestamp: serverAct.timestamp,
               reminderDate: serverAct.reminderDate,
               reminderRead: (serverAct as any).reminderRead || false,
+              // Se habían olvidado estos dos campos acá: como es un put()
+              // (reemplaza el registro entero, no un merge parcial), cada
+              // pull borraba reminderStatus/reminderPriority del lado local
+              // -- 'Marcar como Realizado' se guardaba bien en el servidor,
+              // pero el siguiente ciclo de sync lo pisaba de vuelta a
+              // 'waiting' en el navegador.
+              reminderStatus: (serverAct as any).reminderStatus || 'active',
+              reminderPriority: (serverAct as any).reminderPriority || 'MEDIUM',
               synced: true,
               createdAt: serverAct.createdAt,
               updatedAt: serverAct.updatedAt,
