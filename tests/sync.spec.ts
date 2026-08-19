@@ -304,7 +304,7 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
   expect(dbLead?.crmId).toBeDefined()
 })
 
-test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y Quitar Alarma)', async ({
+test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y Marcar como Realizado)', async ({
   page,
 }) => {
   // Login con MFA
@@ -324,36 +324,37 @@ test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y
   await page.locator('#enable-reminder').check()
   await page.getByRole('button', { name: 'Registrar Actividad' }).click()
 
-  // 3. Confirmar aparición en el timeline
-  await expect(
-    page.getByText('Recordatorio: Recordatorio Test Playwright'),
-  ).toBeVisible()
+  // 3. La Nota principal queda en "Actividades"; el recordatorio (Task
+  // acompañante, ver handleAddActivity) vive en su propia pestaña desde el
+  // punto #16 -- ya no aparece inline en el timeline de Actividades.
   await expect(
     page
       .getByText('Este es un cuerpo de prueba para el test automatizado')
       .first(),
   ).toBeVisible()
 
+  await page.getByRole('button', { name: 'Recordatorios' }).click()
+  await expect(
+    page.getByText('Recordatorio Test Playwright').first(),
+  ).toBeVisible()
+
   // 4. Marcar como leído
   await page.getByRole('button', { name: 'Marcar Leído' }).first().click()
   await expect(page.getByText('Leído')).toBeVisible()
 
-  // 5. Quitar Alarma (ahora vía el ConfirmDialog propio de la app, no un
-  // diálogo nativo del navegador — ver useConfirm/ConfirmDialog)
-  await page.getByRole('button', { name: 'Quitar Alarma' }).first().click()
-  await page.getByRole('button', { name: 'Quitar' }).click()
+  // 5. Marcar como Realizado (vía el ConfirmDialog propio de la app, no un
+  // diálogo nativo del navegador — ver useConfirm/ConfirmDialog). Ya no
+  // borra la Task del CRM: solo cambia de estado y se conserva el historial.
+  await page.getByRole('button', { name: 'Marcar como Realizado' }).click()
+  await page.getByRole('button', { name: 'Confirmar' }).click()
 
-  // Confirmar que ya no se ve la sección de alarma (pero la nota sigue visible).
-  // Nota: al crear una actividad con recordatorio, handleAddActivity registra
-  // dos entradas a propósito (la Nota principal + una Task acompañante para
-  // que el recordatorio sincronice como Task en el CRM, ver comentario ahí).
-  // Ambas comparten título/cuerpo, así que tras quitar la alarma coexisten dos
-  // encabezados idénticos en el timeline — se verifica con .first() en vez de
-  // esperar una coincidencia única.
-  await expect(page.getByText('Quitar Alarma')).not.toBeVisible()
+  // El recordatorio sigue visible (no se borró), pero ya como "Realizado" y
+  // sin botones de acción.
+  await expect(page.getByText('Realizado')).toBeVisible()
   await expect(
     page.getByText('Recordatorio Test Playwright').first(),
   ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Marcar Leído' })).not.toBeVisible()
 })
 
 test('Debe registrar una nota general sin recordatorio', async ({ page }) => {
