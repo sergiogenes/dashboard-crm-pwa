@@ -200,10 +200,16 @@ export default function LeadDrawer({
     }
   }, [selectedTemplateName, whatsappTemplates, selectedLeadForInvoice])
 
-  // Lógica del Highlight de actividad reactivo a la prop
+  // Lógica del Highlight de actividad reactivo a la prop -- si la actividad
+  // resaltada es un recordatorio (viene de la campanita de notificaciones),
+  // hay que abrir la pestaña "Recordatorios", no "Actividades" (#16 la
+  // separó a su propia pestaña).
   useEffect(() => {
     if (highlightedActivityId) {
-      setActiveTab('activities')
+      const highlighted = activities.find(
+        (a) => a.id === highlightedActivityId || a.tempId === highlightedActivityId,
+      )
+      setActiveTab(highlighted?.reminderDate ? 'reminders' : 'activities')
 
       const timer = setTimeout(() => {
         const element = document.getElementById(`activity-${highlightedActivityId}`)
@@ -213,7 +219,7 @@ export default function LeadDrawer({
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [highlightedActivityId])
+  }, [highlightedActivityId, activities])
 
   // Calcular si la ventana de WhatsApp está activa desde el último mensaje recibido
   const wsIncoming = [...(activities || [])]
@@ -1332,7 +1338,9 @@ export default function LeadDrawer({
                 {activities.filter((act) => act.reminderDate).length > 0 ? (
                   [...activities]
                     .filter((act) => act.reminderDate)
-                    .sort((a, b) => (a.reminderDate || 0) - (b.reminderDate || 0))
+                    // Más reciente arriba (por fecha de creación), igual
+                    // criterio que la lista de Deals.
+                    .sort((a, b) => b.createdAt - a.createdAt)
                     .map((act) => {
                       // Compatibilidad: registros viejos solo tienen
                       // reminderRead (booleano); reminderStatus es la fuente
@@ -1343,7 +1351,12 @@ export default function LeadDrawer({
                       return (
                       <div
                         key={act.id || act.tempId}
-                        className="space-y-2 rounded-xl border border-chip-bd bg-chip p-4"
+                        id={`activity-${act.id || act.tempId}`}
+                        className={`space-y-2 rounded-xl border bg-chip p-4 transition-all duration-500 ${
+                          highlightedActivityId === act.id || highlightedActivityId === act.tempId
+                            ? 'scale-[1.02] border-primary ring-2 ring-primary/20'
+                            : 'border-chip-bd'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
