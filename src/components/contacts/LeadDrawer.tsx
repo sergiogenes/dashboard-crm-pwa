@@ -80,7 +80,13 @@ export default function LeadDrawer({
   const { confirm, ConfirmDialogElement } = useConfirm()
 
   // Estado de Navegación del Drawer
-  const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'deals'>('activities')
+  const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'reminders' | 'deals'>('activities')
+
+  // Recordatorios activos (#16): actividades con reminderDate definido y sin
+  // marcar como leídas -- se usan para el badge de la pestaña "Recordatorios".
+  const activeReminderCount = activities.filter(
+    (act) => act.reminderDate && !act.reminderRead,
+  ).length
 
   // Estado del Formulario de Actividad
   const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'>('NOTE')
@@ -98,16 +104,28 @@ export default function LeadDrawer({
   const [dealNotes, setDealNotes] = useState('')
   const [isSubmittingDeal, setIsSubmittingDeal] = useState(false)
 
+  // Estado del Formulario de Nuevo Recordatorio (#16 -- autónomo de la
+  // pestaña "Actividades"; crea directamente una Task con reminderDate, sin
+  // necesidad de la Nota acompañante que sí tiene sentido en Actividades).
+  const [newReminderTitle, setNewReminderTitle] = useState('')
+  const [newReminderBody, setNewReminderBody] = useState('')
+  const [newReminderDateOnly, setNewReminderDateOnly] = useState(getTomorrowString())
+  const [newReminderTimeOnly, setNewReminderTimeOnly] = useState('08:00')
+  const [isSubmittingReminder, setIsSubmittingReminder] = useState(false)
+
   // Aviso de cambios sin guardar (#17): el título/cuerpo de "Registrar
-  // Actividad" (incluyendo el recordatorio, si está activado) y el
-  // monto/notas de "Nueva Solicitud de Préstamo" persisten en este estado
-  // sin importar qué pestaña esté visible — si hay contenido sin enviar, se
-  // confirma antes de cerrar el drawer o cambiar de pestaña.
+  // Actividad" (incluyendo el recordatorio, si está activado), el nuevo
+  // formulario de "Recordatorios" y el monto/notas de "Nueva Solicitud de
+  // Préstamo" persisten en este estado sin importar qué pestaña esté
+  // visible — si hay contenido sin enviar, se confirma antes de cerrar el
+  // drawer o cambiar de pestaña.
   const hasUnsavedChanges =
     activityTitle.trim() !== '' ||
     activityBody.trim() !== '' ||
     showReminderPicker ||
     reminderDateOnly.trim() !== '' ||
+    newReminderTitle.trim() !== '' ||
+    newReminderBody.trim() !== '' ||
     dealAmount.trim() !== '' ||
     dealNotes.trim() !== ''
 
@@ -129,6 +147,10 @@ export default function LeadDrawer({
       setShowReminderPicker(false)
       setReminderDateOnly('')
       setReminderTimeOnly('08:00')
+      setNewReminderTitle('')
+      setNewReminderBody('')
+      setNewReminderDateOnly(getTomorrowString())
+      setNewReminderTimeOnly('08:00')
       setDealAmount('')
       setDealNotes('')
     }
@@ -471,6 +493,70 @@ export default function LeadDrawer({
     }
   }
 
+  // Registrar un recordatorio directamente desde la pestaña "Recordatorios"
+  // (#16): se crea como una única Task con reminderDate -- a diferencia del
+  // formulario de "Actividades", no hace falta la Nota acompañante porque
+  // acá no hay una nota principal de la que "colgar" el recordatorio.
+  const handleAddReminder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId || !selectedLeadId || isForeign) return
+    if (!newReminderBody.trim()) return
+    if (!newReminderDateOnly) {
+      toast.error('Por favor elegí una fecha para el recordatorio.')
+      return
+    }
+
+    setIsSubmittingReminder(true)
+    try {
+      const now = Date.now()
+      const dbKey = session?.user?.dbEncryptionKey
+      const timeVal = newReminderTimeOnly || '08:00'
+      const parsedDate = new Date(`${newReminderDateOnly}T${timeVal}`)
+
+      if (isNaN(parsedDate.getTime())) {
+        toast.error('La fecha/hora del recordatorio no es válida.')
+        return
+      }
+
+      // El título es opcional, igual que en "Registrar Actividad" (#3): si se
+      // deja vacío, se deriva de los primeros ~50 caracteres de la
+      // descripción.
+      const trimmedBody = newReminderBody.trim()
+      const derivedTitle =
+        trimmedBody.length > 50 ? `${trimmedBody.slice(0, 50).trim()}…` : trimmedBody
+      const titleVal = newReminderTitle.trim() || derivedTitle
+
+      const newReminder: LocalActivity = {
+        tempId: crypto.randomUUID(),
+        leadId: selectedLeadId,
+        userId,
+        type: 'TASK',
+        title: titleVal,
+        body: trimmedBody,
+        timestamp: now,
+        reminderDate: parsedDate.getTime(),
+        reminderRead: false,
+        synced: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+
+      const encryptedReminder = await encryptActivity(newReminder, dbKey)
+      await localDb.activities.put(encryptedReminder)
+
+      setNewReminderTitle('')
+      setNewReminderBody('')
+      setNewReminderDateOnly(getTomorrowString())
+      setNewReminderTimeOnly('08:00')
+      toast.success('Recordatorio creado correctamente.')
+    } catch (err) {
+      console.error('[Drawer] Error al registrar recordatorio:', err)
+      toast.error('Ocurrió un error al guardar el recordatorio.')
+    } finally {
+      setIsSubmittingReminder(false)
+    }
+  }
+
   // Eliminar préstamo
   const handleDeleteDeal = async (deal: LocalDeal) => {
     if (isForeign) return
@@ -502,7 +588,11 @@ export default function LeadDrawer({
         }}
         className="fixed inset-0 z-40 bg-ink/60 backdrop-blur-sm transition-opacity duration-300"
       />
-      <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
+      {/* Ancho responsive: se mantiene a pantalla completa en mobile (w-full
+          por debajo de max-w-md ya cubre eso), pero en desktop se ensancha
+          progresivamente -- con 4 pestañas (Finanzas/Actividades/
+          Recordatorios/Préstamos) el ancho angosto original las apretaba. */}
+      <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl sm:max-w-xl lg:max-w-2xl">
         {/* Cabecera del Drawer */}
         <div className="flex items-center justify-between border-b border-border p-6">
           <div>
@@ -545,7 +635,7 @@ export default function LeadDrawer({
               if (activeTab !== 'finance' && (await confirmDiscardIfDirty()))
                 setActiveTab('finance')
             }}
-            className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
               activeTab === 'finance'
                 ? 'border-primary text-ink'
                 : 'border-transparent text-ink-3 hover:text-ink-2'
@@ -558,7 +648,7 @@ export default function LeadDrawer({
               if (activeTab !== 'activities' && (await confirmDiscardIfDirty()))
                 setActiveTab('activities')
             }}
-            className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
               activeTab === 'activities'
                 ? 'border-primary text-ink'
                 : 'border-transparent text-ink-3 hover:text-ink-2'
@@ -568,10 +658,28 @@ export default function LeadDrawer({
           </button>
           <button
             onClick={async () => {
+              if (activeTab !== 'reminders' && (await confirmDiscardIfDirty()))
+                setActiveTab('reminders')
+            }}
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
+              activeTab === 'reminders'
+                ? 'border-primary text-ink'
+                : 'border-transparent text-ink-3 hover:text-ink-2'
+            }`}
+          >
+            Recordatorios
+            {activeReminderCount > 0 && (
+              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-bad-bg px-1 text-[9px] font-bold text-bad">
+                {activeReminderCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={async () => {
               if (activeTab !== 'deals' && (await confirmDiscardIfDirty()))
                 setActiveTab('deals')
             }}
-            className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
               activeTab === 'deals'
                 ? 'border-primary text-ink'
                 : 'border-transparent text-ink-3 hover:text-ink-2'
@@ -977,8 +1085,9 @@ export default function LeadDrawer({
                 </h4>
 
                 <div className="relative ml-3.5 space-y-6 border-l border-border pl-6">
-                  {activities && activities.length > 0 ? (
+                  {activities && activities.filter((act) => !act.reminderDate).length > 0 ? (
                     [...activities]
+                      .filter((act) => !act.reminderDate)
                       .sort((a, b) => b.timestamp - a.timestamp)
                       .map((act) => {
                         const config = getActivityTypeConfig(act.type)
@@ -1149,6 +1258,172 @@ export default function LeadDrawer({
                     </p>
                   )}
                 </div>
+              </div>
+            </div>
+          ) : activeTab === 'reminders' ? (
+            <div className="space-y-6">
+              {/* Formulario Nuevo Recordatorio */}
+              {!isForeign ? (
+                <form
+                  onSubmit={handleAddReminder}
+                  className="space-y-4 rounded-xl border border-border bg-surface-2/20 p-4 backdrop-blur-md"
+                >
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
+                    Nuevo Recordatorio
+                  </h4>
+
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                      Título (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Llamar para renovar contrato"
+                      value={newReminderTitle}
+                      onChange={(e) => setNewReminderTitle(e.target.value)}
+                      className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                      Descripción
+                    </label>
+                    <textarea
+                      placeholder="Detalle del recordatorio..."
+                      value={newReminderBody}
+                      onChange={(e) => setNewReminderBody(e.target.value)}
+                      required
+                      rows={2}
+                      className="block w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                        Fecha
+                      </label>
+                      <input
+                        type="date"
+                        value={newReminderDateOnly}
+                        onChange={(e) => setNewReminderDateOnly(e.target.value)}
+                        required
+                        className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                        Hora
+                      </label>
+                      <input
+                        type="time"
+                        value={newReminderTimeOnly}
+                        onChange={(e) => setNewReminderTimeOnly(e.target.value)}
+                        required
+                        className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingReminder}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-cta-bg py-2 text-xs font-bold text-cta-ink transition-colors hover:bg-accent disabled:opacity-50"
+                  >
+                    {isSubmittingReminder ? (
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cta-ink border-t-transparent" />
+                    ) : (
+                      <>
+                        <Bell className="h-3.5 w-3.5" />
+                        Crear Recordatorio
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <div className="rounded-xl border border-border bg-surface-2/10 p-4 text-center text-xs text-ink-3">
+                  No tenes permisos para crear recordatorios para este contacto (Modo Solo Lectura).
+                </div>
+              )}
+
+              <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
+                Recordatorios Registrados
+              </h4>
+              <div className="space-y-3">
+                {activities.filter((act) => act.reminderDate).length > 0 ? (
+                  [...activities]
+                    .filter((act) => act.reminderDate)
+                    .sort((a, b) => (a.reminderDate || 0) - (b.reminderDate || 0))
+                    .map((act) => (
+                      <div
+                        key={act.id || act.tempId}
+                        className="space-y-2 rounded-xl border border-chip-bd bg-chip p-4"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-chip-ink">
+                              <Bell className="h-3.5 w-3.5" />
+                              <span className="font-medium">
+                                {act.reminderDate &&
+                                  new Date(act.reminderDate).toLocaleString()}
+                              </span>
+                              {act.reminderRead ? (
+                                <span className="ml-1 rounded border border-chip-bd bg-surface px-1.5 py-0.5 text-[8px] text-chip-ink">
+                                  Leído
+                                </span>
+                              ) : (
+                                <span className="ml-1 rounded border border-warn-bd bg-warn-bg px-1.5 py-0.5 text-[8px] text-warn">
+                                  Activo
+                                </span>
+                              )}
+                            </div>
+                            <h5 className="mt-1 text-xs font-bold text-ink">
+                              {act.title}
+                            </h5>
+                          </div>
+                          {act.synced ? (
+                            <span title="Sincronizado con HubSpot">
+                              <Cloud className="h-3.5 w-3.5 shrink-0 text-ok" />
+                            </span>
+                          ) : (
+                            <span title="Guardado localmente, pendiente de sincronización">
+                              <Database className="h-3.5 w-3.5 shrink-0 animate-pulse text-warn" />
+                            </span>
+                          )}
+                        </div>
+                        <p className="whitespace-pre-line text-xs leading-relaxed text-ink-2">
+                          {act.body}
+                        </p>
+                        {!isForeign && (
+                          <div className="flex items-center gap-2 pt-1">
+                            {!act.reminderRead && (
+                              <button
+                                type="button"
+                                onClick={() => handleMarkReminderAsRead(act)}
+                                className="flex items-center gap-1 rounded border border-chip-bd bg-surface px-2 py-1 text-[9px] font-bold text-chip-ink transition-colors hover:bg-chip"
+                              >
+                                <CheckSquare className="h-3 w-3" />
+                                Marcar Leído
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveReminder(act)}
+                              className="flex items-center gap-1 rounded border border-bad-bd bg-bad-bg px-2 py-1 text-[9px] font-bold text-bad transition-colors hover:bg-bad-bd/40"
+                            >
+                              <X className="h-3 w-3" />
+                              Quitar Alarma
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                ) : (
+                  <p className="py-6 text-center text-xs text-ink-3">
+                    No hay recordatorios para este contacto.
+                  </p>
+                )}
               </div>
             </div>
           ) : (
