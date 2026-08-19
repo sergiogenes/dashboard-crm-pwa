@@ -299,7 +299,7 @@ export class SalesforceProvider implements ICRMProvider {
       // Filtramos por WhoId que es el Lookup hacia el Contacto.
       const result = await this.withConnection(async (conn) =>
         conn.query<any>(
-          `SELECT Id, Subject, Description, ActivityDate, CreatedDate, Status, ReminderDateTime, IsReminderSet FROM Task WHERE WhoId = '${leadCrmId}'`
+          `SELECT Id, Subject, Description, ActivityDate, CreatedDate, Status, Priority, ReminderDateTime, IsReminderSet FROM Task WHERE WhoId = '${leadCrmId}'`
         )
       )
 
@@ -339,6 +339,18 @@ export class SalesforceProvider implements ICRMProvider {
           timestamp: item.CreatedDate ? new Date(item.CreatedDate).toISOString() : new Date().toISOString(),
           reminderDate: item.ReminderDateTime ? String(new Date(item.ReminderDateTime).getTime()) : undefined,
           reminderRead: item.Status === 'Completed',
+          reminderStatus:
+            item.Status === 'Completed'
+              ? 'completed'
+              : item.Status === 'Not Started'
+                ? 'active'
+                : 'waiting',
+          reminderPriority:
+            item.Priority === 'High'
+              ? 'HIGH'
+              : item.Priority === 'Low'
+                ? 'LOW'
+                : 'MEDIUM',
         }
       })
     } catch (err) {
@@ -360,11 +372,28 @@ export class SalesforceProvider implements ICRMProvider {
           ? new Date(activity.timestamp)
           : new Date()
 
+      // reminderStatus es la fuente de verdad; reminderRead (deprecado) es
+      // el fallback para llamadas que todavía no lo mandan.
+      const sfStatusMap: Record<string, string> = {
+        active: 'Not Started',
+        waiting: 'Waiting on someone else',
+        completed: 'Completed',
+      }
+      const resolvedStatus =
+        activity.reminderStatus ||
+        (activity.reminderRead ? 'waiting' : 'active')
+      const sfPriorityMap: Record<string, string> = {
+        LOW: 'Low',
+        MEDIUM: 'Normal',
+        HIGH: 'High',
+      }
+
       const taskData: any = {
         WhoId: leadCrmId,
         Subject: subject,
         Description: activity.body,
-        Status: activity.reminderRead ? 'Completed' : 'Not Started',
+        Status: sfStatusMap[resolvedStatus] || 'Not Started',
+        Priority: sfPriorityMap[activity.reminderPriority || 'MEDIUM'],
         ActivityDate: dueDate.toISOString().substring(0, 10),
         IsReminderSet: !!activity.reminderDate,
         ...(activity.reminderDate ? { ReminderDateTime: new Date(parseInt(activity.reminderDate)).toISOString() } : {}),

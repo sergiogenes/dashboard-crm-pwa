@@ -224,6 +224,8 @@ export async function syncMongoDBToCRM(): Promise<void> {
             ? String(activity.reminderDate.getTime())
             : undefined,
           reminderRead: activity.reminderRead || false,
+          reminderStatus: activity.reminderStatus || 'active',
+          reminderPriority: activity.reminderPriority || 'MEDIUM',
         })
 
         activity.crmId = crmId

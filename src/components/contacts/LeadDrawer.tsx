@@ -82,11 +82,15 @@ export default function LeadDrawer({
   // Estado de Navegación del Drawer
   const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'reminders' | 'deals'>('activities')
 
-  // Recordatorios activos (#16): actividades con reminderDate definido y sin
-  // marcar como leídas -- se usan para el badge de la pestaña "Recordatorios".
-  const activeReminderCount = activities.filter(
-    (act) => act.reminderDate && !act.reminderRead,
-  ).length
+  // Recordatorios activos (#16): actividades con reminderDate definido y
+  // estado 'active' (ni leídas/en espera ni realizadas) -- se usan para el
+  // badge de la pestaña "Recordatorios". Compatibilidad con registros viejos
+  // que solo tienen reminderRead (booleano).
+  const activeReminderCount = activities.filter((act) => {
+    if (!act.reminderDate) return false
+    const status = act.reminderStatus || (act.reminderRead ? 'waiting' : 'active')
+    return status === 'active'
+  }).length
 
   // Estado del Formulario de Actividad
   const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'>('NOTE')
@@ -367,6 +371,8 @@ export default function LeadDrawer({
           timestamp: now,
           reminderDate: reminderTimestamp,
           reminderRead: false,
+          reminderStatus: 'active',
+          reminderPriority: 'MEDIUM',
           synced: false,
           createdAt: now,
           updatedAt: now,
@@ -409,38 +415,47 @@ export default function LeadDrawer({
     }
   }
 
-  // Marcar recordatorio leído
+  // Marcar recordatorio leído/en espera -- sincroniza como Task 'WAITING' en
+  // el CRM (antes se sincronizaba como 'COMPLETED', perdiendo la distinción
+  // con "Realizado").
   const handleMarkReminderAsRead = async (act: LocalActivity) => {
     if (isForeign) return
     try {
+      const patch = { reminderRead: true, reminderStatus: 'waiting' as const, synced: false }
       if (act.id) {
-        await localDb.activities.where('id').equals(act.id).modify({ reminderRead: true, synced: false })
+        await localDb.activities.where('id').equals(act.id).modify(patch)
       } else if (act.tempId) {
-        await localDb.activities.where('tempId').equals(act.tempId).modify({ reminderRead: true })
+        await localDb.activities.where('tempId').equals(act.tempId).modify(patch)
       }
     } catch (err) {
       console.error('[Drawer] Error al marcar recordatorio como leído:', err)
     }
   }
 
-  // Remover alarma
-  const handleRemoveReminder = async (act: LocalActivity) => {
+  // Marcar recordatorio como Realizado -- sincroniza como Task 'COMPLETED'
+  // en el CRM. Reemplaza al viejo "Quitar Alarma", que borraba la Task por
+  // completo del CRM y perdía el historial; ahora la Task se conserva,
+  // solo cambia de estado.
+  const handleCompleteReminder = async (act: LocalActivity) => {
     if (isForeign) return
     const ok = await confirm({
-      title: 'Quitar recordatorio',
-      message: '¿Estás seguro de que deseas quitar el recordatorio?',
-      confirmLabel: 'Quitar',
-      variant: 'danger',
+      title: 'Marcar como realizado',
+      message: '¿Confirmás que este recordatorio ya fue atendido?',
     })
     if (!ok) return
     try {
+      const patch = {
+        reminderRead: true,
+        reminderStatus: 'completed' as const,
+        synced: false,
+      }
       if (act.id) {
-        await localDb.activities.where('id').equals(act.id).modify({ reminderDate: undefined, reminderRead: false, synced: false })
+        await localDb.activities.where('id').equals(act.id).modify(patch)
       } else if (act.tempId) {
-        await localDb.activities.where('tempId').equals(act.tempId).modify({ reminderDate: undefined, reminderRead: false })
+        await localDb.activities.where('tempId').equals(act.tempId).modify(patch)
       }
     } catch (err) {
-      console.error('[Drawer] Error al quitar el recordatorio:', err)
+      console.error('[Drawer] Error al marcar el recordatorio como realizado:', err)
     }
   }
 
@@ -536,6 +551,8 @@ export default function LeadDrawer({
         timestamp: now,
         reminderDate: parsedDate.getTime(),
         reminderRead: false,
+        reminderStatus: 'active',
+        reminderPriority: 'MEDIUM',
         synced: false,
         createdAt: now,
         updatedAt: now,
@@ -1205,48 +1222,9 @@ export default function LeadDrawer({
                                 <p className="whitespace-pre-line text-xs leading-relaxed text-ink-2">
                                   {act.body}
                                 </p>
-
-                                {act.reminderDate && (
-                                  <div className="mt-2 flex max-w-md flex-col gap-1.5 rounded-lg border border-chip-bd bg-chip p-2.5">
-                                    <div className="flex items-center gap-1.5 text-[10px] text-chip-ink">
-                                      <Bell className="h-3.5 w-3.5 animate-pulse text-chip-ink" />
-                                      <span className="font-medium">
-                                        Recordatorio: {new Date(act.reminderDate).toLocaleString()}
-                                      </span>
-                                      {act.reminderRead ? (
-                                        <span className="ml-1 rounded border border-chip-bd bg-surface px-1.5 py-0.5 text-[8px] text-chip-ink">
-                                          Leído
-                                        </span>
-                                      ) : (
-                                        <span className="ml-1 rounded border border-warn-bd bg-warn-bg px-1.5 py-0.5 text-[8px] text-warn">
-                                          Activo
-                                        </span>
-                                      )}
-                                    </div>
-                                    {!isForeign && (
-                                      <div className="flex items-center gap-2">
-                                        {!act.reminderRead && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleMarkReminderAsRead(act)}
-                                            className="flex items-center gap-1 rounded border border-chip-bd bg-surface px-2 py-1 text-[9px] font-bold text-chip-ink transition-colors hover:bg-chip"
-                                          >
-                                            <CheckSquare className="h-3 w-3" />
-                                            Marcar Leído
-                                          </button>
-                                        )}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRemoveReminder(act)}
-                                          className="flex items-center gap-1 rounded border border-bad-bd bg-bad-bg px-2 py-1 text-[9px] font-bold text-bad transition-colors hover:bg-bad-bd/40"
-                                        >
-                                          <X className="h-3 w-3" />
-                                          Quitar Alarma
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
+                                {/* Los recordatorios (act.reminderDate) ya no se muestran acá --
+                                    esta lista los excluye explícitamente (ver .filter arriba);
+                                    tienen su propia pestaña "Recordatorios" (#16). */}
                               </div>
                             )}
                           </div>
@@ -1355,7 +1333,14 @@ export default function LeadDrawer({
                   [...activities]
                     .filter((act) => act.reminderDate)
                     .sort((a, b) => (a.reminderDate || 0) - (b.reminderDate || 0))
-                    .map((act) => (
+                    .map((act) => {
+                      // Compatibilidad: registros viejos solo tienen
+                      // reminderRead (booleano); reminderStatus es la fuente
+                      // de verdad de acá en adelante.
+                      const status =
+                        act.reminderStatus ||
+                        (act.reminderRead ? 'waiting' : 'active')
+                      return (
                       <div
                         key={act.id || act.tempId}
                         className="space-y-2 rounded-xl border border-chip-bd bg-chip p-4"
@@ -1368,7 +1353,11 @@ export default function LeadDrawer({
                                 {act.reminderDate &&
                                   new Date(act.reminderDate).toLocaleString()}
                               </span>
-                              {act.reminderRead ? (
+                              {status === 'completed' ? (
+                                <span className="ml-1 rounded border border-ok-bd bg-ok-bg px-1.5 py-0.5 text-[8px] text-ok">
+                                  Realizado
+                                </span>
+                              ) : status === 'waiting' ? (
                                 <span className="ml-1 rounded border border-chip-bd bg-surface px-1.5 py-0.5 text-[8px] text-chip-ink">
                                   Leído
                                 </span>
@@ -1395,9 +1384,9 @@ export default function LeadDrawer({
                         <p className="whitespace-pre-line text-xs leading-relaxed text-ink-2">
                           {act.body}
                         </p>
-                        {!isForeign && (
+                        {!isForeign && status !== 'completed' && (
                           <div className="flex items-center gap-2 pt-1">
-                            {!act.reminderRead && (
+                            {status === 'active' && (
                               <button
                                 type="button"
                                 onClick={() => handleMarkReminderAsRead(act)}
@@ -1409,16 +1398,16 @@ export default function LeadDrawer({
                             )}
                             <button
                               type="button"
-                              onClick={() => handleRemoveReminder(act)}
-                              className="flex items-center gap-1 rounded border border-bad-bd bg-bad-bg px-2 py-1 text-[9px] font-bold text-bad transition-colors hover:bg-bad-bd/40"
+                              onClick={() => handleCompleteReminder(act)}
+                              className="flex items-center gap-1 rounded border border-ok-bd bg-ok-bg px-2 py-1 text-[9px] font-bold text-ok transition-colors hover:bg-ok-bd/40"
                             >
-                              <X className="h-3 w-3" />
-                              Quitar Alarma
+                              <CheckSquare className="h-3 w-3" />
+                              Marcar como Realizado
                             </button>
                           </div>
                         )}
                       </div>
-                    ))
+                    )})
                 ) : (
                   <p className="py-6 text-center text-xs text-ink-3">
                     No hay recordatorios para este contacto.

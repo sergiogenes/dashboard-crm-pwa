@@ -267,6 +267,8 @@ export async function pushClientChanges(
               ? new Date(clientAct.reminderDate)
               : null,
             reminderRead: clientAct.reminderRead || false,
+            reminderStatus: clientAct.reminderStatus || 'active',
+            reminderPriority: clientAct.reminderPriority || 'MEDIUM',
             crmSynced: false,
           },
         )
@@ -288,6 +290,8 @@ export async function pushClientChanges(
             ? new Date(clientAct.reminderDate)
             : null,
           reminderRead: clientAct.reminderRead || false,
+          reminderStatus: clientAct.reminderStatus || 'active',
+          reminderPriority: clientAct.reminderPriority || 'MEDIUM',
           deleted: clientAct.deleted || false,
           crmSynced: false,
         })
@@ -303,6 +307,8 @@ export async function pushClientChanges(
           ? new Date(clientAct.reminderDate)
           : null
         existingAct.reminderRead = clientAct.reminderRead || false
+        existingAct.reminderStatus = clientAct.reminderStatus || 'active'
+        existingAct.reminderPriority = clientAct.reminderPriority || 'MEDIUM'
         if (clientAct.deleted) {
           existingAct.deleted = true
         }
@@ -691,6 +697,8 @@ export async function pullServerUpdates(lastSyncTime: number) {
       timestamp: act.timestamp.getTime(),
       reminderDate: act.reminderDate ? act.reminderDate.getTime() : undefined,
       reminderRead: act.reminderRead,
+      reminderStatus: act.reminderStatus || 'active',
+      reminderPriority: act.reminderPriority || 'MEDIUM',
       deleted: act.deleted,
       createdAt: act.createdAt.getTime(),
       updatedAt: act.updatedAt.getTime(),
@@ -845,6 +853,8 @@ async function syncActivitiesForLead(
                     : new Date(Number(act.reminderDate))
                   : null,
                 reminderRead: act.reminderRead || false,
+                reminderStatus: act.reminderStatus || 'active',
+                reminderPriority: act.reminderPriority || 'MEDIUM',
                 crmSynced: true,
                 deleted: false,
               },
@@ -1215,6 +1225,8 @@ export async function getGlobalLeadDetails(leadId: string) {
       timestamp: act.timestamp.getTime(),
       reminderDate: act.reminderDate ? act.reminderDate.getTime() : undefined,
       reminderRead: act.reminderRead,
+      reminderStatus: act.reminderStatus || 'active',
+      reminderPriority: act.reminderPriority || 'MEDIUM',
       createdAt: act.createdAt.getTime(),
       updatedAt: act.updatedAt.getTime(),
     })),
