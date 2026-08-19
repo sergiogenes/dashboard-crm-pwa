@@ -95,6 +95,23 @@ export default function LeadDrawer({
   const [dealNotes, setDealNotes] = useState('')
   const [isSubmittingDeal, setIsSubmittingDeal] = useState(false)
 
+  // Aviso de cambios sin guardar (#17): el título/cuerpo de "Registrar
+  // Actividad" y el monto/notas de "Nueva Solicitud de Préstamo" persisten
+  // en este estado sin importar qué pestaña esté visible — si hay contenido
+  // sin enviar, se confirma antes de cerrar el drawer o cambiar de pestaña.
+  const hasUnsavedChanges =
+    activityTitle.trim() !== '' ||
+    activityBody.trim() !== '' ||
+    dealAmount.trim() !== '' ||
+    dealNotes.trim() !== ''
+
+  const confirmDiscardIfDirty = () => {
+    if (!hasUnsavedChanges) return true
+    return window.confirm(
+      'Tenés cambios sin guardar en el formulario de Actividad o de Solicitud de Préstamo. ¿Salir sin guardar?',
+    )
+  }
+
   // WhatsApp Templates local state
   const [selectedTemplateName, setSelectedTemplateName] = useState('')
   const [placeholderValues, setPlaceholderValues] = useState<string[]>([])
@@ -438,7 +455,9 @@ export default function LeadDrawer({
     <>
       {/* Backdrop overlay */}
       <div
-        onClick={() => setSelectedLeadForInvoice(null)}
+        onClick={() => {
+          if (confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
+        }}
         className="fixed inset-0 z-40 bg-ink/60 backdrop-blur-sm transition-opacity duration-300"
       />
       <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
@@ -461,7 +480,9 @@ export default function LeadDrawer({
             )}
           </div>
           <button
-            onClick={() => setSelectedLeadForInvoice(null)}
+            onClick={() => {
+              if (confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
+            }}
             className="rounded-lg p-1.5 text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <X className="h-5 w-5" />
@@ -478,7 +499,10 @@ export default function LeadDrawer({
         {/* Selectores de Pestaña */}
         <div className="flex border-b border-border bg-surface-2/50 px-6">
           <button
-            onClick={() => setActiveTab('finance')}
+            onClick={() => {
+              if (activeTab !== 'finance' && confirmDiscardIfDirty())
+                setActiveTab('finance')
+            }}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
               activeTab === 'finance'
                 ? 'border-primary text-ink'
@@ -488,7 +512,10 @@ export default function LeadDrawer({
             Finanzas
           </button>
           <button
-            onClick={() => setActiveTab('activities')}
+            onClick={() => {
+              if (activeTab !== 'activities' && confirmDiscardIfDirty())
+                setActiveTab('activities')
+            }}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
               activeTab === 'activities'
                 ? 'border-primary text-ink'
@@ -498,7 +525,10 @@ export default function LeadDrawer({
             Actividades
           </button>
           <button
-            onClick={() => setActiveTab('deals')}
+            onClick={() => {
+              if (activeTab !== 'deals' && confirmDiscardIfDirty())
+                setActiveTab('deals')
+            }}
             className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
               activeTab === 'deals'
                 ? 'border-primary text-ink'
