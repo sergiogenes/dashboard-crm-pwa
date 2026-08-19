@@ -189,7 +189,6 @@ export default function LeadDrawer({
     e.preventDefault()
     if (!userId || !selectedLeadId || isForeign) return
 
-    const titleVal = (activityType as string) === 'WHATSAPP' ? 'Mensaje de WhatsApp' : activityTitle.trim()
     let bodyVal = activityBody.trim()
 
     if ((activityType as string) === 'WHATSAPP') {
@@ -202,6 +201,15 @@ export default function LeadDrawer({
         bodyVal = filledText
       }
     }
+
+    // El título es opcional (excepto WhatsApp, que ya tiene uno fijo): si se
+    // deja vacío, se deriva de los primeros ~50 caracteres de la descripción.
+    const derivedTitle =
+      bodyVal.length > 50 ? `${bodyVal.slice(0, 50).trim()}…` : bodyVal
+    const titleVal =
+      (activityType as string) === 'WHATSAPP'
+        ? 'Mensaje de WhatsApp'
+        : activityTitle.trim() || derivedTitle
 
     if (!titleVal || !bodyVal) return
 
@@ -656,14 +664,13 @@ export default function LeadDrawer({
                     {activityType !== 'WHATSAPP' && (
                       <div>
                         <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
-                          Título
+                          Título (opcional)
                         </label>
                         <input
                           type="text"
                           placeholder="Ej. Llamada de seguimiento"
                           value={activityTitle}
                           onChange={(e) => setActivityTitle(e.target.value)}
-                          required
                           className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                         />
                       </div>
