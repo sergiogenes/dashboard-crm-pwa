@@ -129,11 +129,10 @@ export default function CompanyFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-ink/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      {/* Backdrop: sin onClick a propósito — cerrar el modal acá borraría todo
+          lo tipeado en el formulario ante un clic accidental. Cerrar
+          requiere el botón X o "Cancelar", ambos explícitos. */}
+      <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
 
       {/* Modal Card */}
       <div className="animate-in fade-in zoom-in-95 relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl duration-200">
