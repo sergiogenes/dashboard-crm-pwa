@@ -630,6 +630,27 @@ export function useContacts() {
     }
   }
 
+  // #12: última vez que se contactó directamente al lead -- solo cuenta
+  // contacto directo (llamada, WhatsApp, email, reunión), igual criterio
+  // que ya usa #13 para distinguir contacto directo de seguimiento interno.
+  // Notas y tareas quedan afuera a propósito.
+  const DIRECT_CONTACT_TYPES = ['CALL', 'WHATSAPP', 'EMAIL', 'MEETING']
+  const getLastContactedAt = (lead: LocalLead): number | null => {
+    const isLeadForeign = lead.userId !== userId
+    const sourceActivities = (isLeadForeign && selectedLeadForInvoice?.id === lead.id)
+      ? (foreignDetails?.activities || [])
+      : (allActivities || [])
+
+    const directContacts = sourceActivities.filter(
+      (a) =>
+        (a.leadId === lead.id || (lead.tempId && a.leadId === lead.tempId)) &&
+        DIRECT_CONTACT_TYPES.includes(a.type),
+    )
+
+    if (directContacts.length === 0) return null
+    return Math.max(...directContacts.map((a) => a.timestamp))
+  }
+
   // Resolver los datos a mostrar en el Drawer
   const invoicesToShow = isForeign
     ? foreignDetails?.invoices || []
@@ -664,6 +685,7 @@ export function useContacts() {
     getCompanyName,
     getLeadStatus,
     getWhatsAppWindowStatus,
+    getLastContactedAt,
     invoicesToShow,
     activitiesToShow,
     dealsToShow,

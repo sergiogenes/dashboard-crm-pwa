@@ -13,6 +13,7 @@ interface LeadTableProps {
   getScoringBadge: (scoring: string | undefined) => React.ReactNode
   getLeadStatusBadge: (lead: LocalLead) => React.ReactNode
   getCompanyName: (companyId: string | undefined) => string
+  getLastContactedAt: (lead: LocalLead) => number | null
   setLeadToEdit: (lead: LocalLead | null) => void
   setIsLeadModalOpen: (open: boolean) => void
   handleDeleteLead: (lead: LocalLead) => void
@@ -29,6 +30,7 @@ const CONFIGURABLE_COLUMNS = [
   { key: 'company', label: 'Empresa', defaultOn: false },
   { key: 'scoring', label: 'Scoring', defaultOn: true },
   { key: 'status', label: 'Estado', defaultOn: true },
+  { key: 'lastContacted', label: 'Último Contacto', defaultOn: true },
   { key: 'sync', label: 'Origen / Sinc', defaultOn: false },
 ] as const
 
@@ -45,6 +47,7 @@ export default function LeadTable({
   getScoringBadge,
   getLeadStatusBadge,
   getCompanyName,
+  getLastContactedAt,
   setLeadToEdit,
   setIsLeadModalOpen,
   handleDeleteLead,
@@ -126,6 +129,11 @@ export default function LeadTable({
               {isVisible('status') && (
                 <th scope="col" className="px-6 py-4">
                   Estado
+                </th>
+              )}
+              {isVisible('lastContacted') && (
+                <th scope="col" className="px-6 py-4">
+                  Último Contacto
                 </th>
               )}
               {isVisible('sync') && (
@@ -236,6 +244,19 @@ export default function LeadTable({
                   )}
                   {isVisible('status') && (
                     <td className="px-6 py-4">{getLeadStatusBadge(lead)}</td>
+                  )}
+                  {isVisible('lastContacted') && (
+                    <td
+                      className="px-6 py-4 text-ink-2"
+                      title="Última vez contactado (llamada, WhatsApp, email o reunión)"
+                    >
+                      {(() => {
+                        const lastContacted = getLastContactedAt(lead)
+                        return lastContacted
+                          ? new Date(lastContacted).toLocaleString()
+                          : '-'
+                      })()}
+                    </td>
                   )}
                   {isVisible('sync') && (
                     <td

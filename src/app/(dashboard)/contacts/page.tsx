@@ -36,6 +36,7 @@ export default function ContactsPage() {
     getCompanyName,
     getLeadStatus,
     getWhatsAppWindowStatus,
+    getLastContactedAt,
     invoicesToShow,
     activitiesToShow,
     dealsToShow,
@@ -155,6 +156,7 @@ export default function ContactsPage() {
           getScoringBadge={getScoringBadge}
           getLeadStatusBadge={getLeadStatusBadge}
           getCompanyName={getCompanyName}
+          getLastContactedAt={getLastContactedAt}
           setLeadToEdit={setLeadToEdit}
           setIsLeadModalOpen={setIsLeadModalOpen}
           handleDeleteLead={handleDeleteLead}
@@ -169,6 +171,7 @@ export default function ContactsPage() {
           getScoringBadge={getScoringBadge}
           getLeadStatusBadge={getLeadStatusBadge}
           getCompanyName={getCompanyName}
+          getLastContactedAt={getLastContactedAt}
           setLeadToEdit={setLeadToEdit}
           setIsLeadModalOpen={setIsLeadModalOpen}
           handleDeleteLead={handleDeleteLead}

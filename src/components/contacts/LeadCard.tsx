@@ -13,6 +13,7 @@ interface LeadCardProps {
   getScoringBadge: (scoring: string | undefined) => React.ReactNode
   getLeadStatusBadge: (lead: LocalLead) => React.ReactNode
   getCompanyName: (companyId: string | undefined) => string
+  getLastContactedAt: (lead: LocalLead) => number | null
   setLeadToEdit: (lead: LocalLead | null) => void
   setIsLeadModalOpen: (open: boolean) => void
   handleDeleteLead: (lead: LocalLead) => void
@@ -27,6 +28,7 @@ export default function LeadCard({
   getScoringBadge,
   getLeadStatusBadge,
   getCompanyName,
+  getLastContactedAt,
   setLeadToEdit,
   setIsLeadModalOpen,
   handleDeleteLead,
@@ -109,18 +111,19 @@ export default function LeadCard({
               </div>
             </div>
 
-            <div className="border-border-2 flex items-center justify-between border-t pt-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded border border-border bg-surface px-2 py-0.5 text-[10px] text-ink-2">
-                  {getCompanyName(lead.companyId)}
-                </span>
-                {getLeadStatusBadge(lead)}
-              </div>
+            <div className="border-border-2 space-y-2 border-t pt-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded border border-border bg-surface px-2 py-0.5 text-[10px] text-ink-2">
+                    {getCompanyName(lead.companyId)}
+                  </span>
+                  {getLeadStatusBadge(lead)}
+                </div>
 
-              <div
-                className="flex gap-2"
-                onClick={(e) => e.stopPropagation()}
-              >
+                <div
+                  className="flex shrink-0 gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
                 <button
                   onClick={() => setSelectedLeadForInvoice(lead)}
                   className="rounded-lg p-1.5 text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
@@ -163,7 +166,23 @@ export default function LeadCard({
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
+                </div>
               </div>
+
+              {(() => {
+                const lastContacted = getLastContactedAt(lead)
+                return (
+                  <p
+                    className="text-[10px] text-ink-3"
+                    title="Última vez contactado (llamada, WhatsApp, email o reunión)"
+                  >
+                    Último contacto:{' '}
+                    {lastContacted
+                      ? new Date(lastContacted).toLocaleString()
+                      : 'sin contacto directo'}
+                  </p>
+                )
+              })()}
             </div>
           </div>
         ))
