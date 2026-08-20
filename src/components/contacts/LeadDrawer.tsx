@@ -58,6 +58,10 @@ interface LeadDrawerProps {
   isLoadingForeign?: boolean
   highlightedActivityId: string | null
   setHighlightedActivityId: (id: string | null) => void
+  /** #13: fuerza la pestaña inicial al abrir (usado por "Ver Historial
+   * Crediticio", que antes abría el drawer pero siempre en "Actividades"). */
+  initialDrawerTab?: 'finance' | null
+  setInitialDrawerTab?: (tab: 'finance' | null) => void
 }
 
 export default function LeadDrawer({
@@ -73,6 +77,8 @@ export default function LeadDrawer({
   isLoadingForeign = false,
   highlightedActivityId,
   setHighlightedActivityId,
+  initialDrawerTab,
+  setInitialDrawerTab,
 }: LeadDrawerProps) {
   const { data: session } = useSession()
   const isForeign = selectedLeadForInvoice.userId !== userId
@@ -220,6 +226,18 @@ export default function LeadDrawer({
       return () => clearTimeout(timer)
     }
   }, [highlightedActivityId, activities])
+
+  // #13: "Ver Historial Crediticio" fuerza la pestaña "Finanzas" al abrir el
+  // drawer. Se limpia enseguida (setInitialDrawerTab(null)) para no forzarla
+  // en aperturas posteriores del mismo drawer (ej. si después el usuario
+  // cambia de pestaña y vuelve a abrir otro lead desde la fila, no desde el
+  // botón de historial).
+  useEffect(() => {
+    if (initialDrawerTab) {
+      setActiveTab(initialDrawerTab)
+      setInitialDrawerTab?.(null)
+    }
+  }, [initialDrawerTab, setInitialDrawerTab])
 
   // Calcular si la ventana de WhatsApp está activa desde el último mensaje recibido
   const wsIncoming = [...(activities || [])]

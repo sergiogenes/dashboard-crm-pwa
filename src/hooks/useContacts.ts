@@ -39,6 +39,15 @@ export function useContacts() {
   const [selectedLeadForInvoice, setSelectedLeadForInvoice] =
     useState<LocalLead | null>(null)
 
+  // Pestaña inicial forzada al abrir el drawer (#13): "Ver Historial
+  // Crediticio" llamaba a lo mismo que hacer clic en la fila y el drawer
+  // siempre abría en "Actividades" -- el botón no hacía lo que decía. Se
+  // limpia después de aplicarse una vez para no forzar la pestaña en
+  // aperturas posteriores del mismo drawer.
+  const [initialDrawerTab, setInitialDrawerTab] = useState<
+    'finance' | null
+  >(null)
+
   const [highlightedActivityId, setHighlightedActivityId] = useState<
     string | null
   >(null)
@@ -669,6 +678,8 @@ export function useContacts() {
     setLeadToEdit,
     selectedLeadForInvoice,
     setSelectedLeadForInvoice,
+    initialDrawerTab,
+    setInitialDrawerTab,
     highlightedActivityId,
     setHighlightedActivityId,
     whatsappTemplates,

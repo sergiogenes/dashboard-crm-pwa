@@ -20,6 +20,8 @@ export default function ContactsPage() {
     setLeadToEdit,
     selectedLeadForInvoice,
     setSelectedLeadForInvoice,
+    initialDrawerTab,
+    setInitialDrawerTab,
     highlightedActivityId,
     setHighlightedActivityId,
     whatsappTemplates,
@@ -41,6 +43,15 @@ export default function ContactsPage() {
     activitiesToShow,
     dealsToShow,
   } = useContacts()
+
+  // #13: "Ver Historial Crediticio" abría el drawer igual que un clic en la
+  // fila, pero éste siempre queda en la pestaña "Actividades" -- el botón
+  // no hacía lo que decía. Este handler fuerza la pestaña "Finanzas" al
+  // abrir, sin afectar el comportamiento normal de clic en la fila.
+  const handleViewCreditHistory = (lead: LocalLead) => {
+    setSelectedLeadForInvoice(lead)
+    setInitialDrawerTab('finance')
+  }
 
   // Badges de color para el Scoring y el estado del embudo (helper centralizado)
   const getScoringBadge = (scoring?: string) => {
@@ -160,6 +171,7 @@ export default function ContactsPage() {
           setLeadToEdit={setLeadToEdit}
           setIsLeadModalOpen={setIsLeadModalOpen}
           handleDeleteLead={handleDeleteLead}
+          handleViewCreditHistory={handleViewCreditHistory}
         />
 
         <LeadCard
@@ -175,6 +187,7 @@ export default function ContactsPage() {
           setLeadToEdit={setLeadToEdit}
           setIsLeadModalOpen={setIsLeadModalOpen}
           handleDeleteLead={handleDeleteLead}
+          handleViewCreditHistory={handleViewCreditHistory}
         />
 
         {/* Slide-over Drawer: Detalles del Contacto (Finanzas y Actividades) */}
@@ -192,6 +205,8 @@ export default function ContactsPage() {
             isLoadingForeign={isLoadingForeign}
             highlightedActivityId={highlightedActivityId}
             setHighlightedActivityId={setHighlightedActivityId}
+            initialDrawerTab={initialDrawerTab}
+            setInitialDrawerTab={setInitialDrawerTab}
           />
         )}
       </div>
