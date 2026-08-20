@@ -3,6 +3,8 @@
 import React from 'react'
 import { Cloud, Database, Edit2, Trash2 } from 'lucide-react'
 import { LocalCompany } from '@/lib/db'
+import { useConfigurableColumns, ConfigurableColumn } from '@/hooks/useConfigurableColumns'
+import ColumnPicker from '@/components/ColumnPicker'
 
 interface CompanyTableProps {
   filteredCompanies: LocalCompany[]
@@ -11,12 +13,26 @@ interface CompanyTableProps {
   handleDeleteCompany: (company: LocalCompany) => void
 }
 
+// "Nombre" y "Acciones" quedan fijas (identidad + acciones de la fila); el
+// resto es configurable. Mismo hook/componente que Contactos y Negocios.
+const CONFIGURABLE_COLUMNS: ConfigurableColumn[] = [
+  { key: 'domain', label: 'Dominio', defaultOn: true },
+  { key: 'sync', label: 'Origen / Sinc', defaultOn: false, devOnly: true },
+]
+
 export default function CompanyTable({
   filteredCompanies,
   setCompanyToEdit,
   setIsCompanyModalOpen,
   handleDeleteCompany,
 }: CompanyTableProps) {
+  const { isVisible, toggleColumn } = useConfigurableColumns(
+    'companiesTable.visibleColumns',
+    CONFIGURABLE_COLUMNS,
+  )
+
+  const columnCount = 2 + CONFIGURABLE_COLUMNS.filter((c) => isVisible(c.key)).length
+
   return (
     <div className="hidden md:block overflow-hidden rounded-2xl border border-border bg-surface">
       <div className="overflow-x-auto">
@@ -24,9 +40,22 @@ export default function CompanyTable({
           <thead className="bg-surface-2 text-xs font-semibold uppercase tracking-wider text-ink-3 border-b border-border">
             <tr>
               <th scope="col" className="px-6 py-4">Nombre</th>
-              <th scope="col" className="px-6 py-4">Dominio</th>
-              <th scope="col" className="px-6 py-4">Origen / Sinc</th>
-              <th scope="col" className="px-6 py-4 text-right">Acciones</th>
+              {isVisible('domain') && (
+                <th scope="col" className="px-6 py-4">Dominio</th>
+              )}
+              {isVisible('sync') && (
+                <th scope="col" className="px-6 py-4">Origen / Sinc</th>
+              )}
+              <th scope="col" className="px-6 py-4 text-right">
+                <div className="flex items-center justify-end gap-2">
+                  Acciones
+                  <ColumnPicker
+                    columns={CONFIGURABLE_COLUMNS}
+                    isVisible={isVisible}
+                    onToggle={toggleColumn}
+                  />
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-2 bg-transparent">
@@ -39,22 +68,26 @@ export default function CompanyTable({
                   <td className="px-6 py-4 font-semibold text-ink">
                     {company.name}
                   </td>
-                  <td className="px-6 py-4 text-ink-2">
-                    {company.domain || '-'}
-                  </td>
-                  <td className="px-6 py-4">
-                    {company.synced ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-2.5 py-0.5 text-xs font-medium text-ok border border-ok-bd">
-                        <Cloud className="h-3.5 w-3.5" />
-                        CloudDb
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-bg px-2.5 py-0.5 text-xs font-medium text-warn border border-warn-bd animate-pulse">
-                        <Database className="h-3.5 w-3.5" />
-                        LocalDb
-                      </span>
-                    )}
-                  </td>
+                  {isVisible('domain') && (
+                    <td className="px-6 py-4 text-ink-2">
+                      {company.domain || '-'}
+                    </td>
+                  )}
+                  {isVisible('sync') && (
+                    <td className="px-6 py-4">
+                      {company.synced ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-2.5 py-0.5 text-xs font-medium text-ok border border-ok-bd">
+                          <Cloud className="h-3.5 w-3.5" />
+                          CloudDb
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-bg px-2.5 py-0.5 text-xs font-medium text-warn border border-warn-bd animate-pulse">
+                          <Database className="h-3.5 w-3.5" />
+                          LocalDb
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button
@@ -80,7 +113,7 @@ export default function CompanyTable({
               ))
             ) : (
               <tr>
-                <td colSpan={4} className="px-6 py-12 text-center text-ink-3">
+                <td colSpan={columnCount} className="px-6 py-12 text-center text-ink-3">
                   No se encontraron empresas registradas.
                 </td>
               </tr>

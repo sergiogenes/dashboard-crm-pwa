@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
-import { Cloud, Database, FileText, Edit2, Trash2, Settings } from 'lucide-react'
+import React from 'react'
+import { Cloud, Database, FileText, Edit2, Trash2 } from 'lucide-react'
 import { LocalLead } from '@/lib/db'
+import { useConfigurableColumns } from '@/hooks/useConfigurableColumns'
+import ColumnPicker from '@/components/ColumnPicker'
 
 interface LeadTableProps {
   filteredLeads: LocalLead[]
@@ -31,12 +33,8 @@ const CONFIGURABLE_COLUMNS = [
   { key: 'scoring', label: 'Scoring', defaultOn: true },
   { key: 'status', label: 'Estado', defaultOn: true },
   { key: 'lastContacted', label: 'Último Contacto', defaultOn: true },
-  { key: 'sync', label: 'Origen / Sinc', defaultOn: false },
+  { key: 'sync', label: 'Origen / Sinc', defaultOn: false, devOnly: true },
 ] as const
-
-type ColumnKey = (typeof CONFIGURABLE_COLUMNS)[number]['key']
-
-const VISIBLE_COLUMNS_STORAGE_KEY = 'contactsTable.visibleColumns.v2'
 
 export default function LeadTable({
   filteredLeads,
@@ -52,49 +50,10 @@ export default function LeadTable({
   setIsLeadModalOpen,
   handleDeleteLead,
 }: LeadTableProps) {
-  // Default cuando todavía no hay preferencia guardada: en desarrollo
-  // conviene ver "Origen / Sinc" para depurar; en producción no le aporta
-  // nada al vendedor real. process.env.NODE_ENV lo resuelve Next.js en
-  // build ('development' con next dev, 'production' con el build real).
-  const isDev = process.env.NODE_ENV === 'development'
-  const defaultVisible: ColumnKey[] = CONFIGURABLE_COLUMNS.filter(
-    (col) => col.defaultOn || (col.key === 'sync' && isDev),
-  ).map((col) => col.key)
-
-  const [visible, setVisible] = useState<ColumnKey[]>(defaultVisible)
-  const [columnPickerOpen, setColumnPickerOpen] = useState(false)
-  const pickerRef = useRef<HTMLDivElement>(null)
-
-  // Cargar preferencia guardada al montar -- si el usuario ya eligió algo
-  // explícitamente, esa elección manda por sobre el default de entorno.
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(VISIBLE_COLUMNS_STORAGE_KEY)
-      if (stored) setVisible(JSON.parse(stored))
-    } catch {
-      // Preferencia corrupta o inexistente: se queda en el default de arriba
-    }
-  }, [])
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
-        setColumnPickerOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  const toggleColumn = (key: ColumnKey) => {
-    const next = visible.includes(key)
-      ? visible.filter((k) => k !== key)
-      : [...visible, key]
-    setVisible(next)
-    localStorage.setItem(VISIBLE_COLUMNS_STORAGE_KEY, JSON.stringify(next))
-  }
-
-  const isVisible = (key: ColumnKey) => visible.includes(key)
+  const { visible, isVisible, toggleColumn } = useConfigurableColumns(
+    'contactsTable.visibleColumns.v2',
+    CONFIGURABLE_COLUMNS,
+  )
   const columnCount = 2 + visible.length // Nombre + Acciones (fijas) + configurables activas
 
   return (
@@ -144,37 +103,11 @@ export default function LeadTable({
               <th scope="col" className="px-6 py-4 text-right">
                 <div className="flex items-center justify-end gap-2">
                   Acciones
-                  <div ref={pickerRef} className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setColumnPickerOpen((prev) => !prev)}
-                      className="rounded-lg p-1 normal-case text-ink-3 transition-colors hover:bg-surface hover:text-ink"
-                      title="Configurar columnas"
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                    </button>
-                    {columnPickerOpen && (
-                      <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl border border-border bg-surface p-2 text-left shadow-2xl">
-                        <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">
-                          Mostrar columnas
-                        </p>
-                        {CONFIGURABLE_COLUMNS.map((col) => (
-                          <label
-                            key={col.key}
-                            className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-normal normal-case text-ink-2 transition-colors hover:bg-surface-2"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isVisible(col.key)}
-                              onChange={() => toggleColumn(col.key)}
-                              className="h-3.5 w-3.5 rounded border-border accent-primary"
-                            />
-                            {col.label}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <ColumnPicker
+                    columns={CONFIGURABLE_COLUMNS}
+                    isVisible={isVisible}
+                    onToggle={toggleColumn}
+                  />
                 </div>
               </th>
             </tr>
