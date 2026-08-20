@@ -249,6 +249,14 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
   }
   await page.getByRole('button', { name: 'Crear Lead' }).click()
 
+  // La columna "Origen / Sinc" ahora está oculta por defecto en producción/test
+  // (#11) -- hay que activarla desde el selector de columnas (ícono de
+  // engranaje en el header de "Acciones") antes de poder verificar el badge
+  // LocalDb/CloudDb en la tabla.
+  await page.getByRole('button', { name: 'Configurar columnas' }).click()
+  await page.getByText('Origen / Sinc').click()
+  await page.getByRole('button', { name: 'Configurar columnas' }).click() // cerrar el selector
+
   // Verificar que aparezca el lead con badge 'LocalDb'
   await expect(page.getByRole('cell', { name: 'Jane Doe' })).toBeVisible()
   await expect(
