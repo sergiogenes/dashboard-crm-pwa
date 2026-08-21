@@ -19,6 +19,7 @@ interface LeadTableProps {
   setLeadToEdit: (lead: LocalLead | null) => void
   setIsLeadModalOpen: (open: boolean) => void
   handleDeleteLead: (lead: LocalLead) => void
+  handleViewCreditHistory: (lead: LocalLead) => void
 }
 
 // Columnas configurables (#11): "Nombre" y "Acciones" quedan fijas (son
@@ -49,6 +50,7 @@ export default function LeadTable({
   setLeadToEdit,
   setIsLeadModalOpen,
   handleDeleteLead,
+  handleViewCreditHistory,
 }: LeadTableProps) {
   const { visible, isVisible, toggleColumn } = useConfigurableColumns(
     'contactsTable.visibleColumns.v2',
@@ -215,7 +217,7 @@ export default function LeadTable({
                   >
                     <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => setSelectedLeadForInvoice(lead)}
+                        onClick={() => handleViewCreditHistory(lead)}
                         className="rounded-lg p-1.5 text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
                         title="Ver Historial Crediticio"
                       >

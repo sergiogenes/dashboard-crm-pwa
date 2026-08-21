@@ -17,6 +17,7 @@ interface LeadCardProps {
   setLeadToEdit: (lead: LocalLead | null) => void
   setIsLeadModalOpen: (open: boolean) => void
   handleDeleteLead: (lead: LocalLead) => void
+  handleViewCreditHistory: (lead: LocalLead) => void
 }
 
 export default function LeadCard({
@@ -32,6 +33,7 @@ export default function LeadCard({
   setLeadToEdit,
   setIsLeadModalOpen,
   handleDeleteLead,
+  handleViewCreditHistory,
 }: LeadCardProps) {
   return (
     <div className="grid grid-cols-1 gap-4 md:hidden">
@@ -125,7 +127,7 @@ export default function LeadCard({
                   onClick={(e) => e.stopPropagation()}
                 >
                 <button
-                  onClick={() => setSelectedLeadForInvoice(lead)}
+                  onClick={() => handleViewCreditHistory(lead)}
                   className="rounded-lg p-1.5 text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
                   title="Ver Historial Crediticio"
                 >
