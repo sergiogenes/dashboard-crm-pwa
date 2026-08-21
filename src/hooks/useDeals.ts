@@ -89,19 +89,24 @@ export function useDeals() {
     return lead ? `${lead.firstName} ${lead.lastName}` : 'Cargando contacto...'
   }
 
-  // Filtrado y Búsqueda
-  const filteredDeals = deals.filter((deal) => {
-    const borrower = getBorrowerName(deal.leadId).toLowerCase()
-    const matchesSearch =
-      borrower.includes(searchTerm.toLowerCase()) ||
-      (deal.notes &&
-        deal.notes.toLowerCase().includes(searchTerm.toLowerCase()))
+  // Filtrado, Búsqueda y Orden (más reciente primero, por fecha de creación)
+  const filteredDeals = deals
+    .filter((deal) => {
+      const borrower = getBorrowerName(deal.leadId).toLowerCase()
+      const matchesSearch =
+        borrower.includes(searchTerm.toLowerCase()) ||
+        (deal.notes &&
+          deal.notes.toLowerCase().includes(searchTerm.toLowerCase()))
 
-    const matchesStage =
-      filterStage === 'ALL' ? true : deal.stage === filterStage
+      const matchesStage =
+        filterStage === 'ALL' ? true : deal.stage === filterStage
 
-    return matchesSearch && matchesStage
-  })
+      return matchesSearch && matchesStage
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )
 
   // Métricas Rápidas
   const totalApplied = deals.reduce((sum, d) => sum + d.amount, 0)

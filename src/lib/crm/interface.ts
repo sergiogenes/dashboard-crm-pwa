@@ -32,7 +32,9 @@ export interface CRMActivity {
   body: string
   timestamp: string // Formato fecha ISO
   reminderDate?: string // Formato fecha ISO
-  reminderRead?: boolean
+  reminderRead?: boolean // Deprecado -- ver reminderStatus
+  reminderStatus?: 'active' | 'waiting' | 'completed'
+  reminderPriority?: 'LOW' | 'MEDIUM' | 'HIGH'
 }
 
 export interface CRMDeal {

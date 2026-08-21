@@ -17,6 +17,7 @@
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "jsforce": "^3.10.18",
+    "libphonenumber-js": "^1.13.11",
     "lucide-react": "^1.16.0",
     "mongoose": "^9.6.2",
     "next": "14.2.3",
@@ -25,7 +26,8 @@
     "otplib": "^13.4.0",
     "qrcode": "^1.5.4",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "sonner": "^2.0.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

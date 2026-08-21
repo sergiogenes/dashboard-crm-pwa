@@ -12,6 +12,8 @@ export interface IActivitySchema extends Document {
   timestamp: Date
   reminderDate?: Date
   reminderRead?: boolean
+  reminderStatus?: 'active' | 'waiting' | 'completed'
+  reminderPriority?: 'LOW' | 'MEDIUM' | 'HIGH'
   deleted: boolean
   crmSynced: boolean
   createdAt: Date
@@ -34,7 +36,23 @@ const ActivitySchema = new Schema<IActivitySchema>(
     body: { type: String, required: true, get: decrypt, set: encrypt },
     timestamp: { type: Date, required: true, default: Date.now },
     reminderDate: { type: Date },
+    // reminderRead se conserva por compatibilidad con datos ya existentes,
+    // pero deja de ser la fuente de verdad -- reminderStatus la reemplaza
+    // (permite distinguir "leído/en espera" de "realizado", algo que un solo
+    // booleano no podía representar).
     reminderRead: { type: Boolean, default: false },
+    reminderStatus: {
+      type: String,
+      enum: ['active', 'waiting', 'completed'],
+      default: 'active',
+    },
+    // Mapea 1:1 con hs_task_priority de HubSpot. Sin selector en la UI
+    // todavía -- se deja disponible para cuando se necesite.
+    reminderPriority: {
+      type: String,
+      enum: ['LOW', 'MEDIUM', 'HIGH'],
+      default: 'MEDIUM',
+    },
     deleted: { type: Boolean, default: false },
     crmSynced: { type: Boolean, default: false },
   },

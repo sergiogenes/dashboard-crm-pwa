@@ -62,6 +62,7 @@ export default function Header() {
       if (act && act.tempId && !act.reminderRead) {
         await localDb.activities.update(act.tempId, {
           reminderRead: true,
+          reminderStatus: 'waiting',
           synced: false,
           updatedAt: Date.now(),
         })

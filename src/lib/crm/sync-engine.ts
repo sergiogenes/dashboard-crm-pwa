@@ -1,3 +1,4 @@
+import mongoose from 'mongoose'
 import dbConnect from '@/lib/mongodb'
 import Company from '@/models/Company'
 import Lead from '@/models/Lead'
@@ -28,6 +29,24 @@ export async function syncMongoDBToCRM(): Promise<void> {
   try {
     await dbConnect()
     const crm = CRMProviderFactory.getProvider()
+
+    // Guarda de consistencia: este motor llama a operaciones reales de
+    // borrado/alta contra el CRM (HubSpot/Salesforce), así que si en algún
+    // momento la base conectada es la de pruebas pero el proveedor resuelto
+    // no es el mock (o viceversa), algo en el entorno está desalineado y
+    // seguir sería el mismo tipo de fuga que borró deals reales de HubSpot.
+    // Abortamos en vez de arriesgar una operación real sobre datos de test
+    // o, peor, sobre datos reales con la señal de test activada a medias.
+    const activeDbName = mongoose.connection.db?.databaseName || ''
+    const isTestDb = activeDbName.includes('test')
+    const isMockProvider = process.env.IS_PLAYWRIGHT_TEST === 'true'
+    if (isTestDb !== isMockProvider) {
+      throw new Error(
+        `[Sync Engine] Guarda de consistencia falló: base conectada="${activeDbName}" ` +
+          `(¿test?=${isTestDb}) vs. IS_PLAYWRIGHT_TEST="${process.env.IS_PLAYWRIGHT_TEST}". ` +
+          `Abortando sincronización saliente para no operar sobre el CRM real con un entorno ambiguo.`,
+      )
+    }
 
     // 1. Verificar la disponibilidad del CRM
     const isCrmOnline = await crm.checkHealth()
@@ -205,6 +224,8 @@ export async function syncMongoDBToCRM(): Promise<void> {
             ? String(activity.reminderDate.getTime())
             : undefined,
           reminderRead: activity.reminderRead || false,
+          reminderStatus: activity.reminderStatus || 'active',
+          reminderPriority: activity.reminderPriority || 'MEDIUM',
         })
 
         activity.crmId = crmId
@@ -256,8 +277,11 @@ export async function syncMongoDBToCRM(): Promise<void> {
         const user = await User.findById(deal.userId)
         const ownerId = user?.crmOwnerId || undefined
 
-        // Empaquetar metadatos de microcrédito en la descripción
-        const description = `Asesor: ${deal.userId}\nNotas: ${deal.notes || ''}\n<!-- loan_metadata:{"termMonths":${deal.termMonths},"interestRate":${deal.interestRate},"localStage":"${deal.stage}"} -->`
+        // Empaquetar metadatos de microcrédito en la descripción. El nombre/email
+        // del vendedor (no su ObjectId de Mongo, ilegible para quien mira el deal
+        // directamente en HubSpot) se usa para la línea "Asesor".
+        const advisorLabel = user?.name || user?.email || deal.userId
+        const description = `Asesor: ${advisorLabel}\nNotas: ${deal.notes || ''}\n<!-- loan_metadata:{"termMonths":${deal.termMonths},"interestRate":${deal.interestRate},"localStage":"${deal.stage}"} -->`
 
         const crmId = await crm.upsertDeal({
           crmId: deal.crmId,

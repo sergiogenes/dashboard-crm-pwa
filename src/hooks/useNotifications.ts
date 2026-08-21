@@ -43,17 +43,30 @@ export function useNotifications() {
           const existingNotif = notificationMap.get(actKey)
 
           const scheduledAt = act.reminderDate ? Number(act.reminderDate) : 0
+          // reminderStatus es la fuente de verdad; reminderRead (deprecado)
+          // es el fallback para registros viejos que todavía no lo tienen.
+          const reminderStatus =
+            act.reminderStatus || (act.reminderRead ? 'waiting' : 'active')
+          const isRead = reminderStatus !== 'active'
 
-          if (act.deleted || !scheduledAt || isNaN(scheduledAt)) {
+          // Un recordatorio "Realizado" ya no debe aparecer en la campanita
+          // -- igual que uno borrado, se quita del todo en vez de solo
+          // marcarse leído.
+          if (
+            act.deleted ||
+            !scheduledAt ||
+            isNaN(scheduledAt) ||
+            reminderStatus === 'completed'
+          ) {
             if (existingNotif) {
               await localDb.notifications.delete(existingNotif.id)
             }
             continue
           }
-          
+
           // Buscar información del lead asociado y desencriptarlo en caliente
-          const rawLead = 
-            (await localDb.leads.where('tempId').equals(act.leadId).first()) || 
+          const rawLead =
+            (await localDb.leads.where('tempId').equals(act.leadId).first()) ||
             (await localDb.leads.where('id').equals(act.leadId).first())
           const lead = rawLead ? await decryptLead(rawLead, dbKey) : null
           const leadName = lead ? `${lead.firstName} ${lead.lastName}` : 'Contacto'
@@ -67,20 +80,20 @@ export function useNotifications() {
               title: `Recordatorio: ${act.title}`,
               body: `Lead: ${leadName}\n${act.body.substring(0, 80)}`,
               scheduledAt,
-              read: !!act.reminderRead,
-              notified: !!act.reminderRead,
+              read: isRead,
+              notified: isRead,
               createdAt: Date.now(),
             }
             await localDb.notifications.put(newNotif)
           } else {
             const dateChanged = Number(existingNotif.scheduledAt) !== scheduledAt
-            const readStateChanged = existingNotif.read !== !!act.reminderRead
-            
+            const readStateChanged = existingNotif.read !== isRead
+
             if (dateChanged || readStateChanged) {
               await localDb.notifications.update(existingNotif.id, {
                 scheduledAt,
-                read: !!act.reminderRead,
-                notified: !!act.reminderRead,
+                read: isRead,
+                notified: isRead,
               })
             }
           }

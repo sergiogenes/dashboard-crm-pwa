@@ -63,7 +63,9 @@ export interface LocalActivity {
   body: string
   timestamp: number // Timestamp de creación/registro
   reminderDate?: number // Timestamp del recordatorio (opcional)
-  reminderRead?: boolean // Recordatorio marcado como leído (opcional)
+  reminderRead?: boolean // Deprecado -- se conserva por compatibilidad, ver reminderStatus
+  reminderStatus?: 'active' | 'waiting' | 'completed' // Fuente de verdad del estado del recordatorio
+  reminderPriority?: 'LOW' | 'MEDIUM' | 'HIGH' // Mapea 1:1 con hs_task_priority de HubSpot; sin UI propia todavía
   deleted?: boolean // Soft Delete
   synced: boolean // Estado de sincronización a MongoDB
   createdAt: number

@@ -12,6 +12,7 @@ import {
 import DealTable from '@/components/deals/DealTable'
 import DealCard from '@/components/deals/DealCard'
 import { useDeals } from '@/hooks/useDeals'
+import { formatGsCompact } from '@/lib/format'
 
 export default function DealsPage() {
   const {
@@ -67,10 +68,7 @@ export default function DealsPage() {
               Total Solicitado
             </span>
             <span className="mt-1 block text-xl font-bold text-ink">
-              $
-              {totalApplied.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
+              {formatGsCompact(totalApplied)}
             </span>
             <span className="mt-0.5 block text-[10px] text-ink-2">
               {dealsLength} solicitudes totales
@@ -88,10 +86,7 @@ export default function DealsPage() {
               En Evaluación
             </span>
             <span className="mt-1 block text-xl font-bold text-ink">
-              $
-              {totalActiveAmount.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
+              {formatGsCompact(totalActiveAmount)}
             </span>
             <span className="mt-0.5 block text-[10px] text-ink-2">
               {activeLoans.length} solicitudes activas
@@ -109,10 +104,7 @@ export default function DealsPage() {
               Desembolsado
             </span>
             <span className="mt-1 block text-xl font-bold text-ink">
-              $
-              {totalDisbursedAmount.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
+              {formatGsCompact(totalDisbursedAmount)}
             </span>
             <span className="mt-0.5 block text-[10px] text-ink-2">
               {disbursedLoans.length} créditos vigentes

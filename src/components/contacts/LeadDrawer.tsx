@@ -23,6 +23,9 @@ import { sendWhatsAppMessage } from '@/app/actions/whatsapp'
 import { useSession } from 'next-auth/react'
 import { encryptActivity } from '@/lib/client-crypto'
 import { getActivityTypeConfig, getScoringBadge, getDealStepStyle } from '@/lib/theme/status'
+import { formatGs } from '@/lib/format'
+import { toast } from 'sonner'
+import { useConfirm } from '@/hooks/useConfirm'
 
 // Helper para obtener la fecha de mañana en formato YYYY-MM-DD
 const getTomorrowString = () => {
@@ -55,6 +58,10 @@ interface LeadDrawerProps {
   isLoadingForeign?: boolean
   highlightedActivityId: string | null
   setHighlightedActivityId: (id: string | null) => void
+  /** #13: fuerza la pestaña inicial al abrir (usado por "Ver Historial
+   * Crediticio", que antes abría el drawer pero siempre en "Actividades"). */
+  initialDrawerTab?: 'finance' | null
+  setInitialDrawerTab?: (tab: 'finance' | null) => void
 }
 
 export default function LeadDrawer({
@@ -70,13 +77,26 @@ export default function LeadDrawer({
   isLoadingForeign = false,
   highlightedActivityId,
   setHighlightedActivityId,
+  initialDrawerTab,
+  setInitialDrawerTab,
 }: LeadDrawerProps) {
   const { data: session } = useSession()
   const isForeign = selectedLeadForInvoice.userId !== userId
   const selectedLeadId = selectedLeadForInvoice.id || selectedLeadForInvoice.tempId
+  const { confirm, ConfirmDialogElement } = useConfirm()
 
   // Estado de Navegación del Drawer
-  const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'deals'>('activities')
+  const [activeTab, setActiveTab] = useState<'finance' | 'activities' | 'reminders' | 'deals'>('activities')
+
+  // Recordatorios activos (#16): actividades con reminderDate definido y
+  // estado 'active' (ni leídas/en espera ni realizadas) -- se usan para el
+  // badge de la pestaña "Recordatorios". Compatibilidad con registros viejos
+  // que solo tienen reminderRead (booleano).
+  const activeReminderCount = activities.filter((act) => {
+    if (!act.reminderDate) return false
+    const status = act.reminderStatus || (act.reminderRead ? 'waiting' : 'active')
+    return status === 'active'
+  }).length
 
   // Estado del Formulario de Actividad
   const [activityType, setActivityType] = useState<'NOTE' | 'CALL' | 'MEETING' | 'EMAIL' | 'TASK' | 'WHATSAPP'>('NOTE')
@@ -93,6 +113,59 @@ export default function LeadDrawer({
   const [dealInterestRate, setDealInterestRate] = useState('15')
   const [dealNotes, setDealNotes] = useState('')
   const [isSubmittingDeal, setIsSubmittingDeal] = useState(false)
+
+  // Estado del Formulario de Nuevo Recordatorio (#16 -- autónomo de la
+  // pestaña "Actividades"; crea directamente una Task con reminderDate, sin
+  // necesidad de la Nota acompañante que sí tiene sentido en Actividades).
+  const [newReminderTitle, setNewReminderTitle] = useState('')
+  const [newReminderBody, setNewReminderBody] = useState('')
+  const [newReminderDateOnly, setNewReminderDateOnly] = useState(getTomorrowString())
+  const [newReminderTimeOnly, setNewReminderTimeOnly] = useState('08:00')
+  const [isSubmittingReminder, setIsSubmittingReminder] = useState(false)
+
+  // Aviso de cambios sin guardar (#17): el título/cuerpo de "Registrar
+  // Actividad" (incluyendo el recordatorio, si está activado), el nuevo
+  // formulario de "Recordatorios" y el monto/notas de "Nueva Solicitud de
+  // Préstamo" persisten en este estado sin importar qué pestaña esté
+  // visible — si hay contenido sin enviar, se confirma antes de cerrar el
+  // drawer o cambiar de pestaña.
+  const hasUnsavedChanges =
+    activityTitle.trim() !== '' ||
+    activityBody.trim() !== '' ||
+    showReminderPicker ||
+    reminderDateOnly.trim() !== '' ||
+    newReminderTitle.trim() !== '' ||
+    newReminderBody.trim() !== '' ||
+    dealAmount.trim() !== '' ||
+    dealNotes.trim() !== ''
+
+  const confirmDiscardIfDirty = async () => {
+    if (!hasUnsavedChanges) return true
+    const ok = await confirm({
+      title: 'Cambios sin guardar',
+      message:
+        'Tenés cambios sin guardar en el formulario de Actividad o de Solicitud de Préstamo. ¿Salir sin guardar?',
+      confirmLabel: 'Salir sin guardar',
+      variant: 'danger',
+    })
+    if (ok) {
+      // Descartar de verdad lo tipeado -- si no, hasUnsavedChanges sigue en
+      // true para siempre y vuelve a preguntar en cualquier pestaña, aunque
+      // no se haya tocado nada después de confirmar la salida.
+      setActivityTitle('')
+      setActivityBody('')
+      setShowReminderPicker(false)
+      setReminderDateOnly('')
+      setReminderTimeOnly('08:00')
+      setNewReminderTitle('')
+      setNewReminderBody('')
+      setNewReminderDateOnly(getTomorrowString())
+      setNewReminderTimeOnly('08:00')
+      setDealAmount('')
+      setDealNotes('')
+    }
+    return ok
+  }
 
   // WhatsApp Templates local state
   const [selectedTemplateName, setSelectedTemplateName] = useState('')
@@ -133,10 +206,16 @@ export default function LeadDrawer({
     }
   }, [selectedTemplateName, whatsappTemplates, selectedLeadForInvoice])
 
-  // Lógica del Highlight de actividad reactivo a la prop
+  // Lógica del Highlight de actividad reactivo a la prop -- si la actividad
+  // resaltada es un recordatorio (viene de la campanita de notificaciones),
+  // hay que abrir la pestaña "Recordatorios", no "Actividades" (#16 la
+  // separó a su propia pestaña).
   useEffect(() => {
     if (highlightedActivityId) {
-      setActiveTab('activities')
+      const highlighted = activities.find(
+        (a) => a.id === highlightedActivityId || a.tempId === highlightedActivityId,
+      )
+      setActiveTab(highlighted?.reminderDate ? 'reminders' : 'activities')
 
       const timer = setTimeout(() => {
         const element = document.getElementById(`activity-${highlightedActivityId}`)
@@ -146,7 +225,19 @@ export default function LeadDrawer({
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [highlightedActivityId])
+  }, [highlightedActivityId, activities])
+
+  // #13: "Ver Historial Crediticio" fuerza la pestaña "Finanzas" al abrir el
+  // drawer. Se limpia enseguida (setInitialDrawerTab(null)) para no forzarla
+  // en aperturas posteriores del mismo drawer (ej. si después el usuario
+  // cambia de pestaña y vuelve a abrir otro lead desde la fila, no desde el
+  // botón de historial).
+  useEffect(() => {
+    if (initialDrawerTab) {
+      setActiveTab(initialDrawerTab)
+      setInitialDrawerTab?.(null)
+    }
+  }, [initialDrawerTab, setInitialDrawerTab])
 
   // Calcular si la ventana de WhatsApp está activa desde el último mensaje recibido
   const wsIncoming = [...(activities || [])]
@@ -188,7 +279,6 @@ export default function LeadDrawer({
     e.preventDefault()
     if (!userId || !selectedLeadId || isForeign) return
 
-    const titleVal = (activityType as string) === 'WHATSAPP' ? 'Mensaje de WhatsApp' : activityTitle.trim()
     let bodyVal = activityBody.trim()
 
     if ((activityType as string) === 'WHATSAPP') {
@@ -201,6 +291,15 @@ export default function LeadDrawer({
         bodyVal = filledText
       }
     }
+
+    // El título es opcional (excepto WhatsApp, que ya tiene uno fijo): si se
+    // deja vacío, se deriva de los primeros ~50 caracteres de la descripción.
+    const derivedTitle =
+      bodyVal.length > 50 ? `${bodyVal.slice(0, 50).trim()}…` : bodyVal
+    const titleVal =
+      (activityType as string) === 'WHATSAPP'
+        ? 'Mensaje de WhatsApp'
+        : activityTitle.trim() || derivedTitle
 
     if (!titleVal || !bodyVal) return
 
@@ -222,7 +321,7 @@ export default function LeadDrawer({
         }
 
         if (!result.success) {
-          alert(`Error al enviar WhatsApp: ${result.error}`)
+          toast.error('Error al enviar WhatsApp', { description: result.error })
           setIsSubmittingActivity(false)
           return
         }
@@ -296,6 +395,8 @@ export default function LeadDrawer({
           timestamp: now,
           reminderDate: reminderTimestamp,
           reminderRead: false,
+          reminderStatus: 'active',
+          reminderPriority: 'MEDIUM',
           synced: false,
           createdAt: now,
           updatedAt: now,
@@ -320,7 +421,13 @@ export default function LeadDrawer({
   // Eliminar actividad
   const handleDeleteActivity = async (act: LocalActivity) => {
     if (isForeign) return
-    if (!confirm('¿Estás seguro de que deseas eliminar esta actividad?')) return
+    const ok = await confirm({
+      title: 'Eliminar actividad',
+      message: '¿Estás seguro de que deseas eliminar esta actividad?',
+      confirmLabel: 'Eliminar',
+      variant: 'danger',
+    })
+    if (!ok) return
     try {
       if (act.id) {
         await localDb.activities.where('id').equals(act.id).modify({ deleted: true, synced: false })
@@ -332,32 +439,47 @@ export default function LeadDrawer({
     }
   }
 
-  // Marcar recordatorio leído
+  // Marcar recordatorio leído/en espera -- sincroniza como Task 'WAITING' en
+  // el CRM (antes se sincronizaba como 'COMPLETED', perdiendo la distinción
+  // con "Realizado").
   const handleMarkReminderAsRead = async (act: LocalActivity) => {
     if (isForeign) return
     try {
+      const patch = { reminderRead: true, reminderStatus: 'waiting' as const, synced: false }
       if (act.id) {
-        await localDb.activities.where('id').equals(act.id).modify({ reminderRead: true, synced: false })
+        await localDb.activities.where('id').equals(act.id).modify(patch)
       } else if (act.tempId) {
-        await localDb.activities.where('tempId').equals(act.tempId).modify({ reminderRead: true })
+        await localDb.activities.where('tempId').equals(act.tempId).modify(patch)
       }
     } catch (err) {
       console.error('[Drawer] Error al marcar recordatorio como leído:', err)
     }
   }
 
-  // Remover alarma
-  const handleRemoveReminder = async (act: LocalActivity) => {
+  // Marcar recordatorio como Realizado -- sincroniza como Task 'COMPLETED'
+  // en el CRM. Reemplaza al viejo "Quitar Alarma", que borraba la Task por
+  // completo del CRM y perdía el historial; ahora la Task se conserva,
+  // solo cambia de estado.
+  const handleCompleteReminder = async (act: LocalActivity) => {
     if (isForeign) return
-    if (!confirm('¿Estás seguro de que deseas quitar el recordatorio?')) return
+    const ok = await confirm({
+      title: 'Marcar como realizado',
+      message: '¿Confirmás que este recordatorio ya fue atendido?',
+    })
+    if (!ok) return
     try {
+      const patch = {
+        reminderRead: true,
+        reminderStatus: 'completed' as const,
+        synced: false,
+      }
       if (act.id) {
-        await localDb.activities.where('id').equals(act.id).modify({ reminderDate: undefined, reminderRead: false, synced: false })
+        await localDb.activities.where('id').equals(act.id).modify(patch)
       } else if (act.tempId) {
-        await localDb.activities.where('tempId').equals(act.tempId).modify({ reminderDate: undefined, reminderRead: false })
+        await localDb.activities.where('tempId').equals(act.tempId).modify(patch)
       }
     } catch (err) {
-      console.error('[Drawer] Error al quitar el recordatorio:', err)
+      console.error('[Drawer] Error al marcar el recordatorio como realizado:', err)
     }
   }
 
@@ -372,10 +494,13 @@ export default function LeadDrawer({
       const now = Date.now()
       const amountVal = parseFloat(dealAmount)
       const termVal = parseInt(dealTermMonths)
-      const rateVal = parseFloat(dealInterestRate)
+      // dealInterestRate se tipea con "," como separador decimal (convención
+      // local); se normaliza a "." solo acá, para parsear — lo que se guarda
+      // en Dexie/Mongo/CRM es el número normal, sin cambios.
+      const rateVal = parseFloat(dealInterestRate.replace(',', '.'))
 
       if (isNaN(amountVal) || amountVal <= 0) {
-        alert('Por favor ingresa un monto válido.')
+        toast.error('Por favor ingresa un monto válido.')
         return
       }
 
@@ -407,10 +532,82 @@ export default function LeadDrawer({
     }
   }
 
+  // Registrar un recordatorio directamente desde la pestaña "Recordatorios"
+  // (#16): se crea como una única Task con reminderDate -- a diferencia del
+  // formulario de "Actividades", no hace falta la Nota acompañante porque
+  // acá no hay una nota principal de la que "colgar" el recordatorio.
+  const handleAddReminder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId || !selectedLeadId || isForeign) return
+    if (!newReminderBody.trim()) return
+    if (!newReminderDateOnly) {
+      toast.error('Por favor elegí una fecha para el recordatorio.')
+      return
+    }
+
+    setIsSubmittingReminder(true)
+    try {
+      const now = Date.now()
+      const dbKey = session?.user?.dbEncryptionKey
+      const timeVal = newReminderTimeOnly || '08:00'
+      const parsedDate = new Date(`${newReminderDateOnly}T${timeVal}`)
+
+      if (isNaN(parsedDate.getTime())) {
+        toast.error('La fecha/hora del recordatorio no es válida.')
+        return
+      }
+
+      // El título es opcional, igual que en "Registrar Actividad" (#3): si se
+      // deja vacío, se deriva de los primeros ~50 caracteres de la
+      // descripción.
+      const trimmedBody = newReminderBody.trim()
+      const derivedTitle =
+        trimmedBody.length > 50 ? `${trimmedBody.slice(0, 50).trim()}…` : trimmedBody
+      const titleVal = newReminderTitle.trim() || derivedTitle
+
+      const newReminder: LocalActivity = {
+        tempId: crypto.randomUUID(),
+        leadId: selectedLeadId,
+        userId,
+        type: 'TASK',
+        title: titleVal,
+        body: trimmedBody,
+        timestamp: now,
+        reminderDate: parsedDate.getTime(),
+        reminderRead: false,
+        reminderStatus: 'active',
+        reminderPriority: 'MEDIUM',
+        synced: false,
+        createdAt: now,
+        updatedAt: now,
+      }
+
+      const encryptedReminder = await encryptActivity(newReminder, dbKey)
+      await localDb.activities.put(encryptedReminder)
+
+      setNewReminderTitle('')
+      setNewReminderBody('')
+      setNewReminderDateOnly(getTomorrowString())
+      setNewReminderTimeOnly('08:00')
+      toast.success('Recordatorio creado correctamente.')
+    } catch (err) {
+      console.error('[Drawer] Error al registrar recordatorio:', err)
+      toast.error('Ocurrió un error al guardar el recordatorio.')
+    } finally {
+      setIsSubmittingReminder(false)
+    }
+  }
+
   // Eliminar préstamo
   const handleDeleteDeal = async (deal: LocalDeal) => {
     if (isForeign) return
-    if (!confirm('¿Estás seguro de que deseas eliminar este préstamo?')) return
+    const ok = await confirm({
+      title: 'Eliminar préstamo',
+      message: '¿Estás seguro de que deseas eliminar este préstamo?',
+      confirmLabel: 'Eliminar',
+      variant: 'danger',
+    })
+    if (!ok) return
     try {
       if (deal.id) {
         await localDb.deals.where('id').equals(deal.id).modify({ deleted: true, synced: false })
@@ -424,12 +621,19 @@ export default function LeadDrawer({
 
   return (
     <>
+      {ConfirmDialogElement}
       {/* Backdrop overlay */}
       <div
-        onClick={() => setSelectedLeadForInvoice(null)}
+        onClick={async () => {
+          if (await confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
+        }}
         className="fixed inset-0 z-40 bg-ink/60 backdrop-blur-sm transition-opacity duration-300"
       />
-      <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
+      {/* Ancho responsive: se mantiene a pantalla completa en mobile (w-full
+          por debajo de max-w-md ya cubre eso), pero en desktop se ensancha
+          progresivamente -- con 4 pestañas (Finanzas/Actividades/
+          Recordatorios/Préstamos) el ancho angosto original las apretaba. */}
+      <div className="animate-slide-in fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl sm:max-w-xl lg:max-w-2xl">
         {/* Cabecera del Drawer */}
         <div className="flex items-center justify-between border-b border-border p-6">
           <div>
@@ -449,7 +653,9 @@ export default function LeadDrawer({
             )}
           </div>
           <button
-            onClick={() => setSelectedLeadForInvoice(null)}
+            onClick={async () => {
+              if (await confirmDiscardIfDirty()) setSelectedLeadForInvoice(null)
+            }}
             className="rounded-lg p-1.5 text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <X className="h-5 w-5" />
@@ -466,8 +672,11 @@ export default function LeadDrawer({
         {/* Selectores de Pestaña */}
         <div className="flex border-b border-border bg-surface-2/50 px-6">
           <button
-            onClick={() => setActiveTab('finance')}
-            className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+            onClick={async () => {
+              if (activeTab !== 'finance' && (await confirmDiscardIfDirty()))
+                setActiveTab('finance')
+            }}
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
               activeTab === 'finance'
                 ? 'border-primary text-ink'
                 : 'border-transparent text-ink-3 hover:text-ink-2'
@@ -476,8 +685,11 @@ export default function LeadDrawer({
             Finanzas
           </button>
           <button
-            onClick={() => setActiveTab('activities')}
-            className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+            onClick={async () => {
+              if (activeTab !== 'activities' && (await confirmDiscardIfDirty()))
+                setActiveTab('activities')
+            }}
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
               activeTab === 'activities'
                 ? 'border-primary text-ink'
                 : 'border-transparent text-ink-3 hover:text-ink-2'
@@ -486,8 +698,29 @@ export default function LeadDrawer({
             Actividades
           </button>
           <button
-            onClick={() => setActiveTab('deals')}
-            className={`flex-1 border-b-2 py-3 text-center text-xs font-bold uppercase tracking-wider transition-all ${
+            onClick={async () => {
+              if (activeTab !== 'reminders' && (await confirmDiscardIfDirty()))
+                setActiveTab('reminders')
+            }}
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
+              activeTab === 'reminders'
+                ? 'border-primary text-ink'
+                : 'border-transparent text-ink-3 hover:text-ink-2'
+            }`}
+          >
+            Recordatorios
+            {activeReminderCount > 0 && (
+              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-bad-bg px-1 text-[9px] font-bold text-bad">
+                {activeReminderCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={async () => {
+              if (activeTab !== 'deals' && (await confirmDiscardIfDirty()))
+                setActiveTab('deals')
+            }}
+            className={`flex-1 border-b-2 px-1 py-3 text-center text-[10px] font-bold uppercase tracking-tight transition-all sm:text-xs sm:tracking-wider ${
               activeTab === 'deals'
                 ? 'border-primary text-ink'
                 : 'border-transparent text-ink-3 hover:text-ink-2'
@@ -522,7 +755,7 @@ export default function LeadDrawer({
                       Total Adeudado
                     </span>
                     <span className="text-bad mt-0.5 block truncate text-xs font-bold">
-                      ${totalBalanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {formatGs(totalBalanceDue)}
                     </span>
                   </div>
                   <div>
@@ -574,11 +807,11 @@ export default function LeadDrawer({
                             INV-ID: {inv.crmId?.slice(-6) || 'LOCAL'}
                           </span>
                           <span className="block text-sm font-bold text-ink">
-                            ${inv.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                            {formatGs(inv.amount)}
                           </span>
                           {inv.status !== 'PAID' && inv.balanceDue !== undefined && inv.balanceDue !== inv.amount && (
                             <span className="block text-[10px] font-semibold text-bad">
-                              Pendiente: ${inv.balanceDue.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                              Pendiente: {formatGs(inv.balanceDue)}
                             </span>
                           )}
                           <div className="flex items-center gap-1 text-[10px] text-ink-3">
@@ -652,14 +885,13 @@ export default function LeadDrawer({
                     {activityType !== 'WHATSAPP' && (
                       <div>
                         <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
-                          Título
+                          Título (opcional)
                         </label>
                         <input
                           type="text"
                           placeholder="Ej. Llamada de seguimiento"
                           value={activityTitle}
                           onChange={(e) => setActivityTitle(e.target.value)}
-                          required
                           className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                         />
                       </div>
@@ -894,8 +1126,9 @@ export default function LeadDrawer({
                 </h4>
 
                 <div className="relative ml-3.5 space-y-6 border-l border-border pl-6">
-                  {activities && activities.length > 0 ? (
+                  {activities && activities.filter((act) => !act.reminderDate).length > 0 ? (
                     [...activities]
+                      .filter((act) => !act.reminderDate)
                       .sort((a, b) => b.timestamp - a.timestamp)
                       .map((act) => {
                         const config = getActivityTypeConfig(act.type)
@@ -1013,48 +1246,9 @@ export default function LeadDrawer({
                                 <p className="whitespace-pre-line text-xs leading-relaxed text-ink-2">
                                   {act.body}
                                 </p>
-
-                                {act.reminderDate && (
-                                  <div className="mt-2 flex max-w-md flex-col gap-1.5 rounded-lg border border-chip-bd bg-chip p-2.5">
-                                    <div className="flex items-center gap-1.5 text-[10px] text-chip-ink">
-                                      <Bell className="h-3.5 w-3.5 animate-pulse text-chip-ink" />
-                                      <span className="font-medium">
-                                        Recordatorio: {new Date(act.reminderDate).toLocaleString()}
-                                      </span>
-                                      {act.reminderRead ? (
-                                        <span className="ml-1 rounded border border-chip-bd bg-surface px-1.5 py-0.5 text-[8px] text-chip-ink">
-                                          Leído
-                                        </span>
-                                      ) : (
-                                        <span className="ml-1 rounded border border-warn-bd bg-warn-bg px-1.5 py-0.5 text-[8px] text-warn">
-                                          Activo
-                                        </span>
-                                      )}
-                                    </div>
-                                    {!isForeign && (
-                                      <div className="flex items-center gap-2">
-                                        {!act.reminderRead && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleMarkReminderAsRead(act)}
-                                            className="flex items-center gap-1 rounded border border-chip-bd bg-surface px-2 py-1 text-[9px] font-bold text-chip-ink transition-colors hover:bg-chip"
-                                          >
-                                            <CheckSquare className="h-3 w-3" />
-                                            Marcar Leído
-                                          </button>
-                                        )}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRemoveReminder(act)}
-                                          className="flex items-center gap-1 rounded border border-bad-bd bg-bad-bg px-2 py-1 text-[9px] font-bold text-bad transition-colors hover:bg-bad-bd/40"
-                                        >
-                                          <X className="h-3 w-3" />
-                                          Quitar Alarma
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
+                                {/* Los recordatorios (act.reminderDate) ya no se muestran acá --
+                                    esta lista los excluye explícitamente (ver .filter arriba);
+                                    tienen su propia pestaña "Recordatorios" (#16). */}
                               </div>
                             )}
                           </div>
@@ -1066,6 +1260,190 @@ export default function LeadDrawer({
                     </p>
                   )}
                 </div>
+              </div>
+            </div>
+          ) : activeTab === 'reminders' ? (
+            <div className="space-y-6">
+              {/* Formulario Nuevo Recordatorio */}
+              {!isForeign ? (
+                <form
+                  onSubmit={handleAddReminder}
+                  className="space-y-4 rounded-xl border border-border bg-surface-2/20 p-4 backdrop-blur-md"
+                >
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
+                    Nuevo Recordatorio
+                  </h4>
+
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                      Título (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Llamar para renovar contrato"
+                      value={newReminderTitle}
+                      onChange={(e) => setNewReminderTitle(e.target.value)}
+                      className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                      Descripción
+                    </label>
+                    <textarea
+                      placeholder="Detalle del recordatorio..."
+                      value={newReminderBody}
+                      onChange={(e) => setNewReminderBody(e.target.value)}
+                      required
+                      rows={2}
+                      className="block w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                        Fecha
+                      </label>
+                      <input
+                        type="date"
+                        value={newReminderDateOnly}
+                        onChange={(e) => setNewReminderDateOnly(e.target.value)}
+                        required
+                        className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
+                        Hora
+                      </label>
+                      <input
+                        type="time"
+                        value={newReminderTimeOnly}
+                        onChange={(e) => setNewReminderTimeOnly(e.target.value)}
+                        required
+                        className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingReminder}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-cta-bg py-2 text-xs font-bold text-cta-ink transition-colors hover:bg-accent disabled:opacity-50"
+                  >
+                    {isSubmittingReminder ? (
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cta-ink border-t-transparent" />
+                    ) : (
+                      <>
+                        <Bell className="h-3.5 w-3.5" />
+                        Crear Recordatorio
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <div className="rounded-xl border border-border bg-surface-2/10 p-4 text-center text-xs text-ink-3">
+                  No tenes permisos para crear recordatorios para este contacto (Modo Solo Lectura).
+                </div>
+              )}
+
+              <h4 className="text-xs font-bold uppercase tracking-wider text-ink">
+                Recordatorios Registrados
+              </h4>
+              <div className="space-y-3">
+                {activities.filter((act) => act.reminderDate).length > 0 ? (
+                  [...activities]
+                    .filter((act) => act.reminderDate)
+                    // Más reciente arriba (por fecha de creación), igual
+                    // criterio que la lista de Deals.
+                    .sort((a, b) => b.createdAt - a.createdAt)
+                    .map((act) => {
+                      // Compatibilidad: registros viejos solo tienen
+                      // reminderRead (booleano); reminderStatus es la fuente
+                      // de verdad de acá en adelante.
+                      const status =
+                        act.reminderStatus ||
+                        (act.reminderRead ? 'waiting' : 'active')
+                      return (
+                      <div
+                        key={act.id || act.tempId}
+                        id={`activity-${act.id || act.tempId}`}
+                        className={`space-y-2 rounded-xl border bg-chip p-4 transition-all duration-500 ${
+                          highlightedActivityId === act.id || highlightedActivityId === act.tempId
+                            ? 'scale-[1.02] border-primary ring-2 ring-primary/20'
+                            : 'border-chip-bd'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-chip-ink">
+                              <Bell className="h-3.5 w-3.5" />
+                              <span className="font-medium">
+                                {act.reminderDate &&
+                                  new Date(act.reminderDate).toLocaleString()}
+                              </span>
+                              {status === 'completed' ? (
+                                <span className="ml-1 rounded border border-ok-bd bg-ok-bg px-1.5 py-0.5 text-[8px] text-ok">
+                                  Realizado
+                                </span>
+                              ) : status === 'waiting' ? (
+                                <span className="ml-1 rounded border border-chip-bd bg-surface px-1.5 py-0.5 text-[8px] text-chip-ink">
+                                  Leído
+                                </span>
+                              ) : (
+                                <span className="ml-1 rounded border border-warn-bd bg-warn-bg px-1.5 py-0.5 text-[8px] text-warn">
+                                  Activo
+                                </span>
+                              )}
+                            </div>
+                            <h5 className="mt-1 text-xs font-bold text-ink">
+                              {act.title}
+                            </h5>
+                          </div>
+                          {act.synced ? (
+                            <span title="Sincronizado con HubSpot">
+                              <Cloud className="h-3.5 w-3.5 shrink-0 text-ok" />
+                            </span>
+                          ) : (
+                            <span title="Guardado localmente, pendiente de sincronización">
+                              <Database className="h-3.5 w-3.5 shrink-0 animate-pulse text-warn" />
+                            </span>
+                          )}
+                        </div>
+                        <p className="whitespace-pre-line text-xs leading-relaxed text-ink-2">
+                          {act.body}
+                        </p>
+                        {!isForeign && status !== 'completed' && (
+                          <div className="flex items-center gap-2 pt-1">
+                            {status === 'active' && (
+                              <button
+                                type="button"
+                                onClick={() => handleMarkReminderAsRead(act)}
+                                className="flex items-center gap-1 rounded border border-chip-bd bg-surface px-2 py-1 text-[9px] font-bold text-chip-ink transition-colors hover:bg-chip"
+                              >
+                                <CheckSquare className="h-3 w-3" />
+                                Marcar Leído
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteReminder(act)}
+                              className="flex items-center gap-1 rounded border border-ok-bd bg-ok-bg px-2 py-1 text-[9px] font-bold text-ok transition-colors hover:bg-ok-bd/40"
+                            >
+                              <CheckSquare className="h-3 w-3" />
+                              Marcar como Realizado
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )})
+                ) : (
+                  <p className="py-6 text-center text-xs text-ink-3">
+                    No hay recordatorios para este contacto.
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -1083,15 +1461,26 @@ export default function LeadDrawer({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-2">
-                        Monto (USD)
+                        Monto (Gs.)
                       </label>
                       <input
-                        type="number"
-                        placeholder="Ej. 5000"
-                        value={dealAmount}
-                        onChange={(e) => setDealAmount(e.target.value)}
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Ej. 5.000.000"
+                        // dealAmount guarda solo dígitos (sin separadores); acá se
+                        // muestra formateado con separador de miles es-PY, pero lo
+                        // que se persiste en Dexie/Mongo/CRM sigue siendo el número
+                        // plano — esto es puramente visual, para reducir errores al
+                        // tipear montos de 6-7 cifras en guaraníes.
+                        value={
+                          dealAmount
+                            ? Number(dealAmount).toLocaleString('es-PY')
+                            : ''
+                        }
+                        onChange={(e) =>
+                          setDealAmount(e.target.value.replace(/\D/g, ''))
+                        }
                         required
-                        min="1"
                         className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                       />
                     </div>
@@ -1118,13 +1507,23 @@ export default function LeadDrawer({
                       Tasa de Interés (%)
                     </label>
                     <input
-                      type="number"
-                      step="0.1"
-                      placeholder="Ej. 15"
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Ej. 15,5"
+                      // Se tipea con "," como separador decimal (ver conversión a
+                      // "." en handleAddDeal antes de guardar). Solo se permiten
+                      // dígitos y una coma.
                       value={dealInterestRate}
-                      onChange={(e) => setDealInterestRate(e.target.value)}
+                      onChange={(e) => {
+                        const cleaned = e.target.value
+                          // El teclado numérico suele tener solo "." como tecla
+                          // decimal (no ","); lo tratamos como equivalente.
+                          .replace(/\./g, ',')
+                          .replace(/[^0-9,]/g, '')
+                          .replace(/(,.*),/g, '$1')
+                        setDealInterestRate(cleaned)
+                      }}
                       required
-                      min="0"
                       className="block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink placeholder-ink-3 focus:border-primary focus:outline-none"
                     />
                   </div>
@@ -1164,7 +1563,13 @@ export default function LeadDrawer({
                 </h4>
                 <div className="space-y-4">
                   {deals && deals.length > 0 ? (
-                    deals.map((deal) => {
+                    [...deals]
+                      .sort(
+                        (a, b) =>
+                          new Date(b.createdAt).getTime() -
+                          new Date(a.createdAt).getTime(),
+                      )
+                      .map((deal) => {
                       const steps = [
                         { stage: 'draft', label: 'Borrador' },
                         { stage: 'under_evaluation', label: 'Riesgo' },
@@ -1192,7 +1597,7 @@ export default function LeadDrawer({
                                 Creado: {new Date(deal.createdAt).toLocaleDateString()}
                               </span>
                               <h5 className="mt-0.5 text-sm font-bold text-ink">
-                                ${deal.amount.toLocaleString()} USD
+                                {formatGs(deal.amount)}
                               </h5>
                               <p className="mt-0.5 text-[10px] text-ink-2">
                                 Plazo: {deal.termMonths} meses | Tasa: {deal.interestRate}%

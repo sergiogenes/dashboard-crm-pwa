@@ -1,15 +1,42 @@
 import { test, expect } from '@playwright/test'
 import mongoose from 'mongoose'
 import { generate } from 'otplib'
+import dotenv from 'dotenv'
+import fs from 'fs'
+import path from 'path'
+
+// Leemos la URI directamente de .env.test (no de process.env.MONGODB_URI):
+// dotenv no sobreescribe variables ya presentes en el proceso, así que si
+// MONGODB_URI quedó seteada en la shell que corre `playwright test` (p. ej.
+// por una sesión anterior), este archivo terminaría conectándose a la base
+// real y corriendo el deleteMany({}) de abajo sobre datos de producción.
+// Leer el archivo explícitamente evita depender de ese estado ambiental.
+const testEnvPath = path.resolve(process.cwd(), '.env.test')
+const testEnv = fs.existsSync(testEnvPath)
+  ? dotenv.parse(fs.readFileSync(testEnvPath))
+  : {}
 
 const MONGODB_URI =
-  process.env.MONGODB_URI || 'mongodb://localhost:27017/testdb'
+  testEnv.MONGODB_URI || 'mongodb://127.0.0.1:27017/dashboard-pwa-test'
 
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
   if (mongoose.connection.readyState === 0) {
     await mongoose.connect(MONGODB_URI)
+  }
+
+  // Guarda de seguridad final: sin importar de dónde vino la URI, nos
+  // negamos a operar (y sobre todo a hacer el deleteMany masivo de abajo)
+  // si el nombre de la base activa no es inequívocamente de pruebas.
+  const activeDbName = mongoose.connection.db?.databaseName || ''
+  if (!activeDbName.includes('test')) {
+    await mongoose.disconnect()
+    throw new Error(
+      `[sync.spec.ts] Abortando: la base conectada es "${activeDbName}", que no contiene ` +
+        `"test" en su nombre. Este archivo hace deleteMany({}) sobre todas las colecciones ` +
+        `y nunca debe correr contra una base que no sea de pruebas.`,
+    )
   }
 })
 
@@ -199,9 +226,9 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
     .getByPlaceholder('juan.perez@email.com', { exact: true })
     .fill('jane.doe@example.com')
   await page
-    .getByPlaceholder('+54 9 11 1234-5678', { exact: true })
+    .getByPlaceholder('0981 123456', { exact: true })
     .fill('+541122334455')
-  await page.getByPlaceholder('1.234.567-8', { exact: true }).fill('12345678')
+  await page.getByPlaceholder('1234567', { exact: true }).fill('12345678')
 
   // Seleccionar la empresa que acabamos de crear (que está local)
   const optionText = await page.evaluate((companyName) => {
@@ -221,6 +248,14 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
     )
   }
   await page.getByRole('button', { name: 'Crear Lead' }).click()
+
+  // La columna "Origen / Sinc" ahora está oculta por defecto en producción/test
+  // (#11) -- hay que activarla desde el selector de columnas (ícono de
+  // engranaje en el header de "Acciones") antes de poder verificar el badge
+  // LocalDb/CloudDb en la tabla.
+  await page.getByRole('button', { name: 'Configurar columnas' }).click()
+  await page.getByText('Origen / Sinc').click()
+  await page.getByRole('button', { name: 'Configurar columnas' }).click() // cerrar el selector
 
   // Verificar que aparezca el lead con badge 'LocalDb'
   await expect(page.getByRole('cell', { name: 'Jane Doe' })).toBeVisible()
@@ -277,7 +312,7 @@ test('Debe persistir localmente en modo Offline y sincronizar al volver Online',
   expect(dbLead?.crmId).toBeDefined()
 })
 
-test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y Quitar Alarma)', async ({
+test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y Marcar como Realizado)', async ({
   page,
 }) => {
   // Login con MFA
@@ -297,37 +332,37 @@ test('Debe gestionar el ciclo de vida de un recordatorio (Crear, Marcar Leído y
   await page.locator('#enable-reminder').check()
   await page.getByRole('button', { name: 'Registrar Actividad' }).click()
 
-  // 3. Confirmar aparición en el timeline
-  await expect(
-    page.getByText('Recordatorio: Recordatorio Test Playwright'),
-  ).toBeVisible()
+  // 3. La Nota principal queda en "Actividades"; el recordatorio (Task
+  // acompañante, ver handleAddActivity) vive en su propia pestaña desde el
+  // punto #16 -- ya no aparece inline en el timeline de Actividades.
   await expect(
     page
       .getByText('Este es un cuerpo de prueba para el test automatizado')
       .first(),
   ).toBeVisible()
 
+  await page.getByRole('button', { name: 'Recordatorios' }).click()
+  await expect(
+    page.getByText('Recordatorio Test Playwright').first(),
+  ).toBeVisible()
+
   // 4. Marcar como leído
   await page.getByRole('button', { name: 'Marcar Leído' }).first().click()
   await expect(page.getByText('Leído')).toBeVisible()
 
-  // 5. Quitar Alarma
-  page.once('dialog', async (dialog) => {
-    await dialog.accept()
-  })
-  await page.getByRole('button', { name: 'Quitar Alarma' }).first().click()
+  // 5. Marcar como Realizado (vía el ConfirmDialog propio de la app, no un
+  // diálogo nativo del navegador — ver useConfirm/ConfirmDialog). Ya no
+  // borra la Task del CRM: solo cambia de estado y se conserva el historial.
+  await page.getByRole('button', { name: 'Marcar como Realizado' }).click()
+  await page.getByRole('button', { name: 'Confirmar' }).click()
 
-  // Confirmar que ya no se ve la sección de alarma (pero la nota sigue visible).
-  // Nota: al crear una actividad con recordatorio, handleAddActivity registra
-  // dos entradas a propósito (la Nota principal + una Task acompañante para
-  // que el recordatorio sincronice como Task en el CRM, ver comentario ahí).
-  // Ambas comparten título/cuerpo, así que tras quitar la alarma coexisten dos
-  // encabezados idénticos en el timeline — se verifica con .first() en vez de
-  // esperar una coincidencia única.
-  await expect(page.getByText('Quitar Alarma')).not.toBeVisible()
+  // El recordatorio sigue visible (no se borró), pero ya como "Realizado" y
+  // sin botones de acción.
+  await expect(page.getByText('Realizado')).toBeVisible()
   await expect(
     page.getByText('Recordatorio Test Playwright').first(),
   ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Marcar Leído' })).not.toBeVisible()
 })
 
 test('Debe registrar una nota general sin recordatorio', async ({ page }) => {
@@ -433,11 +468,11 @@ test('Debe registrar una nueva solicitud de préstamo en la pestaña Préstamos'
   await page.getByRole('button', { name: 'Préstamos' }).click()
 
   // 3. Completar formulario de préstamo
-  await page.getByPlaceholder('Ej. 5000').fill('15000')
+  await page.getByPlaceholder('Ej. 5.000.000').fill('15000')
   await page
     .locator('form:has-text("Nueva Solicitud de Préstamo") select')
     .selectOption({ value: '24' }) // 24 meses
-  await page.getByPlaceholder('Ej. 15').fill('12.5')
+  await page.getByPlaceholder('Ej. 15,5').fill('12,5')
   await page
     .getByPlaceholder('Escribe comentarios u observaciones del préstamo...')
     .fill('Justificación de préstamo para el test de Playwright')
@@ -446,7 +481,7 @@ test('Debe registrar una nueva solicitud de préstamo en la pestaña Préstamos'
   await page.getByRole('button', { name: 'Enviar Solicitud' }).click()
 
   // 4. Confirmar que aparece en la lista de préstamos activos con estado Borrador
-  await expect(page.getByText('$15,000 USD')).toBeVisible()
+  await expect(page.getByText('Gs. 15.000')).toBeVisible()
   await expect(page.getByText('Plazo: 24 meses | Tasa: 12.5%')).toBeVisible()
   await expect(
     page.getByText('Justificación de préstamo para el test de Playwright'),

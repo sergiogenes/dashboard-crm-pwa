@@ -413,12 +413,16 @@ export function useSync(userId: string | undefined) {
                 .first()
             }
 
-            // Resolver leadId local si tiene tempId en lugar de ID de MongoDB
+            // Resolver leadId local: preferir el id real del lead (que es lo
+            // que usa la UI para consultar actividades una vez sincronizado,
+            // ver useContacts.ts). Priorizar tempId acá pisaba el leadId que
+            // el propio push-ack ya había resuelto correctamente, y la
+            // actividad dejaba de aparecer dentro del contacto tras sync.
             let localLead = await localDb.leads
               .where('id')
               .equals(serverAct.leadId)
               .first()
-            const resolvedLeadId = localLead?.tempId || serverAct.leadId
+            const resolvedLeadId = localLead?.id || localLead?.tempId || serverAct.leadId
 
             const actToSave: LocalActivity = {
               tempId: existingLocal?.tempId || (serverAct as any).tempId || serverAct.id,
@@ -431,6 +435,14 @@ export function useSync(userId: string | undefined) {
               timestamp: serverAct.timestamp,
               reminderDate: serverAct.reminderDate,
               reminderRead: (serverAct as any).reminderRead || false,
+              // Se habían olvidado estos dos campos acá: como es un put()
+              // (reemplaza el registro entero, no un merge parcial), cada
+              // pull borraba reminderStatus/reminderPriority del lado local
+              // -- 'Marcar como Realizado' se guardaba bien en el servidor,
+              // pero el siguiente ciclo de sync lo pisaba de vuelta a
+              // 'waiting' en el navegador.
+              reminderStatus: (serverAct as any).reminderStatus || 'active',
+              reminderPriority: (serverAct as any).reminderPriority || 'MEDIUM',
               synced: true,
               createdAt: serverAct.createdAt,
               updatedAt: serverAct.updatedAt,
@@ -460,11 +472,13 @@ export function useSync(userId: string | undefined) {
                 .equals((serverDeal as any).tempId)
                 .first()
             }
+            // Ídem que en actividades: preferir el id real del lead sobre su
+            // tempId al resolver el leadId del deal (ver comentario arriba).
             let localLead = await localDb.leads
               .where('id')
               .equals(serverDeal.leadId)
               .first()
-            const resolvedLeadId = localLead?.tempId || serverDeal.leadId
+            const resolvedLeadId = localLead?.id || localLead?.tempId || serverDeal.leadId
 
             await localDb.deals.put({
               tempId: existingLocal?.tempId || (serverDeal as any).tempId || serverDeal.id,

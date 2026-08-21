@@ -662,11 +662,12 @@ export class HubSpotProvider implements ICRMProvider {
               properties: {
                 hs_task_subject?: string
                 hs_task_status?: string
+                hs_task_priority?: string
                 hs_timestamp?: string
                 hs_task_body?: string
               }
             }>(
-              `/tasks/${taskId}?properties=hs_task_subject,hs_task_status,hs_timestamp,hs_task_body`,
+              `/tasks/${taskId}?properties=hs_task_subject,hs_task_status,hs_task_priority,hs_timestamp,hs_task_body`,
               { method: 'GET' },
             )
 
@@ -676,6 +677,16 @@ export class HubSpotProvider implements ICRMProvider {
               const status = props.hs_task_status || 'NOT_STARTED'
               const dueDate = props.hs_timestamp || ''
               const taskBody = props.hs_task_body || ''
+
+              // DEFERRED e IN_PROGRESS no tienen equivalente propio en
+              // nuestro modelo de 3 estados; se tratan como 'waiting'
+              // (ya reconocidas/en curso, pero no completadas).
+              const reminderStatus: 'active' | 'waiting' | 'completed' =
+                status === 'COMPLETED'
+                  ? 'completed'
+                  : status === 'NOT_STARTED'
+                    ? 'active'
+                    : 'waiting'
 
               activities.push({
                 crmId: taskDetail.id,
@@ -687,6 +698,10 @@ export class HubSpotProvider implements ICRMProvider {
                   ? String(new Date(dueDate).getTime())
                   : undefined,
                 reminderRead: status === 'COMPLETED',
+                reminderStatus,
+                reminderPriority:
+                  (props.hs_task_priority as 'LOW' | 'MEDIUM' | 'HIGH') ||
+                  'MEDIUM',
               })
             }
           } catch (singleTaskErr: any) {
@@ -883,6 +898,19 @@ export class HubSpotProvider implements ICRMProvider {
         ? new Date(Number(activity.reminderDate)).toISOString()
         : new Date().toISOString()
 
+      // reminderStatus es la fuente de verdad; reminderRead (deprecado) solo
+      // se usa como fallback para llamadas que todavía no lo mandan.
+      const statusMap: Record<string, string> = {
+        active: 'NOT_STARTED',
+        waiting: 'WAITING',
+        completed: 'COMPLETED',
+      }
+      const resolvedStatus =
+        activity.reminderStatus ||
+        (activity.reminderRead ? 'waiting' : 'active')
+      const hsTaskStatus = statusMap[resolvedStatus] || 'NOT_STARTED'
+      const hsTaskPriority = activity.reminderPriority || 'MEDIUM'
+
       if (activity.crmId) {
         await this.request(`/tasks/${activity.crmId}`, {
           method: 'PATCH',
@@ -890,9 +918,8 @@ export class HubSpotProvider implements ICRMProvider {
             properties: {
               hs_task_subject: activity.title,
               hs_task_body: activity.body,
-              hs_task_status: activity.reminderRead
-                ? 'COMPLETED'
-                : 'NOT_STARTED',
+              hs_task_status: hsTaskStatus,
+              hs_task_priority: hsTaskPriority,
               hs_timestamp: dueDateIso,
             },
           }),
@@ -905,9 +932,8 @@ export class HubSpotProvider implements ICRMProvider {
             properties: {
               hs_task_subject: activity.title,
               hs_task_body: activity.body,
-              hs_task_status: activity.reminderRead
-                ? 'COMPLETED'
-                : 'NOT_STARTED',
+              hs_task_status: hsTaskStatus,
+              hs_task_priority: hsTaskPriority,
               hs_timestamp: dueDateIso,
             },
             associations: [

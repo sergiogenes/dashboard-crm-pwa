@@ -39,6 +39,15 @@ export function useContacts() {
   const [selectedLeadForInvoice, setSelectedLeadForInvoice] =
     useState<LocalLead | null>(null)
 
+  // Pestaña inicial forzada al abrir el drawer (#13): "Ver Historial
+  // Crediticio" llamaba a lo mismo que hacer clic en la fila y el drawer
+  // siempre abría en "Actividades" -- el botón no hacía lo que decía. Se
+  // limpia después de aplicarse una vez para no forzar la pestaña en
+  // aperturas posteriores del mismo drawer.
+  const [initialDrawerTab, setInitialDrawerTab] = useState<
+    'finance' | null
+  >(null)
+
   const [highlightedActivityId, setHighlightedActivityId] = useState<
     string | null
   >(null)
@@ -337,6 +346,8 @@ export function useContacts() {
                 timestamp: act.timestamp,
                 reminderDate: act.reminderDate,
                 reminderRead: (act as any).reminderRead || false,
+                reminderStatus: (act as any).reminderStatus || 'active',
+                reminderPriority: (act as any).reminderPriority || 'MEDIUM',
                 synced: true,
                 createdAt: act.createdAt,
                 updatedAt: act.updatedAt,
@@ -628,6 +639,27 @@ export function useContacts() {
     }
   }
 
+  // #12: última vez que se contactó directamente al lead -- solo cuenta
+  // contacto directo (llamada, WhatsApp, email, reunión), igual criterio
+  // que ya usa #13 para distinguir contacto directo de seguimiento interno.
+  // Notas y tareas quedan afuera a propósito.
+  const DIRECT_CONTACT_TYPES = ['CALL', 'WHATSAPP', 'EMAIL', 'MEETING']
+  const getLastContactedAt = (lead: LocalLead): number | null => {
+    const isLeadForeign = lead.userId !== userId
+    const sourceActivities = (isLeadForeign && selectedLeadForInvoice?.id === lead.id)
+      ? (foreignDetails?.activities || [])
+      : (allActivities || [])
+
+    const directContacts = sourceActivities.filter(
+      (a) =>
+        (a.leadId === lead.id || (lead.tempId && a.leadId === lead.tempId)) &&
+        DIRECT_CONTACT_TYPES.includes(a.type),
+    )
+
+    if (directContacts.length === 0) return null
+    return Math.max(...directContacts.map((a) => a.timestamp))
+  }
+
   // Resolver los datos a mostrar en el Drawer
   const invoicesToShow = isForeign
     ? foreignDetails?.invoices || []
@@ -646,6 +678,8 @@ export function useContacts() {
     setLeadToEdit,
     selectedLeadForInvoice,
     setSelectedLeadForInvoice,
+    initialDrawerTab,
+    setInitialDrawerTab,
     highlightedActivityId,
     setHighlightedActivityId,
     whatsappTemplates,
@@ -662,6 +696,7 @@ export function useContacts() {
     getCompanyName,
     getLeadStatus,
     getWhatsAppWindowStatus,
+    getLastContactedAt,
     invoicesToShow,
     activitiesToShow,
     dealsToShow,
